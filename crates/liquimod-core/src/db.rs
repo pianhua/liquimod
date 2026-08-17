@@ -38,13 +38,13 @@ impl Database {
                id INTEGER PRIMARY KEY,
                op TEXT NOT NULL,
                payload TEXT NOT NULL,
-                finished INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL
-              );
-              CREATE TABLE IF NOT EXISTS passwords (
-                value TEXT PRIMARY KEY,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-              );",
+               finished INTEGER NOT NULL DEFAULT 0,
+               created_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS passwords (
+               value TEXT PRIMARY KEY,
+               created_at INTEGER NOT NULL
+             );",
         )?;
         Ok(Self { conn })
     }
@@ -134,9 +134,12 @@ impl Database {
     }
 
     pub fn add_password(&self, value: &str) -> Result<()> {
+        if value.is_empty() {
+            return Ok(());
+        }
         self.conn.execute(
-            "INSERT OR IGNORE INTO passwords (value) VALUES (?1)",
-            rusqlite::params![value],
+            "INSERT OR IGNORE INTO passwords (value, created_at) VALUES (?1, ?2)",
+            rusqlite::params![value, now_unix()],
         )?;
         Ok(())
     }
@@ -204,5 +207,12 @@ mod tests {
         assert_eq!(db.list_passwords().unwrap(), vec!["pw-a", "pw-b"]);
         db.remove_password("pw-a").unwrap();
         assert_eq!(db.list_passwords().unwrap(), vec!["pw-b"]);
+    }
+
+    #[test]
+    fn password_empty_is_ignored() {
+        let db = Database::open_in_memory().unwrap();
+        db.add_password("").unwrap();
+        assert!(db.list_passwords().unwrap().is_empty());
     }
 }

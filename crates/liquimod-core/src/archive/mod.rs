@@ -18,3 +18,16 @@ impl<'a> PasswordBook<'a> {
         self.db.add_password(password)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn learn_then_candidates() {
+        let db = Database::open_in_memory().unwrap();
+        let book = PasswordBook::new(&db);
+        book.learn("x").unwrap();
+        assert!(book.candidates().unwrap().contains(&"x".to_string()));
+    }
+}
