@@ -1,4 +1,5 @@
 pub mod detect;
+pub mod rar;
 pub mod sevenz;
 pub mod zip_extract;
 
