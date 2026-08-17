@@ -1,4 +1,8 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+// TODO(Task 4): 接线 AppState 后移除 allow
+#[allow(dead_code)]
+mod config;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
