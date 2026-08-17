@@ -12,6 +12,8 @@
   let selected = $state<CharacterSummary | null>(null);
   let error = $state("");
 
+  let modTotal = $derived(characters.reduce((n, c) => n + c.total, 0));
+
   async function refresh() {
     error = "";
     try {
@@ -28,7 +30,7 @@
 <div class="flex flex-col h-screen">
   <TitleBar />
   {#if error}
-    <div class="glass radius-panel mx-5 mt-2 px-4 py-2 text-sm" style="color: var(--danger)">
+    <div class="glass radius-panel mx-8 mt-2 px-4 py-2.5 text-sm" style="color: var(--danger)">
       {error}
     </div>
   {/if}
@@ -43,8 +45,11 @@
       onconfigured={refresh}
     />
   {:else}
-    <header class="flex items-end justify-between px-5 pb-2">
-      <h1 class="text-3xl font-bold">角色</h1>
+    <header class="flex items-end justify-between px-8 pt-3 pb-5 shrink-0">
+      <div>
+        <h1 class="text-[34px] leading-tight font-bold tracking-tight">角色</h1>
+        <p class="text-sm text-secondary mt-0.5">{characters.length} 位角色 · {modTotal} 个 Mod</p>
+      </div>
       <SearchBar bind:value={query} />
     </header>
     <CharacterGrid {characters} {query} onselect={(c) => (selected = c)} />

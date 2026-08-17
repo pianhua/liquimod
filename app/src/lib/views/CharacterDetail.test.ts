@@ -17,7 +17,10 @@ const character: CharacterSummary = {
 
 const mockedInvoke = vi.mocked(invoke);
 
-beforeEach(() => mockedInvoke.mockReset());
+beforeEach(() => {
+  mockedInvoke.mockReset();
+  (window as any).__TAURI_INTERNALS__ = {};
+});
 
 describe("CharacterDetail", () => {
   it("加载并渲染 Mod 列表", async () => {

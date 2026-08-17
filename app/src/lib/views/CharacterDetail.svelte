@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type CharacterSummary, type ModDto } from "$lib/api";
+  import { api, portraitUrl, type CharacterSummary, type ModDto } from "$lib/api";
   import Toggle from "$lib/components/Toggle.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
 
@@ -50,27 +50,45 @@
   }
 </script>
 
-<div class="flex flex-col h-full">
-  <div class="flex items-center gap-3 px-5 pt-2">
-    <button class="glass radius-pill px-3 h-8 text-sm" onclick={onback}>‹ 返回</button>
-    <h2 class="text-xl font-bold">{character.display_name}</h2>
+<div class="flex flex-col h-full min-h-0">
+  <div class="flex items-center gap-4 px-8 pt-3 pb-4 shrink-0">
+    <button
+      class="glass radius-pill pl-2.5 pr-3.5 h-8 text-sm flex items-center gap-1 cursor-pointer transition-transform hover:-translate-x-0.5"
+      onclick={onback}
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <path d="M7 1L2.5 5L7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      返回
+    </button>
+    {#if character.image}
+      <img
+        src={portraitUrl(character.image)}
+        alt=""
+        class="w-10 h-10 rounded-full object-cover object-top"
+        style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+        draggable="false"
+      />
+    {/if}
+    <h2 class="text-2xl font-bold tracking-tight">{character.display_name}</h2>
+    <span class="text-sm text-secondary">{mods.length} 个 Mod</span>
   </div>
 
   {#if !modsDirConfigured}
-    <div class="glass radius-panel mx-5 mt-3 p-3 flex items-center justify-between">
+    <div class="glass radius-panel mx-8 mb-3 px-4 py-3 flex items-center justify-between shrink-0">
       <span class="text-sm">未配置 3Dmigoto Mods 目录，无法启用 Mod</span>
-      <button class="accent-fill accent-text radius-pill px-3 h-8 text-sm font-medium" onclick={pickModsDir}>
+      <button class="accent-fill accent-text radius-pill px-3.5 h-8 text-sm font-medium cursor-pointer" onclick={pickModsDir}>
         选择目录
       </button>
     </div>
   {/if}
   {#if error}
-    <p class="mx-5 mt-2 text-sm" style="color: var(--danger)">{error}</p>
+    <p class="mx-8 mb-2 text-sm shrink-0" style="color: var(--danger)">{error}</p>
   {/if}
 
-  <div class="flex flex-col gap-2 p-5 overflow-y-auto">
+  <div class="flex flex-col gap-2.5 px-8 pb-8 overflow-y-auto flex-1 min-h-0 max-w-3xl w-full mx-auto">
     {#each mods as mod (mod.id)}
-      <div class="glass radius-card px-4 py-3 flex items-center justify-between">
+      <div class="glass radius-card px-5 py-3.5 flex items-center justify-between">
         <span class="font-medium">{mod.name}</span>
         <Toggle
           checked={mod.enabled}
@@ -80,7 +98,7 @@
       </div>
     {/each}
     {#if mods.length === 0}
-      <p class="text-secondary text-center mt-16">该角色还没有 Mod，拖入压缩包即可安装</p>
+      <p class="text-secondary text-center mt-24">该角色还没有 Mod，拖入压缩包即可安装</p>
     {/if}
   </div>
 </div>
