@@ -20,7 +20,11 @@
   let error = $state("");
 
   onMount(async () => {
-    mods = await api.listMods(character.internal_name);
+    try {
+      mods = await api.listMods(character.internal_name);
+    } catch (e) {
+      error = String(e);
+    }
   });
 
   async function toggle(mod: ModDto, next: boolean) {
@@ -64,7 +68,11 @@
     {#each mods as mod (mod.id)}
       <div class="glass radius-card px-4 py-3 flex items-center justify-between">
         <span class="font-medium">{mod.name}</span>
-        <Toggle checked={mod.enabled} onchange={(next) => toggle(mod, next)} />
+        <Toggle
+          checked={mod.enabled}
+          ariaLabel={`启用 ${mod.name}`}
+          onchange={(next) => toggle(mod, next)}
+        />
       </div>
     {/each}
     {#if mods.length === 0}

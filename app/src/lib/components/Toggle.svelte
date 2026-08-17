@@ -2,12 +2,17 @@
   let {
     checked,
     onchange,
-  }: { checked: boolean; onchange: (next: boolean) => void } = $props();
+    ariaLabel = "启用",
+  }: {
+    checked: boolean;
+    onchange: (next: boolean) => void;
+    ariaLabel?: string;
+  } = $props();
 </script>
 
 <button
   role="switch"
-  aria-label="启用"
+  aria-label={ariaLabel}
   aria-checked={checked}
   class="radius-pill relative w-11 h-7 transition-colors duration-200 shrink-0"
   style:background={checked ? "var(--accent)" : "var(--glass-stroke)"}

@@ -10,10 +10,16 @@
   let characters = $state<CharacterSummary[]>([]);
   let query = $state("");
   let selected = $state<CharacterSummary | null>(null);
+  let error = $state("");
 
   async function refresh() {
-    config = await api.getConfig();
-    characters = await api.getCharacters();
+    error = "";
+    try {
+      config = await api.getConfig();
+      characters = await api.getCharacters();
+    } catch (e) {
+      error = String(e);
+    }
   }
 
   onMount(refresh);
@@ -21,11 +27,19 @@
 
 <div class="flex flex-col h-screen">
   <TitleBar />
+  {#if error}
+    <div class="glass radius-panel mx-5 mt-2 px-4 py-2 text-sm" style="color: var(--accent)">
+      {error}
+    </div>
+  {/if}
   {#if selected}
     <CharacterDetail
       character={selected}
       modsDirConfigured={config?.mods_dir != null}
-      onback={() => (selected = null)}
+      onback={() => {
+        selected = null;
+        refresh();
+      }}
       onconfigured={refresh}
     />
   {:else}
