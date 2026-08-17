@@ -10,6 +10,20 @@ use std::path::{Path, PathBuf};
 
 const MAX_CONTENT_ROOT_DEPTH: u32 = 10;
 const MAX_NESTED_DEPTH: u32 = 5;
+const MAX_NESTED_ARCHIVES: u32 = 64;
+const ERROR_NOT_A_REPARSE_POINT: i32 = 0x1126;
+
+fn map_junction_result(result: std::io::Result<bool>) -> Result<bool> {
+    match result {
+        Ok(is_junction) => Ok(is_junction),
+        Err(error) if error.raw_os_error() == Some(ERROR_NOT_A_REPARSE_POINT) => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn is_junction(path: &Path) -> Result<bool> {
+    map_junction_result(junction::exists(path))
+}
 
 /// Unwraps single-directory archive wrappers, stopping after ten directory levels.
 pub fn resolve_content_root(dir: &Path) -> Result<PathBuf> {
@@ -26,10 +40,10 @@ pub fn resolve_content_root(dir: &Path) -> Result<PathBuf> {
         };
         let path = entry.path();
         let metadata = std::fs::symlink_metadata(&path)?;
-        if !metadata.is_dir()
-            || metadata.file_type().is_symlink()
-            || junction::exists(&path).unwrap_or(false)
-        {
+        if metadata.file_type().is_symlink() {
+            break;
+        }
+        if is_junction(&path)? || !metadata.is_dir() {
             break;
         }
         current = path;
@@ -43,12 +57,25 @@ pub struct ExtractReport {
 }
 
 /// Extracts an archive and recursively scans all regular files in its output tree for nested archives.
+/// The caller must provide a new empty directory for every extraction attempt. Reusing a directory can
+/// mix residual files into the scan because nested destination numbering avoids existing paths.
 pub fn extract_recursive(
+    archive_path: &Path,
+    dest: &Path,
+    password: Option<&str>,
+    report: &mut ExtractReport,
+) -> Result<()> {
+    let mut nested_count = 0;
+    extract_recursive_inner(archive_path, dest, password, 0, report, &mut nested_count)
+}
+
+fn extract_recursive_inner(
     archive_path: &Path,
     dest: &Path,
     password: Option<&str>,
     depth: u32,
     report: &mut ExtractReport,
+    nested_count: &mut u32,
 ) -> Result<()> {
     std::fs::create_dir_all(dest)?;
 
@@ -71,9 +98,24 @@ pub fn extract_recursive(
             continue;
         }
 
+        if *nested_count >= MAX_NESTED_ARCHIVES {
+            report.nested_warnings.push(format!(
+                "nested archive count limit reached; skipping {}",
+                path.display()
+            ));
+            continue;
+        }
+        *nested_count += 1;
         let nested_dest = next_nested_dest(dest, &mut nested_index)?;
         if depth < MAX_NESTED_DEPTH - 1 {
-            extract_recursive(&path, &nested_dest, password, depth + 1, report)?;
+            extract_recursive_inner(
+                &path,
+                &nested_dest,
+                password,
+                depth + 1,
+                report,
+                nested_count,
+            )?;
         } else {
             report.nested_warnings.push(format!(
                 "nested archive depth limit reached; skipping {}",
@@ -86,16 +128,19 @@ pub fn extract_recursive(
 }
 
 fn collect_regular_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
-        let metadata = std::fs::symlink_metadata(&path)?;
-        if metadata.file_type().is_symlink() || junction::exists(&path).unwrap_or(false) {
-            continue;
-        }
-        if metadata.is_dir() {
-            collect_regular_files(&path, files)?;
-        } else if metadata.is_file() {
-            files.push(path);
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        for entry in std::fs::read_dir(current)? {
+            let path = entry?.path();
+            let metadata = std::fs::symlink_metadata(&path)?;
+            if metadata.file_type().is_symlink() || is_junction(&path)? {
+                continue;
+            }
+            if metadata.is_dir() {
+                pending.push(path);
+            } else if metadata.is_file() {
+                files.push(path);
+            }
         }
     }
     Ok(())
@@ -146,6 +191,23 @@ mod tests {
         let book = PasswordBook::new(&db);
         book.learn("x").unwrap();
         assert!(book.candidates().unwrap().contains(&"x".to_string()));
+    }
+
+    #[test]
+    fn junction_non_reparse_point_is_ignored() {
+        let result = map_junction_result(Err(std::io::Error::from_raw_os_error(
+            ERROR_NOT_A_REPARSE_POINT,
+        )))
+        .unwrap();
+
+        assert!(!result);
+    }
+
+    #[test]
+    fn junction_io_error_is_propagated() {
+        let error = map_junction_result(Err(std::io::Error::from_raw_os_error(5))).unwrap_err();
+
+        assert!(matches!(error, LiquiModError::Io(_)));
     }
 
     fn write_zip(path: &Path, files: &[(&str, &[u8])]) {
@@ -226,7 +288,7 @@ mod tests {
             nested_warnings: Vec::new(),
         };
 
-        extract_recursive(&outer, dest.path(), None, 0, &mut report).unwrap();
+        extract_recursive(&outer, dest.path(), None, &mut report).unwrap();
 
         assert_eq!(
             std::fs::read_to_string(dest.path().join("__nested_0/inner.txt")).unwrap(),
@@ -244,7 +306,7 @@ mod tests {
             nested_warnings: Vec::new(),
         };
 
-        extract_recursive(&archive, dest.path(), None, 0, &mut report).unwrap();
+        extract_recursive(&archive, dest.path(), None, &mut report).unwrap();
 
         let mut layer_dest = dest.path().to_path_buf();
         for level in 1..=5 {
@@ -263,6 +325,64 @@ mod tests {
     }
 
     #[test]
+    fn nested_archive_count_limit_skips_after_limit() {
+        let source = tempfile::tempdir().unwrap();
+        let archive_count = MAX_NESTED_ARCHIVES as usize + 1;
+        let nested_archives: Vec<Vec<u8>> = (0..archive_count)
+            .map(|index| zip_bytes(&[("marker.txt", format!("nested-{index}").as_bytes())]))
+            .collect();
+        let names: Vec<String> = (0..archive_count)
+            .map(|index| format!("inner-{index}.zip"))
+            .collect();
+        let files: Vec<(&str, &[u8])> = names
+            .iter()
+            .zip(nested_archives.iter())
+            .map(|(name, contents)| (name.as_str(), contents.as_slice()))
+            .collect();
+        let archive = source.path().join("outer.zip");
+        write_zip(&archive, &files);
+        let dest = tempfile::tempdir().unwrap();
+        let mut report = ExtractReport {
+            nested_warnings: Vec::new(),
+        };
+
+        extract_recursive(&archive, dest.path(), None, &mut report).unwrap();
+
+        let extracted = (0..MAX_NESTED_ARCHIVES as usize)
+            .filter(|index| dest.path().join(format!("__nested_{index}/marker.txt")).is_file())
+            .count();
+        assert_eq!(extracted, MAX_NESTED_ARCHIVES as usize);
+        assert!(!dest
+            .path()
+            .join(format!("__nested_{MAX_NESTED_ARCHIVES}"))
+            .exists());
+        assert!(report
+            .nested_warnings
+            .iter()
+            .any(|warning| warning.contains("archive count limit")));
+    }
+
+    #[test]
+    fn deep_directory_scan_does_not_recurse() {
+        let source = tempfile::tempdir().unwrap();
+        let nested_path = format!("{}/marker.txt", vec!["dir"; 100].join("/"));
+        let archive = source.path().join("outer.zip");
+        write_zip(&archive, &[(nested_path.as_str(), b"deep")]);
+        let dest = tempfile::tempdir().unwrap();
+        let mut report = ExtractReport {
+            nested_warnings: Vec::new(),
+        };
+
+        extract_recursive(&archive, dest.path(), None, &mut report).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.path().join(nested_path)).unwrap(),
+            "deep"
+        );
+        assert!(report.nested_warnings.is_empty());
+    }
+
+    #[test]
     fn non_archive_files_are_ignored() {
         let source = tempfile::tempdir().unwrap();
         let archive = source.path().join("outer.zip");
@@ -272,7 +392,7 @@ mod tests {
             nested_warnings: Vec::new(),
         };
 
-        extract_recursive(&archive, dest.path(), None, 0, &mut report).unwrap();
+        extract_recursive(&archive, dest.path(), None, &mut report).unwrap();
 
         assert!(!dest.path().join("__nested_0").exists());
         assert!(report.nested_warnings.is_empty());
