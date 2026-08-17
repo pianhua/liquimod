@@ -28,7 +28,7 @@
 <div class="flex flex-col h-screen">
   <TitleBar />
   {#if error}
-    <div class="glass radius-panel mx-5 mt-2 px-4 py-2 text-sm" style="color: var(--accent)">
+    <div class="glass radius-panel mx-5 mt-2 px-4 py-2 text-sm" style="color: var(--danger)">
       {error}
     </div>
   {/if}

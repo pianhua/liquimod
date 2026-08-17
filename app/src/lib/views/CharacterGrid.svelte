@@ -15,7 +15,7 @@
   let filtered = $derived(filterCharacters(characters, query));
 </script>
 
-<div class="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 p-5 overflow-y-auto h-full">
+<div class="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 p-5 overflow-y-auto flex-1 min-h-0">
   {#each filtered as c (c.internal_name)}
     <CharacterCard character={c} onclick={() => onselect(c)} />
   {/each}

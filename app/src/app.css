@@ -9,6 +9,7 @@
   --text-secondary: #6e6e73;
   --accent: #0a84ff;
   --accent-fill: rgba(10, 132, 255, 0.14);
+  --danger: #ff3b30;
   --shadow-soft:
     inset 0 0.5px 0 var(--glass-highlight),
     0 8px 24px rgba(0, 0, 0, 0.08),
@@ -25,6 +26,7 @@
     --text-secondary: #98989f;
     --accent: #409cff;
     --accent-fill: rgba(64, 156, 255, 0.16);
+    --danger: #ff453a;
     --shadow-soft:
       inset 0 0.5px 0 var(--glass-highlight),
       0 8px 24px rgba(0, 0, 0, 0.35),

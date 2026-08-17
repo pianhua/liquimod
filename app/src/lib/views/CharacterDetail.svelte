@@ -38,10 +38,14 @@
   }
 
   async function pickModsDir() {
-    const path = await open({ directory: true, title: "选择 3Dmigoto Mods 目录" });
-    if (typeof path === "string") {
-      await api.chooseModsDir(path);
-      onconfigured();
+    try {
+      const path = await open({ directory: true, title: "选择 3Dmigoto Mods 目录" });
+      if (typeof path === "string") {
+        await api.chooseModsDir(path);
+        onconfigured();
+      }
+    } catch (e) {
+      error = String(e);
     }
   }
 </script>
@@ -61,7 +65,7 @@
     </div>
   {/if}
   {#if error}
-    <p class="mx-5 mt-2 text-sm" style="color: var(--accent)">{error}</p>
+    <p class="mx-5 mt-2 text-sm" style="color: var(--danger)">{error}</p>
   {/if}
 
   <div class="flex flex-col gap-2 p-5 overflow-y-auto">
