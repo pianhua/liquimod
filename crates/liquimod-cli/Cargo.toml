@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 liquimod-core = { path = "../liquimod-core" }
 clap = { version = "4", features = ["derive"] }
+rpassword = "7.5.4"

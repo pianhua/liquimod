@@ -3,7 +3,7 @@ use liquimod_core::archive::install::{install_archive, InstallOutcome};
 use liquimod_core::deploy::Deployer;
 use liquimod_core::error::LiquiModError;
 use liquimod_core::library::Library;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, IsTerminal};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -29,12 +29,17 @@ enum Command {
         #[arg(long)]
         root: PathBuf,
     },
+    /// 安装归档文件
     Install {
+        /// 归档文件路径
         archive: PathBuf,
+        /// 库根目录
         #[arg(long)]
         root: PathBuf,
+        /// 密码（会进入 shell 历史；推荐省略此参数后交互输入）
         #[arg(long)]
         password: Option<String>,
+        /// 角色，默认值为 Others
         #[arg(long, default_value = "Others")]
         character: String,
     },
@@ -92,6 +97,10 @@ fn main() {
             eprintln!("error: archive requires a password; pass --password <pw>");
             std::process::exit(2);
         }
+        Err(CliError::PasswordCancelled) => {
+            eprintln!("error: password input cancelled");
+            std::process::exit(2);
+        }
         Err(CliError::Core(error)) => {
             eprintln!("error: {error}");
             std::process::exit(1);
@@ -102,17 +111,12 @@ fn main() {
 enum CliError {
     Core(LiquiModError),
     NeedsPassword,
+    PasswordCancelled,
 }
 
 impl From<LiquiModError> for CliError {
     fn from(error: LiquiModError) -> Self {
         Self::Core(error)
-    }
-}
-
-impl From<io::Error> for CliError {
-    fn from(error: io::Error) -> Self {
-        Self::Core(error.into())
     }
 }
 
@@ -203,13 +207,16 @@ fn install(
         return Err(CliError::NeedsPassword);
     }
 
-    eprint!("Password: ");
-    io::stderr().flush()?;
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let input = input.trim_end_matches(&['\r', '\n'][..]);
-    let outcome = install_archive(&library.db, &library, archive, character, Some(input))?;
+    let input = password_input(rpassword::prompt_password("Password: "))?;
+    let outcome = install_archive(&library.db, &library, archive, character, Some(&input))?;
     print_installation(outcome)
+}
+
+fn password_input(input: io::Result<String>) -> std::result::Result<String, CliError> {
+    match input {
+        Ok(password) if !password.is_empty() => Ok(password),
+        Ok(_) | Err(_) => Err(CliError::PasswordCancelled),
+    }
 }
 
 fn print_installation(outcome: InstallOutcome) -> std::result::Result<(), CliError> {
@@ -232,6 +239,7 @@ fn print_installation(outcome: InstallOutcome) -> std::result::Result<(), CliErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
 
     #[test]
     fn install_defaults_to_others_character() {
@@ -252,5 +260,34 @@ mod tests {
         assert_eq!(root, PathBuf::from("library"));
         assert_eq!(password, None);
         assert_eq!(character, "Others");
+    }
+
+    #[test]
+    fn empty_password_is_cancelled() {
+        assert!(matches!(
+            password_input(Ok(String::new())),
+            Err(CliError::PasswordCancelled)
+        ));
+    }
+
+    #[test]
+    fn eof_password_is_cancelled() {
+        let result = password_input(Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof")));
+        assert!(matches!(result, Err(CliError::PasswordCancelled)));
+    }
+
+    #[test]
+    fn install_help_describes_password_input() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("install")
+            .unwrap()
+            .render_help()
+            .to_string();
+
+        assert!(help.contains("归档文件路径"));
+        assert!(help.contains("--password"));
+        assert!(help.contains("shell 历史"));
+        assert!(help.contains("--character"));
     }
 }
