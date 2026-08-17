@@ -38,9 +38,13 @@ impl Database {
                id INTEGER PRIMARY KEY,
                op TEXT NOT NULL,
                payload TEXT NOT NULL,
-               finished INTEGER NOT NULL DEFAULT 0,
-               created_at INTEGER NOT NULL
-             );",
+                finished INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+              );
+              CREATE TABLE IF NOT EXISTS passwords (
+                value TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+              );",
         )?;
         Ok(Self { conn })
     }
@@ -128,6 +132,30 @@ impl Database {
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
+
+    pub fn add_password(&self, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO passwords (value) VALUES (?1)",
+            rusqlite::params![value],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_password(&self, value: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM passwords WHERE value = ?1",
+            rusqlite::params![value],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_passwords(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM passwords ORDER BY rowid")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
 }
 
 #[cfg(test)]
@@ -165,5 +193,16 @@ mod tests {
 
         db.op_finish(op).unwrap();
         assert!(db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn password_book_add_list_remove() {
+        let db = Database::open_in_memory().unwrap();
+        db.add_password("pw-a").unwrap();
+        db.add_password("pw-b").unwrap();
+        db.add_password("pw-a").unwrap();
+        assert_eq!(db.list_passwords().unwrap(), vec!["pw-a", "pw-b"]);
+        db.remove_password("pw-a").unwrap();
+        assert_eq!(db.list_passwords().unwrap(), vec!["pw-b"]);
     }
 }
