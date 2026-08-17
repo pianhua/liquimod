@@ -168,9 +168,11 @@ mod tests {
     }
 
     fn nested_zip(dir: &Path, layers: usize) -> PathBuf {
-        let mut contents = zip_bytes(&[("deepest.txt", b"deepest")]);
-        for _ in 1..layers {
-            contents = zip_bytes(&[("inner.zip", &contents)]);
+        let deepest_marker = format!("level{layers}.txt");
+        let mut contents = zip_bytes(&[(deepest_marker.as_str(), b"marker")]);
+        for level in (1..layers).rev() {
+            let marker = format!("level{level}.txt");
+            contents = zip_bytes(&[(marker.as_str(), b"marker"), ("inner.zip", &contents)]);
         }
         let path = dir.join("outer.zip");
         std::fs::write(&path, contents).unwrap();
@@ -244,9 +246,20 @@ mod tests {
 
         extract_recursive(&archive, dest.path(), None, 0, &mut report).unwrap();
 
-        assert!(!dest.path().join("__nested_4").exists());
-        assert_eq!(report.nested_warnings.len(), 1);
-        assert!(report.nested_warnings[0].contains("depth"));
+        let mut layer_dest = dest.path().to_path_buf();
+        for level in 1..=5 {
+            assert!(layer_dest.join(format!("level{level}.txt")).is_file());
+            if level < 5 {
+                layer_dest = layer_dest.join("__nested_0");
+            }
+        }
+        let sixth_dest = layer_dest.join("__nested_0");
+        assert!(!sixth_dest.exists());
+        assert!(!sixth_dest.join("level6.txt").exists());
+        assert!(report
+            .nested_warnings
+            .iter()
+            .any(|warning| warning.contains("depth limit")));
     }
 
     #[test]
