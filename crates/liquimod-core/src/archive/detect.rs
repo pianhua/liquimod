@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::error::{LiquiModError, Result};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveFormat {
     Zip,
     SevenZ,
@@ -12,7 +13,15 @@ pub enum ArchiveFormat {
 pub fn detect_format(path: &Path) -> Result<ArchiveFormat> {
     let mut buf = [0u8; 8];
     let mut file = std::fs::File::open(path)?;
-    let n = file.read(&mut buf)?;
+    let mut n = 0;
+    while n < buf.len() {
+        match file.read(&mut buf[n..]) {
+            Ok(0) => break,
+            Ok(m) => n += m,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
     let head = &buf[..n];
 
     if head.starts_with(&[0x50, 0x4B, 0x03, 0x04])

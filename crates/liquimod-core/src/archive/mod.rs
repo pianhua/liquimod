@@ -1,4 +1,5 @@
 pub mod detect;
+pub mod zip_extract;
 
 use crate::db::Database;
 use crate::error::Result;
