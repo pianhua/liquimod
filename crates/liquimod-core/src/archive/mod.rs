@@ -1,3 +1,5 @@
+pub mod detect;
+
 use crate::db::Database;
 use crate::error::Result;
 
