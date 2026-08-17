@@ -85,4 +85,19 @@ mod tests {
         let lib2 = Library::open(tmp.path()).unwrap();
         assert_eq!(lib2.list().unwrap().len(), 1);
     }
+
+    #[test]
+    fn scan_skips_files_and_invalid_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        fs::write(lib.layout.mods_root().join("loose.txt"), b"x").unwrap();
+        fs::write(lib.layout.character_dir("Firefly").join("note.txt"), b"x").unwrap();
+
+        let mods = lib.scan().unwrap();
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].character, "Firefly");
+        assert_eq!(mods[0].name, "Summer");
+    }
 }
