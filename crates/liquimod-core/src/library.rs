@@ -69,7 +69,12 @@ impl Library {
         }
         let dest = self.layout.mod_dir(character, name);
         std::fs::create_dir_all(&dest)?;
-        copy_dir_recursive(src, &dest)?;
+        let src_canon = src.canonicalize()?;
+        let dest_canon = dest.canonicalize()?;
+        if src_canon.starts_with(&dest_canon) || dest_canon.starts_with(&src_canon) {
+            return Err(crate::error::LiquiModError::InvalidName(name.into()));
+        }
+        copy_dir_recursive(&src_canon, &dest_canon)?;
         let rel = format!("mods/{}/{}", character, name);
         let id = self.db.upsert_mod(character, name, &rel)?;
         self.db.get_mod(id)
@@ -81,7 +86,12 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
         let entry = entry?;
         let from = entry.path();
         let to = dest.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        let ft = entry.file_type()?;
+        // 跳过符号链接，与 scan 策略一致
+        if ft.is_symlink() {
+            continue;
+        }
+        if ft.is_dir() {
             std::fs::create_dir_all(&to)?;
             copy_dir_recursive(&from, &to)?;
         } else {
@@ -134,6 +144,42 @@ mod tests {
 
         assert!(lib.add_folder(&src, "bad/name", "x").is_err());
         assert!(lib.add_folder(&src, "Firefly", "..").is_err());
+    }
+
+    #[test]
+    fn add_folder_rejects_overlapping_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(&tmp.path().join("lib")).unwrap();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "MyMod")).unwrap();
+        fs::write(lib.layout.mod_dir("Firefly", "MyMod").join("mod.ini"), b"x").unwrap();
+
+        // src 就是 dest
+        assert!(lib.add_folder(&lib.layout.mod_dir("Firefly", "MyMod"), "Firefly", "MyMod").is_err());
+        // src 是 dest 的祖先
+        assert!(lib.add_folder(&lib.layout.character_dir("Firefly"), "Firefly", "Sub").is_err());
+    }
+
+    #[cfg(windows)]
+    #[ignore = "需要创建符号链接的特权（开发者模式/管理员），有权限时用 --ignored 运行"]
+    #[test]
+    fn add_folder_skips_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(&tmp.path().join("lib")).unwrap();
+
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret.txt"), b"secret").unwrap();
+
+        let src = tmp.path().join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("mod.ini"), b"[Constants]").unwrap();
+        std::os::windows::fs::symlink_file(outside.join("secret.txt"), src.join("link.txt")).unwrap();
+
+        let entry = lib.add_folder(&src, "Firefly", "LinkTest").unwrap();
+        assert_eq!(entry.name, "LinkTest");
+        let dest = lib.layout.mod_dir("Firefly", "LinkTest");
+        assert!(dest.join("mod.ini").is_file());
+        assert!(!dest.join("link.txt").exists());
     }
 
     #[test]
