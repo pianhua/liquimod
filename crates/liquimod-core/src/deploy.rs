@@ -56,6 +56,17 @@ impl<'a> Deployer<'a> {
         self.library.db.op_finish(op)
     }
 
+    /// 删除 junction 并清理 junction crate 残留的空目录。
+    fn remove_junction(link: &Path) -> Result<()> {
+        junction::delete(link)
+            .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
+        if link.exists() {
+            std::fs::remove_dir(link)
+                .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
+        }
+        Ok(())
+    }
+
     pub fn disable(&self, id: i64) -> Result<()> {
         let entry = self.library.db.get_mod(id)?;
         if !entry.enabled {
@@ -64,15 +75,75 @@ impl<'a> Deployer<'a> {
         let op = self.library.db.op_begin("disable", &id.to_string())?;
         let link = self.mods_dir.join(Self::link_name(&entry));
         if junction::exists(&link).unwrap_or(false) {
-            junction::delete(&link)
-                .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
-        }
-        if link.exists() {
+            Self::remove_junction(&link)?;
+        } else if link.exists() {
             std::fs::remove_dir(&link)
                 .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
         }
         self.library.db.set_enabled(id, false)?;
         self.library.db.op_finish(op)
+    }
+
+    /// 让 Mods 目录与数据库启用状态一致。
+    /// 安全规则：只碰指向本仓库的 junction；用户自己放的目录/文件一律不动。
+    pub fn reconcile(&self) -> Result<()> {
+        let entries = self.library.db.list_mods()?;
+        let mut managed_links: Vec<String> = Vec::new();
+        for e in &entries {
+            let link = self.mods_dir.join(Self::link_name(e));
+            managed_links.push(Self::link_name(e));
+            let exists = junction::exists(&link).unwrap_or(false);
+            if e.enabled && !exists {
+                let target = self.library.layout.root.join(&e.rel_path);
+                junction::create(&target, &link)
+                    .map_err(|err| crate::error::LiquiModError::Junction(err.to_string()))?;
+            } else if !e.enabled && exists {
+                Self::remove_junction(&link)?;
+            }
+        }
+        // 清理指向本仓库、但数据库已无记录的孤儿 junction
+        if self.mods_dir.is_dir() {
+            for item in std::fs::read_dir(&self.mods_dir)? {
+                let item = item?;
+                let name = item.file_name().to_string_lossy().into_owned();
+                if managed_links.contains(&name) {
+                    continue;
+                }
+                let path = item.path();
+                if junction::exists(&path).unwrap_or(false) {
+                    if let Ok(target) = junction::get_target(&path) {
+                        if target.starts_with(&self.library.layout.root) {
+                            Self::remove_junction(&path)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 返回每个受管 mod 与其部署状态是否一致。
+    pub fn status(&self) -> Result<Vec<(ModEntry, bool)>> {
+        let mut out = Vec::new();
+        for e in self.library.db.list_mods()? {
+            let link = self.mods_dir.join(Self::link_name(&e));
+            let actual = junction::exists(&link).unwrap_or(false);
+            out.push((e.clone(), actual == e.enabled));
+        }
+        Ok(out)
+    }
+
+    /// 启动时调用：存在未完成的操作日志 → 全量对账（操作均幂等），然后结清日志。
+    pub fn recover(&self) -> Result<()> {
+        let pending = self.library.db.pending_ops()?;
+        if pending.is_empty() {
+            return Ok(());
+        }
+        self.reconcile()?;
+        for (op_id, _, _) in pending {
+            self.library.db.op_finish(op_id)?;
+        }
+        Ok(())
     }
 }
 
@@ -136,5 +207,63 @@ mod tests {
         let d = Deployer::new(&lib, &mods_dir);
         assert!(d.enable(entry.id).is_err());
         assert!(!lib.db.get_mod(entry.id).unwrap().enabled);
+    }
+
+    #[test]
+    fn reconcile_fixes_drift_and_ignores_foreign_content() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        fs::create_dir_all(lib.layout.mod_dir("Acheron", "Black")).unwrap();
+        let mods = lib.scan().unwrap();
+        let firefly = mods.iter().find(|m| m.character == "Firefly").unwrap().clone();
+        let acheron = mods.iter().find(|m| m.character == "Acheron").unwrap().clone();
+
+        let d = Deployer::new(&lib, &mods_dir);
+        d.enable(firefly.id).unwrap();
+        d.enable(acheron.id).unwrap();
+
+        junction::delete(mods_dir.join(Deployer::link_name(&acheron))).unwrap();
+        fs::remove_dir(mods_dir.join(Deployer::link_name(&acheron))).unwrap();
+        fs::create_dir_all(mods_dir.join("MyOwnMod")).unwrap();
+        fs::write(mods_dir.join("readme.txt"), b"hi").unwrap();
+
+        d.reconcile().unwrap();
+
+        assert!(junction::exists(&mods_dir.join(Deployer::link_name(&acheron))).unwrap());
+        assert!(mods_dir.join("MyOwnMod").is_dir());
+        assert!(mods_dir.join("readme.txt").is_file());
+
+        let st = d.status().unwrap();
+        assert!(st.iter().all(|(_, ok)| *ok));
+    }
+
+    #[test]
+    fn status_detects_missing_junction() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let d = Deployer::new(&lib, &mods_dir);
+        d.enable(entry.id).unwrap();
+        junction::delete(mods_dir.join(Deployer::link_name(&entry))).unwrap();
+        fs::remove_dir(mods_dir.join(Deployer::link_name(&entry))).unwrap();
+        let st = d.status().unwrap();
+        assert_eq!(st.len(), 1);
+        assert!(!st[0].1);
+    }
+
+    #[test]
+    fn recover_completes_pending_ops() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+
+        lib.db.op_begin("enable", &entry.id.to_string()).unwrap();
+        lib.db.set_enabled(entry.id, true).unwrap();
+
+        let d = Deployer::new(&lib, &mods_dir);
+        d.recover().unwrap();
+
+        assert!(lib.db.pending_ops().unwrap().is_empty());
+        assert!(junction::exists(&mods_dir.join(Deployer::link_name(&entry))).unwrap());
     }
 }
