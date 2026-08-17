@@ -19,9 +19,10 @@ pub struct Hsr {
 
 impl Hsr {
     pub fn new() -> Self {
-        let raw: Vec<RawCharacter> =
-            serde_json::from_str(include_str!("../../../../assets/hsr/characters.json"))
-                .expect("assets/hsr/characters.json must be valid JSON");
+        let raw: Vec<RawCharacter> = serde_json::from_str(include_str!(
+            "../../assets/hsr/characters.json"
+        ))
+        .expect("assets/hsr/characters.json must be valid JSON; vendored data is guarded by tests");
         Self {
             characters: raw
                 .into_iter()
@@ -58,6 +59,7 @@ impl Game for Hsr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::path::Path;
 
     #[test]
@@ -65,11 +67,17 @@ mod tests {
         let hsr = Hsr::new();
         assert_eq!(hsr.id(), "hsr");
         assert!(hsr.characters().len() > 50, "expected full HSR roster");
+        let mut internal_names = HashSet::new();
         for c in hsr.characters() {
             assert!(!c.internal_name.is_empty());
             assert!(!c.display_name.is_empty());
             assert!(!c.image.is_empty());
             assert!(!c.internal_name.contains(['/', '\\']));
+            assert!(
+                internal_names.insert(&c.internal_name),
+                "duplicate internal name {}",
+                c.internal_name
+            );
         }
     }
 
