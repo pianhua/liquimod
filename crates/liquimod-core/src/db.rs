@@ -1,0 +1,134 @@
+use crate::error::{LiquiModError, Result};
+use crate::models::ModEntry;
+use rusqlite::Connection;
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+pub struct Database {
+    conn: Connection,
+}
+
+pub fn now_unix() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+}
+
+impl Database {
+    pub fn open(path: &Path) -> Result<Self> {
+        let conn = Connection::open(path)?;
+        Self::init(conn)
+    }
+
+    pub fn open_in_memory() -> Result<Self> {
+        Self::init(Connection::open_in_memory()?)
+    }
+
+    fn init(conn: Connection) -> Result<Self> {
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             CREATE TABLE IF NOT EXISTS mods (
+               id INTEGER PRIMARY KEY,
+               character TEXT NOT NULL,
+               name TEXT NOT NULL,
+               rel_path TEXT NOT NULL,
+               enabled INTEGER NOT NULL DEFAULT 0,
+               installed_at INTEGER NOT NULL,
+               UNIQUE(character, name)
+             );
+             CREATE TABLE IF NOT EXISTS op_log (
+               id INTEGER PRIMARY KEY,
+               op TEXT NOT NULL,
+               payload TEXT NOT NULL,
+               finished INTEGER NOT NULL DEFAULT 0,
+               created_at INTEGER NOT NULL
+             );",
+        )?;
+        Ok(Self { conn })
+    }
+
+    pub fn upsert_mod(&self, character: &str, name: &str, rel_path: &str) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO mods (character, name, rel_path, installed_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(character, name) DO UPDATE SET rel_path = excluded.rel_path",
+            rusqlite::params![character, name, rel_path, now_unix()],
+        )?;
+        let id = self.conn.query_row(
+            "SELECT id FROM mods WHERE character = ?1 AND name = ?2",
+            rusqlite::params![character, name],
+            |r| r.get(0),
+        )?;
+        Ok(id)
+    }
+
+    pub fn set_enabled(&self, id: i64, enabled: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE mods SET enabled = ?1 WHERE id = ?2",
+            rusqlite::params![enabled as i64, id],
+        )?;
+        Ok(())
+    }
+
+    fn row_to_entry(r: &rusqlite::Row) -> rusqlite::Result<ModEntry> {
+        Ok(ModEntry {
+            id: r.get(0)?,
+            character: r.get(1)?,
+            name: r.get(2)?,
+            rel_path: r.get(3)?,
+            enabled: r.get::<_, i64>(4)? != 0,
+            installed_at: r.get(5)?,
+        })
+    }
+
+    pub fn list_mods(&self) -> Result<Vec<ModEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, character, name, rel_path, enabled, installed_at FROM mods ORDER BY character, name",
+        )?;
+        let rows = stmt.query_map([], Self::row_to_entry)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_mod(&self, id: i64) -> Result<ModEntry> {
+        self.conn
+            .query_row(
+                "SELECT id, character, name, rel_path, enabled, installed_at FROM mods WHERE id = ?1",
+                rusqlite::params![id],
+                Self::row_to_entry,
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => LiquiModError::ModNotFound(id.to_string()),
+                other => LiquiModError::Db(other),
+            })
+    }
+
+    pub fn remove_mod(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM mods WHERE id = ?1", rusqlite::params![id])?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upsert_list_and_remove() {
+        let db = Database::open_in_memory().unwrap();
+        let id = db.upsert_mod("Firefly", "Summer", "mods/Firefly/Summer").unwrap();
+        let id2 = db.upsert_mod("Firefly", "Summer", "mods/Firefly/Summer").unwrap();
+        assert_eq!(id, id2);
+
+        db.set_enabled(id, true).unwrap();
+        let mods = db.list_mods().unwrap();
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].character, "Firefly");
+        assert_eq!(mods[0].name, "Summer");
+        assert!(mods[0].enabled);
+
+        let got = db.get_mod(id).unwrap();
+        assert_eq!(got.rel_path, "mods/Firefly/Summer");
+
+        db.remove_mod(id).unwrap();
+        assert!(db.list_mods().unwrap().is_empty());
+        assert!(matches!(db.get_mod(id), Err(crate::error::LiquiModError::ModNotFound(_))));
+    }
+}
