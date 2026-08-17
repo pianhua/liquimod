@@ -4,6 +4,8 @@ use crate::models::ModEntry;
 use crate::paths::{is_valid_segment, LibraryLayout};
 use std::path::{Component, Path, PathBuf};
 
+pub(crate) const INSTALLING_MARKER: &str = ".liquimod-installing";
+
 pub struct Library {
     pub layout: LibraryLayout,
     pub db: Database,
@@ -14,6 +16,7 @@ impl Library {
         let layout = LibraryLayout::new(root);
         std::fs::create_dir_all(layout.mods_root())?;
         let db = Database::open(&layout.db_path())?;
+        clean_temp_dirs(&layout.root.join("tmp"))?;
         recover_pending_installs(&layout, &db)?;
         Ok(Self { layout, db })
     }
@@ -21,6 +24,7 @@ impl Library {
     pub fn open(root: &Path) -> Result<Self> {
         let layout = LibraryLayout::new(root);
         let db = Database::open(&layout.db_path())?;
+        clean_temp_dirs(&layout.root.join("tmp"))?;
         recover_pending_installs(&layout, &db)?;
         Ok(Self { layout, db })
     }
@@ -110,13 +114,18 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
 }
 
 fn recover_pending_installs(layout: &LibraryLayout, db: &Database) -> Result<()> {
-    clean_temp_dirs(&layout.root.join("tmp"))?;
     for (op_id, op, payload) in db.pending_ops()? {
         if op != "install" {
             continue;
         }
         if let Some(destination) = install_destination(layout, &payload) {
-            remove_path_if_present(&destination)?;
+            let marker = destination.join(INSTALLING_MARKER);
+            if matches!(
+                std::fs::symlink_metadata(marker),
+                Ok(metadata) if metadata.file_type().is_file()
+            ) {
+                remove_path_if_present(&destination)?;
+            }
         }
         db.remove_op(op_id)?;
     }
@@ -307,6 +316,30 @@ mod tests {
     }
 
     #[test]
+    fn init_cleans_temp_dirs_on_startup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("library");
+        let temp_dir = root.join("tmp/liquimod-startup");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        Library::init(&root).unwrap();
+
+        assert!(!temp_dir.exists());
+    }
+
+    #[test]
+    fn scan_does_not_clean_active_temp_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let temp_dir = tmp.path().join("tmp/liquimod-active");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        lib.scan().unwrap();
+
+        assert!(temp_dir.exists());
+    }
+
+    #[test]
     fn open_recovers_interrupted_install() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("library");
@@ -314,6 +347,7 @@ mod tests {
         let destination = lib.layout.mod_dir("Firefly", "CrashedMod");
         std::fs::create_dir_all(&destination).unwrap();
         std::fs::write(destination.join("partial.txt"), b"partial").unwrap();
+        std::fs::write(destination.join(".liquimod-installing"), b"").unwrap();
         let temp_dir = root.join("tmp/liquimod-crashed");
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::fs::write(temp_dir.join("partial.txt"), b"partial").unwrap();
@@ -326,6 +360,26 @@ mod tests {
 
         assert!(!destination.exists());
         assert!(!temp_dir.exists());
+        assert!(recovered.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn open_preserves_unmarked_interrupted_install_destination() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("library");
+        let lib = Library::init(&root).unwrap();
+        let destination = lib.layout.mod_dir("Firefly", "ManualMod");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(destination.join("partial.txt"), b"partial").unwrap();
+        lib.db
+            .op_begin("install", "mods/Firefly/ManualMod")
+            .unwrap();
+        drop(lib);
+
+        let recovered = Library::open(&root).unwrap();
+
+        assert!(destination.exists());
+        assert!(destination.join("partial.txt").is_file());
         assert!(recovered.db.pending_ops().unwrap().is_empty());
     }
 }

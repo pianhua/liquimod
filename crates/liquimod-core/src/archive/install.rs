@@ -20,7 +20,8 @@ pub enum InstallOutcome {
 }
 
 /// Installs an archive into the library. Destination ownership checking, copying, and rollback are
-/// serialized within this process; callers from separate processes are not synchronized.
+/// protected by a process-local mutex; simultaneous operations from multiple processes on the same
+/// library are outside the protection scope because the desktop application is single-instance.
 /// Successful nested extraction keeps both each `__nested_<n>/` result and the original nested
 /// archive file under the installed content root.
 pub fn install_archive(
@@ -101,6 +102,9 @@ pub fn install_archive(
         Err(error) => return Err(error.into()),
     }
     let op = db.op_begin("install", &format!("mods/{character}/{name}"))?;
+    let marker = destination.join(crate::library::INSTALLING_MARKER);
+    std::fs::create_dir_all(&destination)?;
+    std::fs::File::create(&marker)?;
     let entry = match library.add_folder(&content_root, character, &name) {
         Ok(entry) => entry,
         Err(error) => {
@@ -108,20 +112,21 @@ pub fn install_archive(
             return Err(error);
         }
     };
-    if let Some(password) = password {
-        if let Err(error) = password_book.learn(&password) {
-            let _ = std::fs::remove_dir_all(&destination);
-            return Err(error);
-        }
-    }
     if let Err(error) = db.op_finish(op) {
-        let _ = std::fs::remove_dir_all(&destination);
+        let _ = library.db.remove_mod(entry.id);
         return Err(error);
+    }
+    let _ = std::fs::remove_file(&marker);
+    let mut warnings = report.nested_warnings;
+    if let Some(password) = password {
+        if password_book.learn(&password).is_err() {
+            warnings.push("密码未记住".to_string());
+        }
     }
     Ok(InstallOutcome::Installed {
         mod_id: entry.id,
         name: entry.name,
-        warnings: report.nested_warnings,
+        warnings,
     })
 }
 
@@ -252,6 +257,11 @@ mod tests {
             .mod_dir("Firefly", "PlainMod")
             .join("mod.ini")
             .is_file());
+        assert!(!library
+            .layout
+            .mod_dir("Firefly", "PlainMod")
+            .join(".liquimod-installing")
+            .exists());
         assert_eq!(library.list().unwrap().len(), 1);
         assert!(install_dirs(&library).is_empty());
     }
@@ -391,6 +401,41 @@ mod tests {
             .candidates()
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn learn_failure_is_reported_as_warning_after_install() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("SecretMod.zip");
+        write_zip(&archive, &[("secret.txt", b"secret")], Some("correct"));
+        let connection = rusqlite::Connection::open(library.layout.db_path()).unwrap();
+        connection
+            .execute_batch(
+                "DROP TABLE passwords;
+                 CREATE VIEW passwords AS
+                 SELECT CAST(NULL AS TEXT) AS value,
+                        CAST(NULL AS INTEGER) AS rowid
+                 WHERE 0;",
+            )
+            .unwrap();
+        drop(connection);
+
+        let outcome =
+            install_archive(&library.db, &library, &archive, "Others", Some("correct")).unwrap();
+
+        let InstallOutcome::Installed { warnings, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("密码未记住")));
+        assert!(library
+            .layout
+            .mod_dir("Others", "SecretMod")
+            .join("secret.txt")
+            .is_file());
+        assert_eq!(library.list().unwrap().len(), 1);
+        assert!(library.db.pending_ops().unwrap().is_empty());
     }
 
     #[test]
