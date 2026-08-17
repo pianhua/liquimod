@@ -1185,7 +1185,7 @@ git commit -m "feat(app): 液态玻璃主界面（角色网格 + Mod 启停）"
 - Create: `app/src/lib/views/CharacterGrid.test.ts`
 - Create: `app/src/lib/views/CharacterDetail.test.ts`
 
-- [ ] **Step 1: 装测试依赖 + 脚本**
+- [x] **Step 1: 装测试依赖 + 脚本**
 
 ```powershell
 cd app
@@ -1211,7 +1211,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 2: api.test.ts（纯函数）**
+- [x] **Step 2: api.test.ts（纯函数）**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -1244,7 +1244,7 @@ describe("portraitUrl", () => {
 
 注：`filterCharacters(list, "fire").map(...)` 写法若 TS 抱怨则拆两行。
 
-- [ ] **Step 3: CharacterGrid.test.ts**
+- [x] **Step 3: CharacterGrid.test.ts**
 
 ```ts
 import { render, screen, fireEvent } from "@testing-library/svelte";
@@ -1281,7 +1281,7 @@ describe("CharacterGrid", () => {
 });
 ```
 
-- [ ] **Step 4: CharacterDetail.test.ts**
+- [x] **Step 4: CharacterDetail.test.ts**
 
 ```ts
 import { render, screen, fireEvent, waitFor } from "@testing-library/svelte";
@@ -1352,7 +1352,7 @@ describe("CharacterDetail", () => {
 });
 ```
 
-- [ ] **Step 5: 全量验收（全部必须绿）**
+- [x] **Step 5: 全量验收（全部必须绿）**
 
 ```powershell
 cargo build --workspace
@@ -1374,7 +1374,7 @@ npm run tauri dev
 ```
 检查项：无边框窗口可拖拽/最小化/关闭；角色网格显示立绘；搜索过滤；点角色进详情；配置 Mods 目录后开关可启停（文件系统出现/消失 Junction）；系统明暗切换时界面跟随。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add app
