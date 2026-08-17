@@ -14,6 +14,15 @@ fn archive_err(path: &Path, source: impl std::error::Error + Send + Sync + 'stat
     }
 }
 
+/// 解压 zip 归档到 `dest`，支持 AES 与 ZipCrypto 加密条目（`password` 为 None 时遇加密条目返回
+/// [`LiquiModError::PasswordRequired`]，错误密码返回 [`LiquiModError::WrongPassword`]）。
+///
+/// 失败语义：
+/// - 解压非原子：中途失败时 `dest` 可能残留部分已解压文件，清理由调用方负责（Task 7 编排层处理）。
+/// - ZipCrypto 加密的归档使用弱校验字节验证密码，错误密码有约 1/256 概率通过校验，
+///   随后在数据阶段以 CRC/数据错误冒泡为 [`LiquiModError::Archive`] 而非 [`LiquiModError::WrongPassword`]。
+/// - [`ZipFile::enclosed_name()`](zip::read::ZipFile::enclosed_name) 返回 None 的条目
+///   （如 zip-slip 路径）会被静默跳过。
 pub fn extract_zip(archive_path: &Path, dest: &Path, password: Option<&str>) -> Result<()> {
     let file = File::open(archive_path).map_err(|e| archive_err(archive_path, e))?;
     let mut archive = ZipArchive::new(file).map_err(|e| archive_err(archive_path, e))?;
@@ -133,6 +142,41 @@ mod tests {
             std::fs::read_to_string(dest.path().join("secret.txt")).unwrap(),
             "s3cret"
         );
+    }
+
+    #[test]
+    fn mixed_plain_and_encrypted_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mixed.zip");
+        let file = File::create(&path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file("plain.txt", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"open").unwrap();
+        writer
+            .start_file(
+                "secret.txt",
+                SimpleFileOptions::default().with_aes_encryption(zip::AesMode::Aes256, "pw"),
+            )
+            .unwrap();
+        writer.write_all(b"hidden").unwrap();
+        writer.finish().unwrap();
+
+        let dest = tempfile::tempdir().unwrap();
+        extract_zip(&path, dest.path(), Some("pw")).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dest.path().join("plain.txt")).unwrap(),
+            "open"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.path().join("secret.txt")).unwrap(),
+            "hidden"
+        );
+
+        let dest2 = tempfile::tempdir().unwrap();
+        let err = extract_zip(&path, dest2.path(), None).unwrap_err();
+        assert!(matches!(err, LiquiModError::PasswordRequired(_)));
     }
 
     #[test]
