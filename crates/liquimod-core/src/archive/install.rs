@@ -383,9 +383,8 @@ mod tests {
         let archive = tmp.path().join("SecretMod.zip");
         write_zip(&archive, &[("secret.txt", b"secret")], Some("correct"));
 
-        let error =
-            install_archive(&library.db, &library, &archive, "bad/name", Some("correct"))
-                .unwrap_err();
+        let error = install_archive(&library.db, &library, &archive, "bad/name", Some("correct"))
+            .unwrap_err();
 
         assert!(matches!(error, LiquiModError::InvalidName(_)));
         assert!(PasswordBook::new(&library.db)

@@ -379,7 +379,11 @@ mod tests {
         extract_recursive(&archive, dest.path(), None, &mut report).unwrap();
 
         let extracted = (0..MAX_NESTED_ARCHIVES as usize)
-            .filter(|index| dest.path().join(format!("__nested_{index}/marker.txt")).is_file())
+            .filter(|index| {
+                dest.path()
+                    .join(format!("__nested_{index}/marker.txt"))
+                    .is_file()
+            })
             .count();
         assert_eq!(extracted, MAX_NESTED_ARCHIVES as usize);
         assert!(!dest

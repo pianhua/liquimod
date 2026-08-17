@@ -56,7 +56,11 @@ mod tests {
 
     #[test]
     fn detects_zip_by_magic() {
-        for magic in [&[0x50, 0x4B, 0x03, 0x04][..], &[0x50, 0x4B, 0x05, 0x06][..], &[0x50, 0x4B, 0x07, 0x08][..]] {
+        for magic in [
+            &[0x50, 0x4B, 0x03, 0x04][..],
+            &[0x50, 0x4B, 0x05, 0x06][..],
+            &[0x50, 0x4B, 0x07, 0x08][..],
+        ] {
             let (_dir, path) = write_file("a.bin", magic);
             assert!(matches!(detect_format(&path).unwrap(), ArchiveFormat::Zip));
         }
@@ -65,7 +69,10 @@ mod tests {
     #[test]
     fn detects_7z_by_magic() {
         let (_dir, path) = write_file("a.bin", &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]);
-        assert!(matches!(detect_format(&path).unwrap(), ArchiveFormat::SevenZ));
+        assert!(matches!(
+            detect_format(&path).unwrap(),
+            ArchiveFormat::SevenZ
+        ));
     }
 
     #[test]
@@ -97,6 +104,9 @@ mod tests {
     #[test]
     fn extension_is_not_trusted() {
         let (_dir, path) = write_file("x.zip", &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]);
-        assert!(matches!(detect_format(&path).unwrap(), ArchiveFormat::SevenZ));
+        assert!(matches!(
+            detect_format(&path).unwrap(),
+            ArchiveFormat::SevenZ
+        ));
     }
 }

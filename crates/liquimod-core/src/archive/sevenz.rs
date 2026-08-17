@@ -4,7 +4,10 @@ use sevenz_rust2::{decompress_file, decompress_file_with_password, Error, Passwo
 
 use crate::error::{LiquiModError, Result};
 
-fn archive_err(path: &Path, source: impl std::error::Error + Send + Sync + 'static) -> LiquiModError {
+fn archive_err(
+    path: &Path,
+    source: impl std::error::Error + Send + Sync + 'static,
+) -> LiquiModError {
     LiquiModError::Archive {
         path: path.to_path_buf(),
         source: Box::new(source),

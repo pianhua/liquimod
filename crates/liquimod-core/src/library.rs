@@ -222,8 +222,16 @@ mod tests {
 
         let entry = lib.add_folder(&src, "Firefly", "MyMod").unwrap();
         assert_eq!(entry.character, "Firefly");
-        assert!(lib.layout.mod_dir("Firefly", "MyMod").join("mod.ini").is_file());
-        assert!(lib.layout.mod_dir("Firefly", "MyMod").join("textures/a.dds").is_file());
+        assert!(lib
+            .layout
+            .mod_dir("Firefly", "MyMod")
+            .join("mod.ini")
+            .is_file());
+        assert!(lib
+            .layout
+            .mod_dir("Firefly", "MyMod")
+            .join("textures/a.dds")
+            .is_file());
 
         assert!(lib.add_folder(&src, "bad/name", "x").is_err());
         assert!(lib.add_folder(&src, "Firefly", "..").is_err());
@@ -237,9 +245,13 @@ mod tests {
         fs::write(lib.layout.mod_dir("Firefly", "MyMod").join("mod.ini"), b"x").unwrap();
 
         // src 就是 dest
-        assert!(lib.add_folder(&lib.layout.mod_dir("Firefly", "MyMod"), "Firefly", "MyMod").is_err());
+        assert!(lib
+            .add_folder(&lib.layout.mod_dir("Firefly", "MyMod"), "Firefly", "MyMod")
+            .is_err());
         // src 是 dest 的祖先
-        assert!(lib.add_folder(&lib.layout.character_dir("Firefly"), "Firefly", "Sub").is_err());
+        assert!(lib
+            .add_folder(&lib.layout.character_dir("Firefly"), "Firefly", "Sub")
+            .is_err());
     }
 
     #[cfg(windows)]
@@ -256,7 +268,8 @@ mod tests {
         let src = tmp.path().join("src");
         fs::create_dir_all(&src).unwrap();
         fs::write(src.join("mod.ini"), b"[Constants]").unwrap();
-        std::os::windows::fs::symlink_file(outside.join("secret.txt"), src.join("link.txt")).unwrap();
+        std::os::windows::fs::symlink_file(outside.join("secret.txt"), src.join("link.txt"))
+            .unwrap();
 
         let entry = lib.add_folder(&src, "Firefly", "LinkTest").unwrap();
         assert_eq!(entry.name, "LinkTest");

@@ -24,11 +24,7 @@ impl LibraryLayout {
 }
 
 pub fn is_valid_segment(s: &str) -> bool {
-    !s.is_empty()
-        && s != "."
-        && s != ".."
-        && !s.contains(['/', '\\'])
-        && !s.ends_with([' ', '.'])
+    !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\']) && !s.ends_with([' ', '.'])
 }
 
 #[cfg(test)]
@@ -40,8 +36,17 @@ mod tests {
         let l = LibraryLayout::new("C:/lib");
         assert_eq!(l.mods_root(), PathBuf::from("C:/lib").join("mods"));
         assert_eq!(l.db_path(), PathBuf::from("C:/lib").join("liquimod.db"));
-        assert_eq!(l.character_dir("Firefly"), PathBuf::from("C:/lib").join("mods").join("Firefly"));
-        assert_eq!(l.mod_dir("Firefly", "Summer"), PathBuf::from("C:/lib").join("mods").join("Firefly").join("Summer"));
+        assert_eq!(
+            l.character_dir("Firefly"),
+            PathBuf::from("C:/lib").join("mods").join("Firefly")
+        );
+        assert_eq!(
+            l.mod_dir("Firefly", "Summer"),
+            PathBuf::from("C:/lib")
+                .join("mods")
+                .join("Firefly")
+                .join("Summer")
+        );
     }
 
     #[test]

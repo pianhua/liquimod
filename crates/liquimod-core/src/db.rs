@@ -9,7 +9,10 @@ pub struct Database {
 }
 
 pub fn now_unix() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
 }
 
 impl Database {
@@ -105,7 +108,8 @@ impl Database {
     }
 
     pub fn remove_mod(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM mods WHERE id = ?1", rusqlite::params![id])?;
+        self.conn
+            .execute("DELETE FROM mods WHERE id = ?1", rusqlite::params![id])?;
         Ok(())
     }
 
@@ -174,8 +178,12 @@ mod tests {
     #[test]
     fn upsert_list_and_remove() {
         let db = Database::open_in_memory().unwrap();
-        let id = db.upsert_mod("Firefly", "Summer", "mods/Firefly/Summer").unwrap();
-        let id2 = db.upsert_mod("Firefly", "Summer", "mods/Firefly/Summer").unwrap();
+        let id = db
+            .upsert_mod("Firefly", "Summer", "mods/Firefly/Summer")
+            .unwrap();
+        let id2 = db
+            .upsert_mod("Firefly", "Summer", "mods/Firefly/Summer")
+            .unwrap();
         assert_eq!(id, id2);
 
         db.set_enabled(id, true).unwrap();
@@ -190,7 +198,10 @@ mod tests {
 
         db.remove_mod(id).unwrap();
         assert!(db.list_mods().unwrap().is_empty());
-        assert!(matches!(db.get_mod(id), Err(crate::error::LiquiModError::ModNotFound(_))));
+        assert!(matches!(
+            db.get_mod(id),
+            Err(crate::error::LiquiModError::ModNotFound(_))
+        ));
     }
 
     #[test]

@@ -10,7 +10,10 @@ pub struct Deployer<'a> {
 
 impl<'a> Deployer<'a> {
     pub fn new(library: &'a Library, mods_dir: &Path) -> Self {
-        Self { library, mods_dir: mods_dir.to_path_buf() }
+        Self {
+            library,
+            mods_dir: mods_dir.to_path_buf(),
+        }
     }
 
     /// 3Dmigoto Mods 目录中的链接名：角色--Mod名（确定性，避免跨角色重名冲突）
@@ -41,8 +44,7 @@ impl<'a> Deployer<'a> {
 
     /// 删除 junction 并清理 junction crate 残留的空目录。
     fn remove_junction(link: &Path) -> Result<()> {
-        junction::delete(link)
-            .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
+        junction::delete(link).map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
         if link.exists() {
             std::fs::remove_dir(link)
                 .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
@@ -219,8 +221,16 @@ mod tests {
         fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
         fs::create_dir_all(lib.layout.mod_dir("Acheron", "Black")).unwrap();
         let mods = lib.scan().unwrap();
-        let firefly = mods.iter().find(|m| m.character == "Firefly").unwrap().clone();
-        let acheron = mods.iter().find(|m| m.character == "Acheron").unwrap().clone();
+        let firefly = mods
+            .iter()
+            .find(|m| m.character == "Firefly")
+            .unwrap()
+            .clone();
+        let acheron = mods
+            .iter()
+            .find(|m| m.character == "Acheron")
+            .unwrap()
+            .clone();
 
         let d = Deployer::new(&lib, &mods_dir);
         d.enable(firefly.id).unwrap();
