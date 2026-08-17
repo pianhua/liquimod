@@ -24,7 +24,11 @@ impl LibraryLayout {
 }
 
 pub fn is_valid_segment(s: &str) -> bool {
-    !s.is_empty() && s != ".." && !s.contains(['/', '\\'])
+    !s.is_empty()
+        && s != "."
+        && s != ".."
+        && !s.contains(['/', '\\'])
+        && !s.ends_with([' ', '.'])
 }
 
 #[cfg(test)]
@@ -46,6 +50,9 @@ mod tests {
         assert!(!is_valid_segment("a/b"));
         assert!(!is_valid_segment("a\\b"));
         assert!(!is_valid_segment(".."));
+        assert!(!is_valid_segment("."));
+        assert!(!is_valid_segment("Firefly "));
+        assert!(!is_valid_segment("mod."));
         assert!(is_valid_segment("流萤 Firefly"));
     }
 }

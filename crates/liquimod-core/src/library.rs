@@ -58,6 +58,37 @@ impl Library {
         }
         self.db.list_mods()
     }
+
+    /// 把外部文件夹复制进仓库并收录索引。已存在同名 mod 则覆盖式合并。
+    pub fn add_folder(&self, src: &Path, character: &str, name: &str) -> Result<ModEntry> {
+        if !is_valid_segment(character) {
+            return Err(crate::error::LiquiModError::InvalidName(character.into()));
+        }
+        if !is_valid_segment(name) {
+            return Err(crate::error::LiquiModError::InvalidName(name.into()));
+        }
+        let dest = self.layout.mod_dir(character, name);
+        std::fs::create_dir_all(&dest)?;
+        copy_dir_recursive(src, &dest)?;
+        let rel = format!("mods/{}/{}", character, name);
+        let id = self.db.upsert_mod(character, name, &rel)?;
+        self.db.get_mod(id)
+    }
+}
+
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            std::fs::create_dir_all(&to)?;
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -84,6 +115,25 @@ mod tests {
 
         let lib2 = Library::open(tmp.path()).unwrap();
         assert_eq!(lib2.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn add_folder_copies_and_indexes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(&tmp.path().join("lib")).unwrap();
+
+        let src = tmp.path().join("download/MyMod");
+        fs::create_dir_all(src.join("textures")).unwrap();
+        fs::write(src.join("mod.ini"), b"[Constants]").unwrap();
+        fs::write(src.join("textures/a.dds"), b"dds").unwrap();
+
+        let entry = lib.add_folder(&src, "Firefly", "MyMod").unwrap();
+        assert_eq!(entry.character, "Firefly");
+        assert!(lib.layout.mod_dir("Firefly", "MyMod").join("mod.ini").is_file());
+        assert!(lib.layout.mod_dir("Firefly", "MyMod").join("textures/a.dds").is_file());
+
+        assert!(lib.add_folder(&src, "bad/name", "x").is_err());
+        assert!(lib.add_folder(&src, "Firefly", "..").is_err());
     }
 
     #[test]
