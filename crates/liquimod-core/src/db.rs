@@ -104,6 +104,30 @@ impl Database {
         self.conn.execute("DELETE FROM mods WHERE id = ?1", rusqlite::params![id])?;
         Ok(())
     }
+
+    pub fn op_begin(&self, op: &str, payload: &str) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO op_log (op, payload, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![op, payload, now_unix()],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn op_finish(&self, op_id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE op_log SET finished = 1 WHERE id = ?1",
+            rusqlite::params![op_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn pending_ops(&self) -> Result<Vec<(i64, String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, op, payload FROM op_log WHERE finished = 0 ORDER BY id")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
 }
 
 #[cfg(test)]
@@ -130,5 +154,16 @@ mod tests {
         db.remove_mod(id).unwrap();
         assert!(db.list_mods().unwrap().is_empty());
         assert!(matches!(db.get_mod(id), Err(crate::error::LiquiModError::ModNotFound(_))));
+    }
+
+    #[test]
+    fn op_log_lifecycle() {
+        let db = Database::open_in_memory().unwrap();
+        let op = db.op_begin("enable", "42").unwrap();
+        let pending = db.pending_ops().unwrap();
+        assert_eq!(pending, vec![(op, "enable".to_string(), "42".to_string())]);
+
+        db.op_finish(op).unwrap();
+        assert!(db.pending_ops().unwrap().is_empty());
     }
 }
