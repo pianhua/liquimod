@@ -32,24 +32,7 @@ impl<'a> Deployer<'a> {
         }
         let op = self.library.db.op_begin("enable", &id.to_string())?;
         let link = self.mods_dir.join(Self::link_name(&entry));
-        // 用 junction::exists 而非 Path::exists：后者会穿透 junction，悬空链接会被误判为不存在
-        if junction::exists(&link).unwrap_or(false) {
-            // 已是 junction（可能悬空）→ 先拆掉重建，保证指向正确 target
-            junction::delete(&link)
-                .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
-            if link.exists() {
-                std::fs::remove_dir(&link)
-                    .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
-            }
-        } else if link.symlink_metadata().is_ok() {
-            // 残留的非 junction 目录（崩溃残留）：仅在为空目录时移除，非空则报错（不碰用户数据）
-            std::fs::remove_dir(&link).map_err(|e| {
-                crate::error::LiquiModError::Junction(format!(
-                    "path occupied by non-junction entry: {} ({e})",
-                    link.display()
-                ))
-            })?;
-        }
+        Self::prepare_link(&link)?;
         junction::create(&target, &link)
             .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
         self.library.db.set_enabled(id, true)?;
@@ -63,6 +46,23 @@ impl<'a> Deployer<'a> {
         if link.exists() {
             std::fs::remove_dir(link)
                 .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// 创建 junction 前清理链接路径：已有 junction 拆旧重建（自愈悬空/错指），
+    /// 非 junction 的空目录移除，非空则报错（绝不碰用户数据）。
+    fn prepare_link(link: &Path) -> Result<()> {
+        // 用 junction::exists 而非 Path::exists：后者会穿透 junction，悬空链接会被误判为不存在
+        if junction::exists(link).unwrap_or(false) {
+            Self::remove_junction(link)?;
+        } else if link.symlink_metadata().is_ok() {
+            std::fs::remove_dir(link).map_err(|e| {
+                crate::error::LiquiModError::Junction(format!(
+                    "path occupied by non-junction entry: {} ({e})",
+                    link.display()
+                ))
+            })?;
         }
         Ok(())
     }
@@ -95,6 +95,10 @@ impl<'a> Deployer<'a> {
             let exists = junction::exists(&link).unwrap_or(false);
             if e.enabled && !exists {
                 let target = self.library.layout.root.join(&e.rel_path);
+                if !target.is_dir() {
+                    continue; // 库目录已消失：留给 scan 对账，跳过不报错
+                }
+                Self::prepare_link(&link)?;
                 junction::create(&target, &link)
                     .map_err(|err| crate::error::LiquiModError::Junction(err.to_string()))?;
             } else if !e.enabled && exists {
@@ -265,5 +269,46 @@ mod tests {
 
         assert!(lib.db.pending_ops().unwrap().is_empty());
         assert!(junction::exists(&mods_dir.join(Deployer::link_name(&entry))).unwrap());
+    }
+
+    #[test]
+    fn recover_heals_crashed_disable_leftover() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+
+        // 模拟 disable 在 junction::delete 之后、remove_dir 之前崩溃：
+        // DB 仍是 enabled=true、op 未结清、Mods 里留空目录
+        lib.db.set_enabled(entry.id, true).unwrap();
+        lib.db.op_begin("disable", &entry.id.to_string()).unwrap();
+        fs::create_dir_all(mods_dir.join(Deployer::link_name(&entry))).unwrap();
+
+        let d = Deployer::new(&lib, &mods_dir);
+        d.recover().unwrap();
+
+        assert!(junction::exists(&mods_dir.join(Deployer::link_name(&entry))).unwrap());
+        assert!(lib.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reconcile_removes_only_orphans_pointing_into_library() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+
+        // 孤儿 junction：指向本仓库，但数据库无记录
+        let orphan = mods_dir.join("Ghost--Mod");
+        junction::create(&lib.layout.mod_dir("Firefly", "Summer"), &orphan).unwrap();
+
+        // 用户自己的 junction：指向库外
+        let outside = _t.path().join("elsewhere");
+        fs::create_dir_all(&outside).unwrap();
+        let foreign = mods_dir.join("UserLink");
+        junction::create(&outside, &foreign).unwrap();
+
+        let d = Deployer::new(&lib, &mods_dir);
+        d.reconcile().unwrap();
+
+        assert!(!orphan.exists());
+        assert!(junction::exists(&foreign).unwrap());
     }
 }
