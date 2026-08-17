@@ -1,0 +1,12 @@
+[package]
+name = "liquimod-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thiserror = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+junction = "1"
+
+[dev-dependencies]
+tempfile = "3"
