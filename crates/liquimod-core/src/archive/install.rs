@@ -4,7 +4,10 @@ use crate::error::{LiquiModError, Result};
 use crate::library::Library;
 use crate::paths::is_valid_segment;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use uuid::Uuid;
+
+static INSTALL_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum InstallOutcome {
@@ -16,6 +19,8 @@ pub enum InstallOutcome {
     NeedsPassword,
 }
 
+/// Installs an archive into the library. Destination ownership checking, copying, and rollback are
+/// serialized within this process; callers from separate processes are not synchronized.
 pub fn install_archive(
     db: &Database,
     library: &Library,
@@ -77,6 +82,9 @@ pub fn install_archive(
     }
 
     let content_root = resolve_content_root(temp_dir.path())?;
+    let _install_lock = INSTALL_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let destination = if is_valid_segment(character) && is_valid_segment(&name) {
         Some(library.layout.mod_dir(character, &name))
     } else {
@@ -165,6 +173,8 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Barrier, Mutex};
+    use std::thread;
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
 
@@ -396,6 +406,59 @@ mod tests {
             .file_name()
             .to_string_lossy()
             .starts_with("__nested_")));
+    }
+
+    #[test]
+    fn concurrent_install_of_different_mods_succeeds() {
+        let (first_tmp, first_library) = setup();
+        let (second_tmp, second_library) = setup();
+        let first_archive = first_tmp.path().join("FirstMod.zip");
+        let second_archive = second_tmp.path().join("SecondMod.zip");
+        write_zip(&first_archive, &[("first.txt", b"first")], None);
+        write_zip(&second_archive, &[("second.txt", b"second")], None);
+        let first_library = Arc::new(Mutex::new(first_library));
+        let second_library = Arc::new(Mutex::new(second_library));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let first_handle = {
+            let library = Arc::clone(&first_library);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                let library = library.lock().unwrap();
+                install_archive(&library.db, &library, &first_archive, "Firefly", None)
+            })
+        };
+        let second_handle = {
+            let library = Arc::clone(&second_library);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                let library = library.lock().unwrap();
+                install_archive(&library.db, &library, &second_archive, "Others", None)
+            })
+        };
+
+        assert!(matches!(
+            first_handle.join().unwrap(),
+            Ok(InstallOutcome::Installed { .. })
+        ));
+        assert!(matches!(
+            second_handle.join().unwrap(),
+            Ok(InstallOutcome::Installed { .. })
+        ));
+        let first_library = first_library.lock().unwrap();
+        let second_library = second_library.lock().unwrap();
+        assert!(first_library
+            .layout
+            .mod_dir("Firefly", "FirstMod")
+            .join("first.txt")
+            .is_file());
+        assert!(second_library
+            .layout
+            .mod_dir("Others", "SecondMod")
+            .join("second.txt")
+            .is_file());
     }
 
     #[test]
