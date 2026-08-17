@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.28);
+  --glass-stroke: rgba(255, 255, 255, 0.45);
+  --glass-highlight: rgba(255, 255, 255, 0.7);
+  --surface: #f2f2f7;
+  --text: #1c1c1e;
+  --text-secondary: #6e6e73;
+  --accent: #0a84ff;
+  --accent-fill: rgba(10, 132, 255, 0.14);
+  --shadow-soft:
+    inset 0 0.5px 0 var(--glass-highlight),
+    0 8px 24px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-bg: rgba(28, 30, 42, 0.38);
+    --glass-stroke: rgba(255, 255, 255, 0.14);
+    --glass-highlight: rgba(255, 255, 255, 0.16);
+    --surface: #1a1b26;
+    --text: #f2f2f7;
+    --text-secondary: #98989f;
+    --accent: #409cff;
+    --accent-fill: rgba(64, 156, 255, 0.16);
+    --shadow-soft:
+      inset 0 0.5px 0 var(--glass-highlight),
+      0 8px 24px rgba(0, 0, 0, 0.35),
+      0 2px 6px rgba(0, 0, 0, 0.28);
+  }
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family:
+    "Segoe UI Variable",
+    "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei",
+    system-ui,
+    sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(28px) saturate(1.75);
+  -webkit-backdrop-filter: blur(28px) saturate(1.75);
+  border: 0.5px solid var(--glass-stroke);
+  box-shadow: var(--shadow-soft);
+}
+
+.radius-window { border-radius: 26px; }
+.radius-panel { border-radius: 20px; }
+.radius-card { border-radius: 18px; }
+.radius-pill { border-radius: 9999px; }
+
+.accent-text { color: var(--accent); }
+.accent-fill { background: var(--accent-fill); }
+.text-secondary { color: var(--text-secondary); }
