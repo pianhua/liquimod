@@ -120,6 +120,12 @@ impl From<LiquiModError> for CliError {
     }
 }
 
+impl From<io::Error> for CliError {
+    fn from(error: io::Error) -> Self {
+        Self::Core(error.into())
+    }
+}
+
 fn run(cli: Cli) -> std::result::Result<(), CliError> {
     match cli.cmd {
         Command::Init { root } => {
@@ -215,7 +221,16 @@ fn install(
 fn password_input(input: io::Result<String>) -> std::result::Result<String, CliError> {
     match input {
         Ok(password) if !password.is_empty() => Ok(password),
-        Ok(_) | Err(_) => Err(CliError::PasswordCancelled),
+        Ok(_) => Err(CliError::PasswordCancelled),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::UnexpectedEof | io::ErrorKind::Interrupted
+            ) =>
+        {
+            Err(CliError::PasswordCancelled)
+        }
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -274,6 +289,20 @@ mod tests {
     fn eof_password_is_cancelled() {
         let result = password_input(Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof")));
         assert!(matches!(result, Err(CliError::PasswordCancelled)));
+    }
+
+    #[test]
+    fn real_password_io_error_is_reported() {
+        let result = password_input(Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "permission denied",
+        )));
+
+        assert!(matches!(
+            result,
+            Err(CliError::Core(LiquiModError::Io(error)))
+                if error.kind() == io::ErrorKind::PermissionDenied
+        ));
     }
 
     #[test]
