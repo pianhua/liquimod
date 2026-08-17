@@ -233,7 +233,7 @@ mod tests {
 
         d.reconcile().unwrap();
 
-        assert!(junction::exists(&mods_dir.join(Deployer::link_name(&acheron))).unwrap());
+        assert!(junction::exists(mods_dir.join(Deployer::link_name(&acheron))).unwrap());
         assert!(mods_dir.join("MyOwnMod").is_dir());
         assert!(mods_dir.join("readme.txt").is_file());
 
@@ -268,7 +268,7 @@ mod tests {
         d.recover().unwrap();
 
         assert!(lib.db.pending_ops().unwrap().is_empty());
-        assert!(junction::exists(&mods_dir.join(Deployer::link_name(&entry))).unwrap());
+        assert!(junction::exists(mods_dir.join(Deployer::link_name(&entry))).unwrap());
     }
 
     #[test]
@@ -286,7 +286,7 @@ mod tests {
         let d = Deployer::new(&lib, &mods_dir);
         d.recover().unwrap();
 
-        assert!(junction::exists(&mods_dir.join(Deployer::link_name(&entry))).unwrap());
+        assert!(junction::exists(mods_dir.join(Deployer::link_name(&entry))).unwrap());
         assert!(lib.db.pending_ops().unwrap().is_empty());
     }
 
@@ -297,7 +297,7 @@ mod tests {
 
         // 孤儿 junction：指向本仓库，但数据库无记录
         let orphan = mods_dir.join("Ghost--Mod");
-        junction::create(&lib.layout.mod_dir("Firefly", "Summer"), &orphan).unwrap();
+        junction::create(lib.layout.mod_dir("Firefly", "Summer"), &orphan).unwrap();
 
         // 用户自己的 junction：指向库外
         let outside = _t.path().join("elsewhere");

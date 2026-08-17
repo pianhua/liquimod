@@ -112,4 +112,29 @@ mod tests {
         let err = extract_7z(&path, dest.path(), None).unwrap_err();
         assert!(matches!(err, LiquiModError::Archive { .. }));
     }
+
+    #[test]
+    fn rejects_zip_slip_entry() {
+        use std::io::Cursor;
+
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("evil.7z");
+        let mut writer = sevenz_rust2::ArchiveWriter::create(&archive).unwrap();
+        writer.set_encrypt_header(false);
+        writer
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file("../evil.txt"),
+                Some(Cursor::new(b"pwned")),
+            )
+            .unwrap();
+        writer.finish().unwrap();
+
+        let dest = dir.path().join("dest");
+        std::fs::create_dir(&dest).unwrap();
+        let err = extract_7z(&archive, &dest, None).unwrap_err();
+
+        assert!(matches!(err, LiquiModError::Archive { .. }));
+        assert!(!dir.path().join("evil.txt").exists());
+        assert!(!dest.join("evil.txt").exists());
+    }
 }

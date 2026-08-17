@@ -61,7 +61,8 @@ pub struct ExtractReport {
 /// Top-level password failures are returned to the caller. Password failures in nested archives are
 /// recorded as warnings, leaving the nested archive in place for later handling. The caller must
 /// provide a new empty directory for every extraction attempt because nested destination numbering
-/// avoids existing paths.
+/// avoids existing paths. Successful nested extraction leaves both the nested archive file and its
+/// `__nested_<n>/` extracted content in `dest`.
 pub fn extract_recursive(
     archive_path: &Path,
     dest: &Path,
@@ -104,7 +105,7 @@ fn extract_recursive_inner(
         if *nested_count >= MAX_NESTED_ARCHIVES {
             report.nested_warnings.push(format!(
                 "nested archive count limit reached; skipping {}",
-                path.display()
+                warning_path(&path)
             ));
             continue;
         }
@@ -124,14 +125,14 @@ fn extract_recursive_inner(
                     let _ = std::fs::remove_dir_all(&nested_dest);
                     report.nested_warnings.push(format!(
                         "nested archive has a wrong password; leaving {} in place",
-                        path.display()
+                        warning_path(&path)
                     ));
                 }
                 Err(LiquiModError::PasswordRequired(_)) => {
                     let _ = std::fs::remove_dir_all(&nested_dest);
                     report.nested_warnings.push(format!(
                         "nested archive requires a password; leaving {} in place",
-                        path.display()
+                        warning_path(&path)
                     ));
                 }
                 Err(error) => {
@@ -142,7 +143,7 @@ fn extract_recursive_inner(
         } else {
             report.nested_warnings.push(format!(
                 "nested archive depth limit reached; skipping {}",
-                path.display()
+                warning_path(&path)
             ));
         }
     }
@@ -179,6 +180,12 @@ fn next_nested_dest(dest: &Path, index: &mut u32) -> Result<PathBuf> {
             Err(error) => return Err(error.into()),
         }
     }
+}
+
+fn warning_path(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "archive".to_string())
 }
 
 pub struct PasswordBook<'a> {

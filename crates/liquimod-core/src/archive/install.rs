@@ -21,6 +21,8 @@ pub enum InstallOutcome {
 
 /// Installs an archive into the library. Destination ownership checking, copying, and rollback are
 /// serialized within this process; callers from separate processes are not synchronized.
+/// Successful nested extraction keeps both each `__nested_<n>/` result and the original nested
+/// archive file under the installed content root.
 pub fn install_archive(
     db: &Database,
     library: &Library,
@@ -77,38 +79,45 @@ pub fn install_archive(
     let Some(password) = successful_password else {
         return Ok(InstallOutcome::NeedsPassword);
     };
-    if let Some(password) = password {
-        password_book.learn(&password)?;
-    }
-
     let content_root = resolve_content_root(temp_dir.path())?;
     let _install_lock = INSTALL_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let destination = if is_valid_segment(character) && is_valid_segment(&name) {
-        Some(library.layout.mod_dir(character, &name))
-    } else {
-        None
-    };
-    let destination_existed = match destination.as_ref() {
-        None => true,
-        Some(destination) => match std::fs::symlink_metadata(destination) {
-            Ok(_) => true,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-            Err(_) => true,
-        },
-    };
+    if !is_valid_segment(character) {
+        return Err(LiquiModError::InvalidName(character.into()));
+    }
+    if !is_valid_segment(&name) {
+        return Err(LiquiModError::InvalidName(name));
+    }
+    let destination = library.layout.mod_dir(character, &name);
+    match std::fs::symlink_metadata(&destination) {
+        Ok(_) => {
+            return Err(LiquiModError::DestinationExists {
+                character: character.into(),
+                name: name.clone(),
+            });
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let op = db.op_begin("install", &format!("mods/{character}/{name}"))?;
     let entry = match library.add_folder(&content_root, character, &name) {
         Ok(entry) => entry,
         Err(error) => {
-            if !destination_existed {
-                if let Some(destination) = destination {
-                    let _ = std::fs::remove_dir_all(destination);
-                }
-            }
+            let _ = std::fs::remove_dir_all(&destination);
             return Err(error);
         }
     };
+    if let Some(password) = password {
+        if let Err(error) = password_book.learn(&password) {
+            let _ = std::fs::remove_dir_all(&destination);
+            return Err(error);
+        }
+    }
+    if let Err(error) = db.op_finish(op) {
+        let _ = std::fs::remove_dir_all(&destination);
+        return Err(error);
+    }
     Ok(InstallOutcome::Installed {
         mod_id: entry.id,
         name: entry.name,
@@ -262,7 +271,14 @@ mod tests {
             ["wrong", "correct"]
         );
 
-        let second = install_archive(&library.db, &library, &archive, "Firefly", None).unwrap();
+        let second_archive = tmp.path().join("SecondSecretMod.zip");
+        write_zip(
+            &second_archive,
+            &[("secret.txt", b"secret")],
+            Some("correct"),
+        );
+        let second =
+            install_archive(&library.db, &library, &second_archive, "Firefly", None).unwrap();
         assert!(matches!(second, InstallOutcome::Installed { .. }));
         assert_eq!(
             PasswordBook::new(&library.db).candidates().unwrap(),
@@ -334,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_destination_is_preserved_when_copy_fails() {
+    fn existing_destination_is_rejected_and_preserved() {
         let (tmp, library) = setup();
         let archive = tmp.path().join("ExistingMod.zip");
         write_zip(
@@ -349,7 +365,7 @@ mod tests {
 
         let error = install_archive(&library.db, &library, &archive, "Firefly", None).unwrap_err();
 
-        assert!(matches!(error, LiquiModError::Io(_)));
+        assert!(matches!(error, LiquiModError::DestinationExists { .. }));
         assert_eq!(
             std::fs::read(destination.join("marker.txt")).unwrap(),
             b"keep"
@@ -359,6 +375,23 @@ mod tests {
             b"keep"
         );
         assert!(install_dirs(&library).is_empty());
+    }
+
+    #[test]
+    fn failed_install_does_not_learn_password() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("SecretMod.zip");
+        write_zip(&archive, &[("secret.txt", b"secret")], Some("correct"));
+
+        let error =
+            install_archive(&library.db, &library, &archive, "bad/name", Some("correct"))
+                .unwrap_err();
+
+        assert!(matches!(error, LiquiModError::InvalidName(_)));
+        assert!(PasswordBook::new(&library.db)
+            .candidates()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -395,6 +428,9 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|warning| warning.contains("nested.zip") && warning.contains("password")));
+        assert!(warnings
+            .iter()
+            .all(|warning| !warning.contains(tmp.path().to_string_lossy().as_ref())));
         let destination = library.layout.mod_dir("Others", "OuterMod");
         assert_eq!(
             std::fs::read_to_string(destination.join("plain.txt")).unwrap(),
@@ -406,6 +442,28 @@ mod tests {
             .file_name()
             .to_string_lossy()
             .starts_with("__nested_")));
+    }
+
+    #[test]
+    fn successful_nested_archive_keeps_package_and_extracted_content() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("OuterMod.zip");
+        let nested = zip_bytes(&[("inner.txt", b"nested")], None);
+        write_zip(
+            &archive,
+            &[("plain.txt", b"plain"), ("nested.zip", nested.as_slice())],
+            None,
+        );
+
+        let outcome = install_archive(&library.db, &library, &archive, "Others", None).unwrap();
+
+        assert!(matches!(outcome, InstallOutcome::Installed { .. }));
+        let destination = library.layout.mod_dir("Others", "OuterMod");
+        assert!(destination.join("nested.zip").is_file());
+        assert_eq!(
+            std::fs::read_to_string(destination.join("__nested_0/inner.txt")).unwrap(),
+            "nested"
+        );
     }
 
     #[test]

@@ -125,6 +125,12 @@ impl Database {
         Ok(())
     }
 
+    pub fn remove_op(&self, op_id: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM op_log WHERE id = ?1", rusqlite::params![op_id])?;
+        Ok(())
+    }
+
     pub fn pending_ops(&self) -> Result<Vec<(i64, String, String)>> {
         let mut stmt = self
             .conn

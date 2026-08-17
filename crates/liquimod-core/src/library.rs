@@ -2,7 +2,7 @@ use crate::db::Database;
 use crate::error::Result;
 use crate::models::ModEntry;
 use crate::paths::{is_valid_segment, LibraryLayout};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 pub struct Library {
     pub layout: LibraryLayout,
@@ -14,12 +14,14 @@ impl Library {
         let layout = LibraryLayout::new(root);
         std::fs::create_dir_all(layout.mods_root())?;
         let db = Database::open(&layout.db_path())?;
+        recover_pending_installs(&layout, &db)?;
         Ok(Self { layout, db })
     }
 
     pub fn open(root: &Path) -> Result<Self> {
         let layout = LibraryLayout::new(root);
         let db = Database::open(&layout.db_path())?;
+        recover_pending_installs(&layout, &db)?;
         Ok(Self { layout, db })
     }
 
@@ -28,6 +30,7 @@ impl Library {
     }
 
     pub fn scan(&self) -> Result<Vec<ModEntry>> {
+        recover_pending_installs(&self.layout, &self.db)?;
         let mut seen: Vec<(String, String)> = Vec::new();
         let mods_root = self.layout.mods_root();
         if !mods_root.is_dir() {
@@ -102,6 +105,81 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
         } else {
             std::fs::copy(&from, &to)?;
         }
+    }
+    Ok(())
+}
+
+fn recover_pending_installs(layout: &LibraryLayout, db: &Database) -> Result<()> {
+    clean_temp_dirs(&layout.root.join("tmp"))?;
+    for (op_id, op, payload) in db.pending_ops()? {
+        if op != "install" {
+            continue;
+        }
+        if let Some(destination) = install_destination(layout, &payload) {
+            remove_path_if_present(&destination)?;
+        }
+        db.remove_op(op_id)?;
+    }
+    Ok(())
+}
+
+fn clean_temp_dirs(tmp_root: &Path) -> Result<()> {
+    let entries = match std::fs::read_dir(tmp_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_name().to_string_lossy().starts_with("liquimod-") {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+fn install_destination(layout: &LibraryLayout, payload: &str) -> Option<PathBuf> {
+    let payload_path = Path::new(payload);
+    let relative = if payload_path.is_absolute() {
+        payload_path.strip_prefix(&layout.root).ok()?
+    } else {
+        payload_path
+    };
+    let mut components = relative.components();
+    let Component::Normal(root) = components.next()? else {
+        return None;
+    };
+    let Component::Normal(character) = components.next()? else {
+        return None;
+    };
+    let Component::Normal(name) = components.next()? else {
+        return None;
+    };
+    if components.next().is_some() {
+        return None;
+    }
+    let root = root.to_str()?;
+    let character = character.to_str()?;
+    let name = name.to_str()?;
+    if root != "mods" || !is_valid_segment(character) || !is_valid_segment(name) {
+        return None;
+    }
+    Some(layout.mod_dir(character, name))
+}
+
+fn remove_path_if_present(path: &Path) -> Result<()> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        std::fs::remove_dir_all(path)?;
+    } else {
+        std::fs::remove_file(path)?;
     }
     Ok(())
 }
@@ -213,5 +291,28 @@ mod tests {
         fs::remove_dir_all(lib.layout.mods_root()).unwrap();
         assert!(lib.scan().is_err());
         assert_eq!(lib.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn open_recovers_interrupted_install() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("library");
+        let lib = Library::init(&root).unwrap();
+        let destination = lib.layout.mod_dir("Firefly", "CrashedMod");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(destination.join("partial.txt"), b"partial").unwrap();
+        let temp_dir = root.join("tmp/liquimod-crashed");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("partial.txt"), b"partial").unwrap();
+        lib.db
+            .op_begin("install", "mods/Firefly/CrashedMod")
+            .unwrap();
+        drop(lib);
+
+        let recovered = Library::open(&root).unwrap();
+
+        assert!(!destination.exists());
+        assert!(!temp_dir.exists());
+        assert!(recovered.db.pending_ops().unwrap().is_empty());
     }
 }

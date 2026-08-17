@@ -12,6 +12,8 @@ pub enum LiquiModError {
     ModNotFound(String),
     #[error("invalid name: {0}")]
     InvalidName(String),
+    #[error("mod destination already exists: {character}/{name}; choose a different name")]
+    DestinationExists { character: String, name: String },
     #[error("unsupported archive format: {0}")]
     UnsupportedArchive(std::path::PathBuf),
     #[error("archive requires a password: {0}")]
