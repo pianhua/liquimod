@@ -6,7 +6,9 @@
 
 **Architecture:** 新增 `games` 模块（core，HSR 角色数据 vendored 自 JASM 资产）提供角色清单；新增 `app/`（create-tauri-app Svelte-TS 模板）含 `app/src-tauri`（workspace 成员，IPC 命令层包 liquimod-core）；前端 Tailwind v4 + 玻璃设计 tokens（设计文档 §7）。配置持久化在 `%APPDATA%/LiquiMod/config.json`（library_root + mods_dir）。
 
-**Tech Stack:** Tauri 2、Svelte 5（runes）、TypeScript、Tailwind CSS v4（@tailwindcss/vite）、Vitest + @testing-library/svelte、serde/serde_json、dirs。
+**Tech Stack:** Tauri 2、Svelte 5（runes）+ SvelteKit（create-tauri-app 当前 svelte-ts 模板即 SvelteKit + adapter-static，静态导出到 `build/`）、TypeScript、Tailwind CSS v4（@tailwindcss/vite）、Vitest + @testing-library/svelte、serde/serde_json、dirs。
+
+**模板结构备注（Task 2 实测）：** 脚手架是 SvelteKit 变体——入口是 `src/routes/+page.svelte`（非 App.svelte/main.ts），HTML 壳是 `src/app.html`，`frontendDist` 为 `../build`，静态目录默认 `static/`（Task 5 改指 `../assets/hsr`）。全局 CSS 放 `src/app.css` 并在 `src/routes/+layout.svelte` 中 import。
 
 **环境前置：** Windows + Node 24 + Rust 1.96（已确认）；WebView2 Runtime（Win11 自带）。角色立绘源：`C:\Users\10697\Desktop\JASM\src\GIMI-ModManager.WinUI\Assets\Games\Honkai\`（characters.json + Images/Characters/，84 个文件 7.8MB）。
 
@@ -698,7 +700,7 @@ git commit -m "feat(app): IPC 命令层（角色汇总/Mod 列表/启停/配置�
 
 **设计 tokens 直接取自设计文档 §7**（浅色 rgba(255,255,255,.28) / 深色 rgba(28,30,42,.38)、blur(28px) saturate(1.75)、发丝高光、去彩色化阴影、圆角 26/20/18/胶囊、强调色 #0A84FF / #409CFF）。
 
-- [ ] **Step 1: 装 Tailwind v4 + 接 vite**
+- [ ] **Step 1: 装 Tailwind v4 + 接 vite/sveltekit**
 
 ```powershell
 cd app
@@ -709,12 +711,11 @@ npm i -D tailwindcss @tailwindcss/vite
 
 ```ts
 import { defineConfig } from "vite";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [svelte(), tailwindcss()],
-  publicDir: "../assets/hsr",
+  plugins: [sveltekit(), tailwindcss()],
   clearScreen: false,
   server: {
     port: 1420,
@@ -723,7 +724,20 @@ export default defineConfig({
 });
 ```
 
-`publicDir: "../assets/hsr"` 使立绘通过 `/images/<file>` 直接可访问（dev 与打包一致，单一资产来源）。
+`app/svelte.config.js` 把静态目录指向单一资产来源（立绘直接在 `/images/<file>` 可访问，dev 与打包一致）：
+
+```js
+import adapter from "@sveltejs/adapter-static";
+
+export default {
+  kit: {
+    adapter: adapter({ fallback: "index.html" }),
+    files: { assets: "../assets/hsr" },
+  },
+};
+```
+
+（保留模板原有的 adapter 配置项，仅追加 files.assets；adapter-static 需 `fallback: "index.html"` 供 Tauri SPA 模式。若模板已配置等价项则合并。）
 
 - [ ] **Step 2: app.css（玻璃配方）**
 
@@ -855,10 +869,21 @@ export function filterCharacters(
 }
 ```
 
-- [ ] **Step 4: 验证构建 + Commit**
+- [ ] **Step 4: 全局样式挂载 + 验证构建 + Commit**
+
+创建 `app/src/routes/+layout.svelte`（SvelteKit 全局布局，挂全局 CSS）：
+
+```svelte
+<script lang="ts">
+  import "../app.css";
+  let { children } = $props();
+</script>
+
+{@render children()}
+```
 
 Run: `cd app; npm run build`
-Expected: 构建通过（模板页面引用 app.css 即可；若有 src/app.css import 缺失，确认 main.ts 里有 `import "./app.css";`）。
+Expected: 构建通过生成 build/（若 svelte-check 脚本存在也跑 `npm run check`）。
 ```powershell
 git add app
 git commit -m "feat(app): 液态玻璃设计 tokens 与前端 API 封装"
@@ -875,7 +900,7 @@ git commit -m "feat(app): 液态玻璃设计 tokens 与前端 API 封装"
 - Create: `app/src/lib/components/CharacterCard.svelte`
 - Create: `app/src/lib/views/CharacterGrid.svelte`
 - Create: `app/src/lib/views/CharacterDetail.svelte`
-- Modify: `app/src/App.svelte`（全量替换模板内容）
+- Modify: `app/src/routes/+page.svelte`（全量替换模板内容，充当原计划的 App.svelte）
 
 **交互：** 大标题导航 + 搜索胶囊；角色卡立绘铺满 + 底部渐隐 + 名字玻璃胶囊；点卡进入角色详情（Mod 列表，iOS 开关启停）；未配置 mods_dir 时启停报错提示并提供"选择目录"按钮（tauri-plugin-dialog JS API）。窗口无边框 → 自绘标题栏（拖拽区 + 最小化/最大化/关闭）。
 
@@ -1090,7 +1115,9 @@ git commit -m "feat(app): 液态玻璃设计 tokens 与前端 API 封装"
 </div>
 ```
 
-- [ ] **Step 7: App.svelte（替换模板）**
+- [ ] **Step 7: +page.svelte（替换模板，主界面装配）**
+
+`app/src/routes/+page.svelte` 全文：
 
 ```svelte
 <script lang="ts">
@@ -1133,7 +1160,7 @@ git commit -m "feat(app): 液态玻璃设计 tokens 与前端 API 封装"
 </div>
 ```
 
-确认 `app/src/main.ts` 有 `import "./app.css";`。
+（Task 5 的 +layout.svelte 已挂全局 CSS，此处无需再 import。）
 
 - [ ] **Step 8: 构建验证 + Commit**
 
@@ -1167,16 +1194,15 @@ npm i -D vitest jsdom @testing-library/svelte @testing-library/jest-dom
 
 `app/package.json` scripts 加 `"test": "vitest run"`。
 
-`app/vite.config.ts` 追加 test 字段（需 `/// <reference types="vitest/config" />` 或从 vitest/config 导入 defineConfig——用后者更稳）：
+`app/vite.config.ts` 追加 test 字段（改用 vitest/config 的 defineConfig 承载类型）：
 
 ```ts
 import { defineConfig } from "vitest/config";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [svelte(), tailwindcss()],
-  publicDir: "../assets/hsr",
+  plugins: [sveltekit(), tailwindcss()],
   clearScreen: false,
   server: { port: 1420, strictPort: true },
   test: {
