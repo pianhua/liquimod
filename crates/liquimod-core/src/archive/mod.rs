@@ -120,15 +120,24 @@ fn extract_recursive_inner(
                 nested_count,
             ) {
                 Ok(()) => {}
-                Err(LiquiModError::WrongPassword(_)) => report.nested_warnings.push(format!(
-                    "nested archive has a wrong password; leaving {} in place",
-                    path.display()
-                )),
-                Err(LiquiModError::PasswordRequired(_)) => report.nested_warnings.push(format!(
-                    "nested archive requires a password; leaving {} in place",
-                    path.display()
-                )),
-                Err(error) => return Err(error),
+                Err(LiquiModError::WrongPassword(_)) => {
+                    let _ = std::fs::remove_dir_all(&nested_dest);
+                    report.nested_warnings.push(format!(
+                        "nested archive has a wrong password; leaving {} in place",
+                        path.display()
+                    ));
+                }
+                Err(LiquiModError::PasswordRequired(_)) => {
+                    let _ = std::fs::remove_dir_all(&nested_dest);
+                    report.nested_warnings.push(format!(
+                        "nested archive requires a password; leaving {} in place",
+                        path.display()
+                    ));
+                }
+                Err(error) => {
+                    let _ = std::fs::remove_dir_all(&nested_dest);
+                    return Err(error);
+                }
             }
         } else {
             report.nested_warnings.push(format!(

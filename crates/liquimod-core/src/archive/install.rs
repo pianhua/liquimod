@@ -82,11 +82,21 @@ pub fn install_archive(
     } else {
         None
     };
+    let destination_existed = match destination.as_ref() {
+        None => true,
+        Some(destination) => match std::fs::symlink_metadata(destination) {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(_) => true,
+        },
+    };
     let entry = match library.add_folder(&content_root, character, &name) {
         Ok(entry) => entry,
         Err(error) => {
-            if let Some(destination) = destination {
-                let _ = std::fs::remove_dir_all(destination);
+            if !destination_existed {
+                if let Some(destination) = destination {
+                    let _ = std::fs::remove_dir_all(destination);
+                }
             }
             return Err(error);
         }
@@ -314,6 +324,49 @@ mod tests {
     }
 
     #[test]
+    fn existing_destination_is_preserved_when_copy_fails() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("ExistingMod.zip");
+        write_zip(
+            &archive,
+            &[("readme.txt", b"new"), ("conflict/file.txt", b"new")],
+            None,
+        );
+        let destination = library.layout.mod_dir("Firefly", "ExistingMod");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(destination.join("marker.txt"), b"keep").unwrap();
+        std::fs::write(destination.join("conflict"), b"keep").unwrap();
+
+        let error = install_archive(&library.db, &library, &archive, "Firefly", None).unwrap_err();
+
+        assert!(matches!(error, LiquiModError::Io(_)));
+        assert_eq!(
+            std::fs::read(destination.join("marker.txt")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(
+            std::fs::read(destination.join("conflict")).unwrap(),
+            b"keep"
+        );
+        assert!(install_dirs(&library).is_empty());
+    }
+
+    #[test]
+    fn new_destination_is_removed_when_database_write_fails() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("DbFailureMod.zip");
+        write_zip(&archive, &[("mod.ini", b"plain")], None);
+        let connection = rusqlite::Connection::open(library.layout.db_path()).unwrap();
+        connection.execute("DROP TABLE mods", []).unwrap();
+
+        let error = install_archive(&library.db, &library, &archive, "Others", None).unwrap_err();
+
+        assert!(matches!(error, LiquiModError::Db(_)));
+        assert!(!library.layout.mod_dir("Others", "DbFailureMod").exists());
+        assert!(install_dirs(&library).is_empty());
+    }
+
+    #[test]
     fn encrypted_nested_archive_warns_and_is_kept() {
         let (tmp, library) = setup();
         let archive = tmp.path().join("OuterMod.zip");
@@ -338,6 +391,11 @@ mod tests {
             "plain"
         );
         assert!(destination.join("nested.zip").is_file());
+        assert!(!std::fs::read_dir(&destination).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("__nested_")));
     }
 
     #[test]
