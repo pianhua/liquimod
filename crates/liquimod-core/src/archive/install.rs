@@ -1,13 +1,10 @@
 use super::{extract_recursive, resolve_content_root, ExtractReport, PasswordBook};
 use crate::db::Database;
 use crate::error::{LiquiModError, Result};
-use crate::library::Library;
+use crate::library::{Library, INSTALL_LOCK};
 use crate::paths::is_valid_segment;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use uuid::Uuid;
-
-static INSTALL_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum InstallOutcome {
@@ -187,8 +184,9 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use std::path::{Path, PathBuf};
-    use std::sync::{Arc, Barrier, Mutex};
+    use std::sync::{mpsc, Arc, Barrier, Mutex};
     use std::thread;
+    use std::time::Duration;
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
 
@@ -561,6 +559,56 @@ mod tests {
             .mod_dir("Others", "SecondMod")
             .join("second.txt")
             .is_file());
+    }
+
+    #[test]
+    fn scan_waits_for_install_lock_during_pending_recovery() {
+        let (tmp, library) = setup();
+        let destination = library.layout.mod_dir("Firefly", "PendingMod");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(destination.join(crate::library::INSTALLING_MARKER), b"").unwrap();
+        let op_id = library
+            .db
+            .op_begin("install", "mods/Firefly/PendingMod")
+            .unwrap();
+        let db_path = library.layout.db_path();
+
+        let install_lock = INSTALL_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let scan_handle = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            finished_tx.send(library.scan().is_ok()).unwrap();
+        });
+
+        started_rx.recv().unwrap();
+        assert!(finished_rx
+            .recv_timeout(Duration::from_millis(100))
+            .is_err());
+        assert!(destination.exists());
+        let db = Database::open(&db_path).unwrap();
+        assert_eq!(
+            db.pending_ops().unwrap(),
+            vec![(
+                op_id,
+                "install".to_string(),
+                "mods/Firefly/PendingMod".to_string()
+            )]
+        );
+
+        drop(install_lock);
+        assert!(finished_rx.recv_timeout(Duration::from_secs(1)).unwrap());
+        scan_handle.join().unwrap();
+
+        assert!(!destination.exists());
+        assert!(Database::open(&db_path)
+            .unwrap()
+            .pending_ops()
+            .unwrap()
+            .is_empty());
+        drop(tmp);
     }
 
     #[test]

@@ -3,8 +3,10 @@ use crate::error::Result;
 use crate::models::ModEntry;
 use crate::paths::{is_valid_segment, LibraryLayout};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
 
 pub(crate) const INSTALLING_MARKER: &str = ".liquimod-installing";
+pub(crate) static INSTALL_LOCK: Mutex<()> = Mutex::new(());
 
 pub struct Library {
     pub layout: LibraryLayout,
@@ -114,6 +116,9 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
 }
 
 fn recover_pending_installs(layout: &LibraryLayout, db: &Database) -> Result<()> {
+    let _install_lock = INSTALL_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     for (op_id, op, payload) in db.pending_ops()? {
         if op != "install" {
             continue;
