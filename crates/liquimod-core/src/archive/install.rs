@@ -2,6 +2,7 @@ use super::{extract_recursive, resolve_content_root, ExtractReport, PasswordBook
 use crate::db::Database;
 use crate::error::{LiquiModError, Result};
 use crate::library::Library;
+use crate::paths::is_valid_segment;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -76,7 +77,20 @@ pub fn install_archive(
     }
 
     let content_root = resolve_content_root(temp_dir.path())?;
-    let entry = library.add_folder(&content_root, character, &name)?;
+    let destination = if is_valid_segment(character) && is_valid_segment(&name) {
+        Some(library.layout.mod_dir(character, &name))
+    } else {
+        None
+    };
+    let entry = match library.add_folder(&content_root, character, &name) {
+        Ok(entry) => entry,
+        Err(error) => {
+            if let Some(destination) = destination {
+                let _ = std::fs::remove_dir_all(destination);
+            }
+            return Err(error);
+        }
+    };
     Ok(InstallOutcome::Installed {
         mod_id: entry.id,
         name: entry.name,
@@ -164,6 +178,13 @@ mod tests {
             writer.write_all(contents).unwrap();
         }
         writer.finish().unwrap();
+    }
+
+    fn zip_bytes(files: &[(&str, &[u8])], password: Option<&str>) -> Vec<u8> {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("nested.zip");
+        write_zip(&path, files, password);
+        std::fs::read(path).unwrap()
     }
 
     fn install_dirs(library: &Library) -> Vec<PathBuf> {
@@ -276,6 +297,47 @@ mod tests {
 
         assert!(matches!(error, LiquiModError::UnsupportedArchive(_)));
         assert!(install_dirs(&library).is_empty());
+    }
+
+    #[test]
+    fn failed_add_folder_rolls_back_library_destination() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("PlainMod.zip");
+        write_zip(&archive, &[("mod.ini", b"plain")], None);
+
+        let error = install_archive(&library.db, &library, &archive, "bad/name", None).unwrap_err();
+
+        assert!(matches!(error, LiquiModError::InvalidName(_)));
+        assert!(install_dirs(&library).is_empty());
+        assert!(!library.layout.mod_dir("bad/name", "PlainMod").exists());
+        assert!(library.layout.character_dir("bad").read_dir().is_err());
+    }
+
+    #[test]
+    fn encrypted_nested_archive_warns_and_is_kept() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("OuterMod.zip");
+        let nested = zip_bytes(&[("secret.txt", b"secret")], Some("nested-password"));
+        write_zip(
+            &archive,
+            &[("plain.txt", b"plain"), ("nested.zip", nested.as_slice())],
+            None,
+        );
+
+        let outcome = install_archive(&library.db, &library, &archive, "Others", None).unwrap();
+
+        let InstallOutcome::Installed { warnings, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("nested.zip") && warning.contains("password")));
+        let destination = library.layout.mod_dir("Others", "OuterMod");
+        assert_eq!(
+            std::fs::read_to_string(destination.join("plain.txt")).unwrap(),
+            "plain"
+        );
+        assert!(destination.join("nested.zip").is_file());
     }
 
     #[test]

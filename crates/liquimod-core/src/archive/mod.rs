@@ -58,8 +58,10 @@ pub struct ExtractReport {
 }
 
 /// Extracts an archive and recursively scans all regular files in its output tree for nested archives.
-/// The caller must provide a new empty directory for every extraction attempt. Reusing a directory can
-/// mix residual files into the scan because nested destination numbering avoids existing paths.
+/// Top-level password failures are returned to the caller. Password failures in nested archives are
+/// recorded as warnings, leaving the nested archive in place for later handling. The caller must
+/// provide a new empty directory for every extraction attempt because nested destination numbering
+/// avoids existing paths.
 pub fn extract_recursive(
     archive_path: &Path,
     dest: &Path,
@@ -109,14 +111,25 @@ fn extract_recursive_inner(
         *nested_count += 1;
         let nested_dest = next_nested_dest(dest, &mut nested_index)?;
         if depth < MAX_NESTED_DEPTH - 1 {
-            extract_recursive_inner(
+            match extract_recursive_inner(
                 &path,
                 &nested_dest,
                 password,
                 depth + 1,
                 report,
                 nested_count,
-            )?;
+            ) {
+                Ok(()) => {}
+                Err(LiquiModError::WrongPassword(_)) => report.nested_warnings.push(format!(
+                    "nested archive has a wrong password; leaving {} in place",
+                    path.display()
+                )),
+                Err(LiquiModError::PasswordRequired(_)) => report.nested_warnings.push(format!(
+                    "nested archive requires a password; leaving {} in place",
+                    path.display()
+                )),
+                Err(error) => return Err(error),
+            }
         } else {
             report.nested_warnings.push(format!(
                 "nested archive depth limit reached; skipping {}",
