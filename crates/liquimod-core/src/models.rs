@@ -10,6 +10,8 @@ pub struct ModEntry {
     pub size_bytes: i64,
     /// 文件数；-1 = 未统计
     pub file_count: i64,
+    /// 所属自定义分类；None = 角色视图（默认）
+    pub category_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,4 +19,12 @@ pub struct Preset {
     pub id: i64,
     pub name: String,
     pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Category {
+    pub id: i64,
+    pub name: String,
+    pub ord: i64,
+    pub mod_count: i64,
 }

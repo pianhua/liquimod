@@ -1,5 +1,5 @@
 use crate::error::{LiquiModError, Result};
-use crate::models::{ModEntry, Preset};
+use crate::models::{Category, ModEntry, Preset};
 use rusqlite::Connection;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -57,12 +57,20 @@ impl Database {
                preset_id INTEGER NOT NULL REFERENCES presets(id) ON DELETE CASCADE,
                mod_id INTEGER NOT NULL,
                PRIMARY KEY (preset_id, mod_id)
+             );
+             CREATE TABLE IF NOT EXISTS categories (
+               id INTEGER PRIMARY KEY,
+               name TEXT NOT NULL UNIQUE,
+               ord INTEGER NOT NULL
              );",
         )?;
-        // 旧库迁移：补统计列（已存在则忽略 duplicate column 错误）
-        for col in ["size_bytes", "file_count"] {
-            let sql = format!("ALTER TABLE mods ADD COLUMN {col} INTEGER NOT NULL DEFAULT -1");
-            match conn.execute_batch(&sql) {
+        // 旧库迁移：补统计列与分类列（已存在则忽略 duplicate column 错误）
+        for sql in [
+            "ALTER TABLE mods ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT -1",
+            "ALTER TABLE mods ADD COLUMN file_count INTEGER NOT NULL DEFAULT -1",
+            "ALTER TABLE mods ADD COLUMN category_id INTEGER REFERENCES categories(id)",
+        ] {
+            match conn.execute_batch(sql) {
                 Ok(()) => {}
                 Err(e) if e.to_string().contains("duplicate column") => {}
                 Err(e) => return Err(e.into()),
@@ -130,12 +138,13 @@ impl Database {
             installed_at: r.get(5)?,
             size_bytes: r.get(6)?,
             file_count: r.get(7)?,
+            category_id: r.get(8)?,
         })
     }
 
     pub fn list_mods(&self) -> Result<Vec<ModEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count FROM mods ORDER BY character, name",
+            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id FROM mods ORDER BY character, name",
         )?;
         let rows = stmt.query_map([], Self::row_to_entry)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -144,7 +153,7 @@ impl Database {
     pub fn get_mod(&self, id: i64) -> Result<ModEntry> {
         self.conn
             .query_row(
-                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count FROM mods WHERE id = ?1",
+                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id FROM mods WHERE id = ?1",
                 rusqlite::params![id],
                 Self::row_to_entry,
             )
@@ -276,6 +285,140 @@ impl Database {
             "DELETE FROM presets WHERE id = ?1",
             rusqlite::params![preset_id],
         )?;
+        Ok(())
+    }
+
+    fn validate_category_name(name: &str) -> Result<&str> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(LiquiModError::InvalidName("分类名不能为空".into()));
+        }
+        Ok(name)
+    }
+
+    pub fn create_category(&self, name: &str) -> Result<i64> {
+        let name = Self::validate_category_name(name)?;
+        let ord: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(ord), 0) + 1 FROM categories",
+            [],
+            |r| r.get(0),
+        )?;
+        self.conn
+            .execute(
+                "INSERT INTO categories (name, ord) VALUES (?1, ?2)",
+                rusqlite::params![name, ord],
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::SqliteFailure(err, _)
+                    if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    LiquiModError::InvalidName(format!("分类已存在：{name}"))
+                }
+                other => LiquiModError::Db(other),
+            })?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn rename_category(&self, id: i64, name: &str) -> Result<()> {
+        let name = Self::validate_category_name(name)?;
+        let n = self
+            .conn
+            .execute(
+                "UPDATE categories SET name = ?2 WHERE id = ?1",
+                rusqlite::params![id, name],
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::SqliteFailure(err, _)
+                    if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    LiquiModError::InvalidName(format!("分类已存在：{name}"))
+                }
+                other => LiquiModError::Db(other),
+            })?;
+        if n == 0 {
+            return Err(LiquiModError::ModNotFound(format!("分类 {id}")));
+        }
+        Ok(())
+    }
+
+    /// 删除分类：其中 Mod 全部移回角色视图（category_id = NULL）。
+    pub fn delete_category(&self, id: i64) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE mods SET category_id = NULL WHERE category_id = ?1",
+            rusqlite::params![id],
+        )?;
+        let n = tx.execute(
+            "DELETE FROM categories WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
+        tx.commit()?;
+        if n == 0 {
+            return Err(LiquiModError::ModNotFound(format!("分类 {id}")));
+        }
+        Ok(())
+    }
+
+    /// 与相邻分类交换 ord（delta = ±1）；越界则不动。
+    pub fn move_category(&self, id: i64, delta: i64) -> Result<()> {
+        let mut ordered = self.list_categories()?;
+        let Some(i) = ordered.iter().position(|c| c.id == id) else {
+            return Err(LiquiModError::ModNotFound(format!("分类 {id}")));
+        };
+        let j = i as i64 + delta;
+        if j < 0 || j as usize >= ordered.len() {
+            return Ok(());
+        }
+        let (a, b) = (ordered[i].clone(), ordered[j as usize].clone());
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE categories SET ord = ?2 WHERE id = ?1",
+            rusqlite::params![a.id, b.ord],
+        )?;
+        tx.execute(
+            "UPDATE categories SET ord = ?2 WHERE id = ?1",
+            rusqlite::params![b.id, a.ord],
+        )?;
+        tx.commit()?;
+        ordered.clear();
+        Ok(())
+    }
+
+    pub fn list_categories(&self) -> Result<Vec<Category>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.name, c.ord,
+                    (SELECT COUNT(*) FROM mods m WHERE m.category_id = c.id)
+             FROM categories c ORDER BY c.ord",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Category {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                ord: r.get(2)?,
+                mod_count: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn set_mod_category(&self, mod_id: i64, category_id: Option<i64>) -> Result<()> {
+        if let Some(cid) = category_id {
+            let exists: i64 = self.conn.query_row(
+                "SELECT COUNT(*) FROM categories WHERE id = ?1",
+                rusqlite::params![cid],
+                |r| r.get(0),
+            )?;
+            if exists == 0 {
+                return Err(LiquiModError::ModNotFound(format!("分类 {cid}")));
+            }
+        }
+        let n = self.conn.execute(
+            "UPDATE mods SET category_id = ?2 WHERE id = ?1",
+            rusqlite::params![mod_id, category_id],
+        )?;
+        if n == 0 {
+            return Err(LiquiModError::ModNotFound(mod_id.to_string()));
+        }
         Ok(())
     }
 }
@@ -433,5 +576,128 @@ mod tests {
         assert!(db.name_taken("A", "m2", id).unwrap());
         assert!(!db.name_taken("A", "m1", id).unwrap()); // 自己不算占用
         assert!(!db.name_taken("B", "m2", id).unwrap()); // 跨角色不冲突
+    }
+
+    #[test]
+    fn category_crud_and_mod_count() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.create_category("武器").unwrap();
+        let b = db.create_category("光影").unwrap();
+        let m = db
+            .upsert_mod("Firefly", "Sword", "mods/Firefly/Sword")
+            .unwrap();
+        db.set_mod_category(m, Some(a)).unwrap();
+        let cats = db.list_categories().unwrap();
+        assert_eq!(
+            cats.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            vec!["武器", "光影"]
+        );
+        assert_eq!(cats[0].mod_count, 1);
+        assert_eq!(cats[1].mod_count, 0);
+        assert_eq!(db.get_mod(m).unwrap().category_id, Some(a));
+        db.rename_category(b, "UI").unwrap();
+        assert_eq!(db.list_categories().unwrap()[1].name, "UI");
+        let _ = (a, b);
+    }
+
+    #[test]
+    fn category_rejects_empty_and_duplicate() {
+        let db = Database::open_in_memory().unwrap();
+        db.create_category("武器").unwrap();
+        assert!(matches!(
+            db.create_category("武器"),
+            Err(LiquiModError::InvalidName(_))
+        ));
+        assert!(matches!(
+            db.create_category("  "),
+            Err(LiquiModError::InvalidName(_))
+        ));
+    }
+
+    #[test]
+    fn delete_category_moves_mods_back_to_null() {
+        let db = Database::open_in_memory().unwrap();
+        let c = db.create_category("武器").unwrap();
+        let m = db.upsert_mod("A", "m1", "mods/A/m1").unwrap();
+        db.set_mod_category(m, Some(c)).unwrap();
+        db.delete_category(c).unwrap();
+        assert_eq!(db.get_mod(m).unwrap().category_id, None);
+        assert!(db.list_categories().unwrap().is_empty());
+        assert!(db.delete_category(c).is_err());
+    }
+
+    #[test]
+    fn move_category_swaps_with_neighbor() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.create_category("A").unwrap();
+        let b = db.create_category("B").unwrap();
+        let c = db.create_category("C").unwrap();
+        db.move_category(b, -1).unwrap();
+        let names: Vec<String> = db
+            .list_categories()
+            .unwrap()
+            .into_iter()
+            .map(|x| x.name)
+            .collect();
+        assert_eq!(names, vec!["B", "A", "C"]);
+        // 真实边界：首元素上移（j<0）与末元素下移（j>=len）越界不动
+        db.move_category(b, -1).unwrap();
+        db.move_category(c, 1).unwrap();
+        let names: Vec<String> = db
+            .list_categories()
+            .unwrap()
+            .into_iter()
+            .map(|x| x.name)
+            .collect();
+        assert_eq!(names, vec!["B", "A", "C"]);
+        let _ = a;
+    }
+
+    #[test]
+    fn set_mod_category_validates() {
+        let db = Database::open_in_memory().unwrap();
+        let m = db.upsert_mod("A", "m1", "mods/A/m1").unwrap();
+        assert!(db.set_mod_category(m, Some(999)).is_err());
+        db.set_mod_category(m, None).unwrap();
+        assert!(db.set_mod_category(999, None).is_err());
+    }
+
+    #[test]
+    fn migration_adds_category_column_to_old_db() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("old.db");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE mods (
+                   id INTEGER PRIMARY KEY,
+                   character TEXT NOT NULL,
+                   name TEXT NOT NULL,
+                   rel_path TEXT NOT NULL,
+                   enabled INTEGER NOT NULL DEFAULT 0,
+                   installed_at INTEGER NOT NULL,
+                   UNIQUE(character, name)
+                 );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO mods (character, name, rel_path, installed_at) VALUES ('A','m1','mods/A/m1',1)",
+                [],
+            )
+            .unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.get_mod(1).unwrap().category_id, None);
+    }
+
+    #[test]
+    fn upsert_preserves_category_id() {
+        // scan 的 upsert 只更新 rel_path，不得冲掉已归类
+        let db = Database::open_in_memory().unwrap();
+        let c = db.create_category("武器").unwrap();
+        let m = db.upsert_mod("A", "m1", "mods/A/m1").unwrap();
+        db.set_mod_category(m, Some(c)).unwrap();
+        db.upsert_mod("A", "m1", "mods/A/m1").unwrap();
+        assert_eq!(db.get_mod(m).unwrap().category_id, Some(c));
     }
 }
