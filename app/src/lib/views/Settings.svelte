@@ -79,9 +79,19 @@
     }
   }
 
+  /// 日志时间戳是 UTC（tracing 默认 RFC3339），展示时转本地时间。
+  function formatLog(text: string): string {
+    return text.replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/gm, (iso) => {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    });
+  }
+
   async function copyLog() {
     try {
-      await navigator.clipboard.writeText(logText);
+      await navigator.clipboard.writeText(formatLog(logText));
       toast("日志已复制");
     } catch {
       toast("复制失败");
@@ -327,7 +337,7 @@
       <pre
         class="text-xs font-mono rounded-lg p-3 max-h-48 overflow-auto whitespace-pre-wrap break-all select-text"
         style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
-      >{logText || "（暂无日志）"}</pre>
+      >{formatLog(logText) || "（暂无日志）"}</pre>
     </section>
   </div>
 </div>
