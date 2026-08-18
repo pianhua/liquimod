@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+
 pub mod hsr;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -10,4 +14,131 @@ pub struct CharacterInfo {
 pub trait Game {
     fn id(&self) -> &'static str;
     fn characters(&self) -> &[CharacterInfo];
+}
+
+const MAX_DEPTH: usize = 8;
+const MAX_FILE_BYTES: u64 = 256 * 1024;
+const MAX_TOTAL_BYTES: usize = 4 * 1024 * 1024;
+
+/// 从解压目录内容推断角色：合并 ini/txt/json 文本与全部文件名作为语料，
+/// 统计每个角色（内部名 / 显示名 / 立绘文件名stem）的小写命中次数，取最高者。
+pub fn infer_character(dir: &Path, game: &dyn Game) -> Option<String> {
+    let mut corpus = String::new();
+    let mut budget = MAX_TOTAL_BYTES;
+    collect_text(dir, 0, &mut budget, &mut corpus);
+    let mut scores: HashMap<&str, usize> = HashMap::new();
+    for c in game.characters() {
+        let mut score = 0usize;
+        let stem = Path::new(&c.image)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        for needle in [
+            c.internal_name.to_lowercase(),
+            c.display_name.to_lowercase(),
+            stem,
+        ] {
+            if needle.len() < 3 {
+                continue;
+            }
+            score += corpus.matches(&needle).count();
+        }
+        if score > 0 {
+            scores.insert(c.internal_name.as_str(), score);
+        }
+    }
+    scores
+        .into_iter()
+        .max_by_key(|(_, score)| *score)
+        .map(|(name, _)| name.to_owned())
+}
+
+fn collect_text(dir: &Path, depth: usize, budget: &mut usize, out: &mut String) {
+    if depth > MAX_DEPTH || *budget == 0 {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        out.push_str(&entry.file_name().to_string_lossy().to_lowercase());
+        out.push('\n');
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.is_dir() {
+            collect_text(&path, depth + 1, budget, out);
+        } else if meta.is_file()
+            && meta.len() <= MAX_FILE_BYTES
+            && matches!(
+                path.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_lowercase())
+                    .as_deref(),
+                Some("ini" | "txt" | "json")
+            )
+        {
+            if let Ok(bytes) = fs::read(&path) {
+                *budget = budget.saturating_sub(bytes.len());
+                out.push_str(&String::from_utf8_lossy(&bytes).to_lowercase());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture_game() -> &'static crate::games::hsr::Hsr {
+        crate::games::hsr::Hsr::shared()
+    }
+
+    #[test]
+    fn infers_character_from_ini_mentions() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("mod.ini"),
+            "[Constants]\n; Firefly costume swap\nglobal $firefly = 1\n",
+        )
+        .unwrap();
+        assert_eq!(
+            infer_character(tmp.path(), fixture_game()),
+            Some("Firefly".to_string())
+        );
+    }
+
+    #[test]
+    fn infers_from_folder_names_when_no_ini_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sub = tmp.path().join("Acheron_HD_Textures");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("readme.txt"), b"no hints here").unwrap();
+        assert_eq!(
+            infer_character(tmp.path(), fixture_game()),
+            Some("Acheron".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_without_hints() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("mod.ini"), "[Constants]\nglobal $x = 1\n").unwrap();
+        assert_eq!(infer_character(tmp.path(), fixture_game()), None);
+    }
+
+    #[test]
+    fn most_mentioned_character_wins() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("mod.ini"),
+            "; acheron acheron acheron\n; blade\n",
+        )
+        .unwrap();
+        assert_eq!(
+            infer_character(tmp.path(), fixture_game()),
+            Some("Acheron".to_string())
+        );
+    }
 }
