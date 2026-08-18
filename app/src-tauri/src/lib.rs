@@ -47,12 +47,18 @@ pub fn start_watcher(app: &tauri::AppHandle, state: &AppState) {
     let mods_dir2 = mods_dir.clone();
     let watcher = liquimod_core::watch::start(root, mods_dir, move || {
         let lib = library.lock().unwrap();
-        if let Ok((added, removed)) = reconcile_and_diff(&lib, mods_dir2.as_deref()) {
-            drop(lib);
-            let _ = app2.emit(
-                "library-changed",
-                serde_json::json!({ "added": added, "removed": removed }),
-            );
+        match reconcile_and_diff(&lib, mods_dir2.as_deref()) {
+            Ok((added, removed)) => {
+                drop(lib);
+                let _ = app2.emit(
+                    "library-changed",
+                    serde_json::json!({ "added": added, "removed": removed }),
+                );
+            }
+            Err(e) => {
+                drop(lib);
+                let _ = app2.emit("liquimod-toast", format!("仓库对账失败：{e}"));
+            }
         }
     });
     if let Ok(w) = watcher {
