@@ -3,6 +3,7 @@
   import { api, isTauri, type ConfigDto } from "$lib/api";
   import { toast } from "$lib/toast.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
+  import Toggle from "$lib/components/Toggle.svelte";
 
   let {
     config,
@@ -17,6 +18,7 @@
   let passwords = $state<string[]>([]);
   let newPassword = $state("");
   let busy = $state(false);
+  let logText = $state("");
 
   onMount(async () => {
     try {
@@ -24,7 +26,38 @@
     } catch (e) {
       toast(String(e));
     }
+    try {
+      logText = await api.readLog();
+    } catch {
+      logText = "";
+    }
   });
+
+  async function toggleAutoEnable(next: boolean) {
+    try {
+      await api.setAutoEnable(next);
+      onchanged();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function refreshLog() {
+    try {
+      logText = await api.readLog();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function copyLog() {
+    try {
+      await navigator.clipboard.writeText(logText);
+      toast("日志已复制");
+    } catch {
+      toast("复制失败");
+    }
+  }
 
   async function pickModsDir() {
     try {
@@ -162,6 +195,29 @@
           添加
         </button>
       </div>
+    </section>
+
+    <section class="glass radius-panel p-5 flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-semibold text-secondary">行为</h3>
+        <p class="text-sm font-medium mt-1">自动启用</p>
+        <p class="text-xs text-secondary">安装成功后立即部署到 Mods 目录</p>
+      </div>
+      <Toggle checked={config?.auto_enable ?? false} ariaLabel="自动启用" onchange={toggleAutoEnable} />
+    </section>
+
+    <section class="glass radius-panel p-5 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-secondary">日志</h3>
+        <div class="flex gap-2">
+          <button class="glass radius-pill h-7 px-3 text-xs cursor-pointer" onclick={refreshLog}>刷新</button>
+          <button class="glass radius-pill h-7 px-3 text-xs cursor-pointer" onclick={copyLog}>复制</button>
+        </div>
+      </div>
+      <pre
+        class="text-xs font-mono rounded-xl p-3 max-h-48 overflow-auto whitespace-pre-wrap break-all select-text"
+        style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+      >{logText || "（暂无日志）"}</pre>
     </section>
   </div>
 </div>

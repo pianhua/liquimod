@@ -93,6 +93,19 @@
       {error}
     </div>
   {/if}
+  <div class:hidden={showSettings || selected !== null} class="flex flex-col flex-1 min-h-0">
+    <header class="flex items-end justify-between px-8 pt-3 pb-5 shrink-0">
+      <div>
+        <h1 class="text-[34px] leading-tight font-bold tracking-tight">角色</h1>
+        <p class="text-sm text-secondary mt-0.5">{characters.length} 位角色 · {modTotal} 个 Mod</p>
+      </div>
+      <div class="flex items-center gap-2.5">
+        <PresetMenu onapplied={refresh} />
+        <SearchBar bind:value={query} />
+      </div>
+    </header>
+    <CharacterGrid {characters} {query} onselect={(c) => (selected = c)} />
+  </div>
   {#if showSettings}
     <Settings
       {config}
@@ -112,18 +125,6 @@
       }}
       onconfigured={refresh}
     />
-  {:else}
-    <header class="flex items-end justify-between px-8 pt-3 pb-5 shrink-0">
-      <div>
-        <h1 class="text-[34px] leading-tight font-bold tracking-tight">角色</h1>
-        <p class="text-sm text-secondary mt-0.5">{characters.length} 位角色 · {modTotal} 个 Mod</p>
-      </div>
-      <div class="flex items-center gap-2.5">
-        <PresetMenu onapplied={refresh} />
-        <SearchBar bind:value={query} />
-      </div>
-    </header>
-    <CharacterGrid {characters} {query} onselect={(c) => (selected = c)} />
   {/if}
   {#if dragHover}
     <div class="fixed inset-3 z-40 pointer-events-none radius-panel"

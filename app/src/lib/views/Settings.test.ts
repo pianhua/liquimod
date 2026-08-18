@@ -12,18 +12,25 @@ vi.mock("$lib/api", async (importOriginal) => {
       listPasswords: vi.fn(),
       addPassword: vi.fn(),
       removePassword: vi.fn(),
+      setAutoEnable: vi.fn(),
+      readLog: vi.fn(),
     },
     isTauri: () => false,
   };
 });
 
 const config = { library_root: "C:/mock/Library", mods_dir: "D:/game/Mods", auto_enable: false };
+const testConfig = { library_root: "C:/L", mods_dir: null, auto_enable: false };
 
 describe("Settings", () => {
   beforeEach(() => {
     vi.mocked(api.listPasswords).mockResolvedValue(["1234"]);
     vi.mocked(api.addPassword).mockResolvedValue(undefined);
     vi.mocked(api.removePassword).mockResolvedValue(undefined);
+    vi.mocked(api.setAutoEnable).mockResolvedValue(testConfig);
+    vi.mocked(api.readLog).mockResolvedValue("2026-08-18T10:00:00 INFO hello log");
+    vi.mocked(api.readLog).mockClear();
+    vi.mocked(api.setAutoEnable).mockClear();
   });
 
   it("显示目录配置", () => {
@@ -58,5 +65,18 @@ describe("Settings", () => {
     render(Settings, { props: { config, onback, onchanged: () => {} } });
     await fireEvent.click(screen.getByRole("button", { name: /返回/ }));
     expect(onback).toHaveBeenCalled();
+  });
+
+  it("自动启用开关调用 setAutoEnable", async () => {
+    render(Settings, { props: { config: testConfig, onback: vi.fn(), onchanged: vi.fn() } });
+    await fireEvent.click(screen.getByRole("switch", { name: "自动启用" }));
+    expect(api.setAutoEnable).toHaveBeenCalledWith(true);
+  });
+
+  it("日志区加载并刷新", async () => {
+    render(Settings, { props: { config: testConfig, onback: vi.fn(), onchanged: vi.fn() } });
+    await waitFor(() => screen.getByText(/hello log/));
+    await fireEvent.click(screen.getByText("刷新"));
+    expect(api.readLog).toHaveBeenCalledTimes(2);
   });
 });
