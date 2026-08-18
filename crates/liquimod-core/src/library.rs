@@ -61,7 +61,9 @@ impl Library {
                     continue;
                 }
                 let rel = format!("mods/{}/{}", character, name);
-                self.db.upsert_mod(&character, &name, &rel)?;
+                let id = self.db.upsert_mod(&character, &name, &rel)?;
+                let (size, count) = dir_stats(&mod_entry.path());
+                self.db.update_stats(id, size, count)?;
                 seen.push((character.clone(), name));
             }
         }
@@ -94,6 +96,33 @@ impl Library {
         let id = self.db.upsert_mod(character, name, &rel)?;
         self.db.get_mod(id)
     }
+
+    /// 重命名仓库内 Mod（只动文件系统与 DB；Junction 重建由调用方负责）。
+    /// 校验失败/冲突时目录保持原样。
+    pub fn rename_mod(&self, id: i64, new_name: &str) -> Result<ModEntry> {
+        if !is_valid_segment(new_name) {
+            return Err(crate::error::LiquiModError::InvalidName(new_name.into()));
+        }
+        let entry = self.db.get_mod(id)?;
+        if entry.name == new_name {
+            return Ok(entry);
+        }
+        if self.db.name_taken(&entry.character, new_name, id)? {
+            return Err(crate::error::LiquiModError::DestinationExists {
+                character: entry.character.clone(),
+                name: new_name.into(),
+            });
+        }
+        let old_dir = self.layout.root.join(&entry.rel_path);
+        let new_rel = format!("mods/{}/{}", entry.character, new_name);
+        let new_dir = self.layout.root.join(&new_rel);
+        std::fs::rename(&old_dir, &new_dir)?;
+        if let Err(e) = self.db.rename_mod(id, new_name, &new_rel) {
+            let _ = std::fs::rename(&new_dir, &old_dir); // DB 失败回滚目录
+            return Err(e);
+        }
+        self.db.get_mod(id)
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
@@ -114,6 +143,31 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// 递归统计目录（总字节, 文件数）；任何一级读不了就返回 (-1, -1)（前端显示 "—"）。
+fn dir_stats(dir: &std::path::Path) -> (i64, i64) {
+    let mut stack = vec![dir.to_path_buf()];
+    let (mut size, mut count) = (0i64, 0i64);
+    while let Some(d) = stack.pop() {
+        let rd = match std::fs::read_dir(&d) {
+            Ok(r) => r,
+            Err(_) => return (-1, -1),
+        };
+        for e in rd.flatten() {
+            let ft = match e.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_dir() && !ft.is_symlink() {
+                stack.push(e.path());
+            } else if ft.is_file() {
+                count += 1;
+                size += e.metadata().map(|m| m.len()).unwrap_or(0) as i64;
+            }
+        }
+    }
+    (size, count)
 }
 
 fn recover_pending_installs(layout: &LibraryLayout, db: &Database) -> Result<()> {
@@ -387,5 +441,65 @@ mod tests {
         assert!(destination.exists());
         assert!(destination.join("partial.txt").is_file());
         assert!(recovered.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn dir_stats_counts_files_and_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.bin"), vec![0u8; 100]).unwrap();
+        std::fs::create_dir(tmp.path().join("sub")).unwrap();
+        std::fs::write(tmp.path().join("sub/b.bin"), vec![0u8; 50]).unwrap();
+        assert_eq!(dir_stats(tmp.path()), (150, 2));
+    }
+
+    #[test]
+    fn dir_stats_missing_dir_returns_minus_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(dir_stats(&tmp.path().join("nope")), (-1, -1));
+    }
+
+    #[test]
+    fn rename_mod_moves_dir_and_updates_db() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "A", "old").unwrap();
+        let renamed = lib.rename_mod(m.id, "new").unwrap();
+        assert_eq!(renamed.name, "new");
+        assert!(lib.layout.mod_dir("A", "new").is_dir());
+        assert!(!lib.layout.mod_dir("A", "old").exists());
+    }
+
+    #[test]
+    fn rename_mod_rejects_conflict_and_invalid() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m1 = lib.add_folder(src.path(), "A", "m1").unwrap();
+        lib.add_folder(src.path(), "A", "m2").unwrap();
+        assert!(matches!(
+            lib.rename_mod(m1.id, "m2"),
+            Err(crate::error::LiquiModError::DestinationExists { .. })
+        ));
+        assert!(matches!(
+            lib.rename_mod(m1.id, "a/b"),
+            Err(crate::error::LiquiModError::InvalidName(_))
+        ));
+        // 冲突失败后目录原样
+        assert!(lib.layout.mod_dir("A", "m1").is_dir());
+    }
+
+    #[test]
+    fn scan_updates_stats() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let dir = lib.layout.mod_dir("A", "m1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("f.bin"), vec![0u8; 42]).unwrap();
+        lib.scan().unwrap();
+        let m = &lib.list().unwrap()[0];
+        assert_eq!((m.size_bytes, m.file_count), (42, 1));
     }
 }

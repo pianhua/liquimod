@@ -59,6 +59,15 @@ impl Database {
                PRIMARY KEY (preset_id, mod_id)
              );",
         )?;
+        // 旧库迁移：补统计列（已存在则忽略 duplicate column 错误）
+        for col in ["size_bytes", "file_count"] {
+            let sql = format!("ALTER TABLE mods ADD COLUMN {col} INTEGER NOT NULL DEFAULT -1");
+            match conn.execute_batch(&sql) {
+                Ok(()) => {}
+                Err(e) if e.to_string().contains("duplicate column") => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Self { conn })
     }
@@ -86,6 +95,31 @@ impl Database {
         Ok(())
     }
 
+    pub fn rename_mod(&self, id: i64, new_name: &str, new_rel: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE mods SET name = ?2, rel_path = ?3 WHERE id = ?1",
+            rusqlite::params![id, new_name, new_rel],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_stats(&self, id: i64, size_bytes: i64, file_count: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE mods SET size_bytes = ?2, file_count = ?3 WHERE id = ?1",
+            rusqlite::params![id, size_bytes, file_count],
+        )?;
+        Ok(())
+    }
+
+    pub fn name_taken(&self, character: &str, name: &str, exclude_id: i64) -> Result<bool> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM mods WHERE character = ?1 AND name = ?2 AND id != ?3",
+            rusqlite::params![character, name, exclude_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
     fn row_to_entry(r: &rusqlite::Row) -> rusqlite::Result<ModEntry> {
         Ok(ModEntry {
             id: r.get(0)?,
@@ -94,12 +128,14 @@ impl Database {
             rel_path: r.get(3)?,
             enabled: r.get::<_, i64>(4)? != 0,
             installed_at: r.get(5)?,
+            size_bytes: r.get(6)?,
+            file_count: r.get(7)?,
         })
     }
 
     pub fn list_mods(&self) -> Result<Vec<ModEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, character, name, rel_path, enabled, installed_at FROM mods ORDER BY character, name",
+            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count FROM mods ORDER BY character, name",
         )?;
         let rows = stmt.query_map([], Self::row_to_entry)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -108,7 +144,7 @@ impl Database {
     pub fn get_mod(&self, id: i64) -> Result<ModEntry> {
         self.conn
             .query_row(
-                "SELECT id, character, name, rel_path, enabled, installed_at FROM mods WHERE id = ?1",
+                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count FROM mods WHERE id = ?1",
                 rusqlite::params![id],
                 Self::row_to_entry,
             )
@@ -336,5 +372,66 @@ mod tests {
     fn preset_rejects_empty_name() {
         let db = Database::open_in_memory().unwrap();
         assert!(db.save_preset("  ", &[]).is_err());
+    }
+
+    #[test]
+    fn migration_adds_stats_columns_to_old_db() {
+        // 旧库没有 size_bytes/file_count：用裸连接建旧 schema，再 Database::open 迁移
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("old.db");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE mods (
+                   id INTEGER PRIMARY KEY,
+                   character TEXT NOT NULL,
+                   name TEXT NOT NULL,
+                   rel_path TEXT NOT NULL,
+                   enabled INTEGER NOT NULL DEFAULT 0,
+                   installed_at INTEGER NOT NULL,
+                   UNIQUE(character, name)
+                 );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO mods (character, name, rel_path, installed_at) VALUES ('A','m1','mods/A/m1',1)",
+                [],
+            )
+            .unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        let m = db.get_mod(1).unwrap();
+        assert_eq!(m.size_bytes, -1); // 旧行默认 -1（未统计）
+        assert_eq!(m.file_count, -1);
+    }
+
+    #[test]
+    fn rename_mod_updates_name_and_rel_path() {
+        let db = Database::open_in_memory().unwrap();
+        let id = db.upsert_mod("A", "old", "mods/A/old").unwrap();
+        db.rename_mod(id, "new", "mods/A/new").unwrap();
+        let m = db.get_mod(id).unwrap();
+        assert_eq!(m.name, "new");
+        assert_eq!(m.rel_path, "mods/A/new");
+        assert!(!m.enabled && m.installed_at > 0);
+    }
+
+    #[test]
+    fn update_stats_roundtrip() {
+        let db = Database::open_in_memory().unwrap();
+        let id = db.upsert_mod("A", "m", "mods/A/m").unwrap();
+        db.update_stats(id, 12345, 7).unwrap();
+        let m = db.get_mod(id).unwrap();
+        assert_eq!((m.size_bytes, m.file_count), (12345, 7));
+    }
+
+    #[test]
+    fn name_taken_excludes_self() {
+        let db = Database::open_in_memory().unwrap();
+        let id = db.upsert_mod("A", "m1", "mods/A/m1").unwrap();
+        db.upsert_mod("A", "m2", "mods/A/m2").unwrap();
+        assert!(db.name_taken("A", "m2", id).unwrap());
+        assert!(!db.name_taken("A", "m1", id).unwrap()); // 自己不算占用
+        assert!(!db.name_taken("B", "m2", id).unwrap()); // 跨角色不冲突
     }
 }
