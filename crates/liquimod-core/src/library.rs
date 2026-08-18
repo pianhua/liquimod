@@ -62,8 +62,7 @@ impl Library {
                 }
                 let rel = format!("mods/{}/{}", character, name);
                 let id = self.db.upsert_mod(&character, &name, &rel)?;
-                let (size, count) = dir_stats(&mod_entry.path());
-                self.db.update_stats(id, size, count)?;
+                refresh_stats(&self.db, id, &mod_entry.path())?;
                 seen.push((character.clone(), name));
             }
         }
@@ -94,6 +93,7 @@ impl Library {
         copy_dir_recursive(&src_canon, &dest_canon)?;
         let rel = format!("mods/{}/{}", character, name);
         let id = self.db.upsert_mod(character, name, &rel)?;
+        refresh_stats(&self.db, id, &dest)?;
         self.db.get_mod(id)
     }
 
@@ -168,6 +168,15 @@ fn dir_stats(dir: &std::path::Path) -> (i64, i64) {
         }
     }
     (size, count)
+}
+
+/// 刷新 mod 统计：仅统计成功（非 -1）时更新 DB，失败保留旧值。
+fn refresh_stats(db: &Database, id: i64, path: &Path) -> Result<()> {
+    let (size, count) = dir_stats(path);
+    if (size, count) != (-1, -1) {
+        db.update_stats(id, size, count)?;
+    }
+    Ok(())
 }
 
 fn recover_pending_installs(layout: &LibraryLayout, db: &Database) -> Result<()> {
@@ -501,5 +510,44 @@ mod tests {
         lib.scan().unwrap();
         let m = &lib.list().unwrap()[0];
         assert_eq!((m.size_bytes, m.file_count), (42, 1));
+    }
+
+    #[test]
+    fn refresh_stats_preserves_old_values_on_failure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let id = lib.db.upsert_mod("A", "m", "mods/A/m").unwrap();
+        lib.db.update_stats(id, 999, 9).unwrap();
+        // 路径不存在 → 统计失败，保留旧值
+        refresh_stats(&lib.db, id, &tmp.path().join("nope")).unwrap();
+        let m = lib.db.get_mod(id).unwrap();
+        assert_eq!((m.size_bytes, m.file_count), (999, 9));
+    }
+
+    #[test]
+    fn refresh_stats_overwrites_on_success() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let id = lib.db.upsert_mod("A", "m", "mods/A/m").unwrap();
+        lib.db.update_stats(id, 999, 9).unwrap();
+        let dir = lib.layout.mod_dir("A", "m");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("f.bin"), vec![0u8; 42]).unwrap();
+        // 统计成功 → 覆盖旧值
+        refresh_stats(&lib.db, id, &dir).unwrap();
+        let m = lib.db.get_mod(id).unwrap();
+        assert_eq!((m.size_bytes, m.file_count), (42, 1));
+    }
+
+    #[test]
+    fn add_folder_sets_stats_immediately() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), vec![0u8; 7]).unwrap();
+        let m = lib.add_folder(src.path(), "A", "m1").unwrap();
+        assert!((m.size_bytes, m.file_count) != (-1, -1));
+        let got = lib.db.get_mod(m.id).unwrap();
+        assert!((got.size_bytes, got.file_count) != (-1, -1));
     }
 }
