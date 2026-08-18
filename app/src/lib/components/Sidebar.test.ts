@@ -19,6 +19,7 @@ type SidebarProps = {
   query: string;
   onnavigate: (v: View) => void;
   onchanged: () => void;
+  onapplied: () => void;
 };
 
 function props(over: Partial<SidebarProps> = {}) {
@@ -32,6 +33,7 @@ function props(over: Partial<SidebarProps> = {}) {
     query: "",
     onnavigate: vi.fn(),
     onchanged: vi.fn(),
+    onapplied: vi.fn(),
     ...over,
   };
 }

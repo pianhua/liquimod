@@ -178,6 +178,24 @@
     }
   }
 
+  async function launchGame() {
+    try {
+      await api.launchGame();
+      toast("已启动游戏");
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function launchLoader() {
+    try {
+      await api.launchLoader();
+      toast("已启动加载器");
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
   onMount(() => {
     void refresh();
     if (!isTauri()) return;
@@ -250,12 +268,13 @@
       bind:query
       onnavigate={navigate}
       onchanged={refresh}
+      onapplied={refresh}
     />
     <div bind:this={contentEl} class="flex flex-col flex-1 min-w-0 min-h-0">
       {#if showSettings}
         <Settings {config} onback={closeSettings} onchanged={refresh} />
       {:else}
-        <Toolbar {crumbs} bind:sort {showSort} onapplied={refresh} />
+        <Toolbar {crumbs} bind:sort {showSort} onlaunchgame={launchGame} onlaunchloader={launchLoader} />
         {#if view.kind === "home"}
           <header class="px-6 pt-1 pb-3 shrink-0">
             <h1 class="text-2xl font-bold tracking-tight">{charCatName}</h1>

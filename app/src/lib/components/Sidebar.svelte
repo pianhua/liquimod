@@ -2,9 +2,10 @@
   import { api, type CategoryDto } from "$lib/api";
   import { toast } from "$lib/toast.svelte";
   import type { View } from "$lib/view";
-  import SearchBar from "./SearchBar.svelte";
+import SearchBar from "./SearchBar.svelte";
+import PresetMenu from "./PresetMenu.svelte";
 
-  let {
+let {
     view,
     categories,
     charCatName,
@@ -14,6 +15,7 @@
     query = $bindable(),
     onnavigate,
     onchanged,
+    onapplied,
   }: {
     view: View;
     categories: CategoryDto[];
@@ -24,6 +26,7 @@
     query: string;
     onnavigate: (v: View) => void;
     onchanged: () => void;
+    onapplied: () => void;
   } = $props();
 
   let creating = $state(false);
@@ -249,6 +252,9 @@
   </nav>
 
   <div class="shrink-0 pt-2">
+    <div class="pb-1.5">
+      <PresetMenu {onapplied} block />
+    </div>
     {#if creating}
       <input
         bind:value={newName}

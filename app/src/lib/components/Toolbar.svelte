@@ -1,17 +1,18 @@
 <script lang="ts">
-  import PresetMenu from "./PresetMenu.svelte";
   import type { ModSort } from "$lib/view";
 
   let {
     crumbs,
     sort = $bindable(),
     showSort,
-    onapplied,
+    onlaunchgame,
+    onlaunchloader,
   }: {
     crumbs: string[];
     sort: ModSort;
     showSort: boolean;
-    onapplied: () => void;
+    onlaunchgame: () => void;
+    onlaunchloader: () => void;
   } = $props();
 </script>
 
@@ -36,6 +37,23 @@
         </select>
       </div>
     {/if}
-    <PresetMenu {onapplied} />
+    <button
+      class="glass radius-pill h-9 px-4 text-sm flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-[1.03]"
+      onclick={onlaunchgame}
+    >
+      <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
+        <path d="M2.5 1.5v8l7-4-7-4z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+      </svg>
+      启动游戏
+    </button>
+    <button
+      class="glass radius-pill h-9 px-4 text-sm flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-[1.03]"
+      onclick={onlaunchloader}
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M6 1.5v5M3.8 3.8 6 1.5l2.2 2.3M2 7.5v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      启动加载器
+    </button>
   </div>
 </div>

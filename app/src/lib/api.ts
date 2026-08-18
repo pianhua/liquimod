@@ -6,6 +6,8 @@ export interface ConfigDto {
   auto_enable: boolean;
   theme: string;
   character_category_name: string;
+  game_exe: string | null;
+  loader_exe: string | null;
 }
 
 export interface CharacterSummary {
@@ -98,7 +100,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   if (!isTauri()) {
     switch (cmd) {
       case "get_config":
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色" } as T;
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
       case "get_characters":
         return structuredClone(mockCharacters) as T;
       case "list_mods":
@@ -155,13 +157,13 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return undefined as T;
       }
       case "set_auto_enable":
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: Boolean(args?.enabled), theme: "auto", character_category_name: "角色" } as T;
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: Boolean(args?.enabled), theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
       case "set_theme":
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: String(args?.theme ?? "auto"), character_category_name: "角色" } as T;
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: String(args?.theme ?? "auto"), character_category_name: "角色", game_exe: null, loader_exe: null } as T;
       case "set_character_category_name": {
         const n = String(args?.name ?? "").trim();
         if (!n) throw "名称不能为空";
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: n } as T;
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: n, game_exe: null, loader_exe: null } as T;
       }
       case "list_categories":
         return structuredClone([...mockCategories].sort((a, b) => a.ord - b.ord)) as T;
@@ -221,6 +223,16 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return [] as T;
       case "read_log":
         return "2026-08-18T10:00:00 INFO LiquiMod starting\n2026-08-18T10:01:00 INFO installed mod 99" as T;
+      case "choose_game_exe":
+      case "choose_loader_exe": {
+        const p = String(args?.path ?? "");
+        if (!p.toLowerCase().endsWith(".exe")) throw "请选择 .exe 可执行文件";
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
+      }
+      case "launch_game":
+        throw "未配置游戏路径，请在设置中配置";
+      case "launch_loader":
+        throw "未配置加载器路径，请在设置中配置";
       default:
         return undefined as T;
     }
@@ -261,6 +273,10 @@ export const api = {
   listAllMods: () => call<ModDto[]>("list_all_mods"),
   listUncategorizedMods: () => call<ModDto[]>("list_uncategorized_mods"),
   readLog: () => call<string>("read_log"),
+  chooseGameExe: (path: string) => call<ConfigDto>("choose_game_exe", { path }),
+  chooseLoaderExe: (path: string) => call<ConfigDto>("choose_loader_exe", { path }),
+  launchGame: () => call<void>("launch_game"),
+  launchLoader: () => call<void>("launch_loader"),
 };
 
 /// 立绘 URL（SvelteKit files.assets 指向 assets/hsr）。

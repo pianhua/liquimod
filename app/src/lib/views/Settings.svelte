@@ -101,6 +101,24 @@
     }
   }
 
+  async function pickExe(which: "game" | "loader") {
+    try {
+      const path = await open({
+        directory: false,
+        title: which === "game" ? "选择游戏主程序" : "选择 3Dmigoto 加载器",
+        filters: [{ name: "可执行文件", extensions: ["exe"] }],
+      });
+      if (typeof path === "string") {
+        if (which === "game") await api.chooseGameExe(path);
+        else await api.chooseLoaderExe(path);
+        toast("已更新路径");
+        onchanged();
+      }
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
   async function openLibrary() {
     if (!isTauri()) return;
     if (!config) {
@@ -263,6 +281,28 @@
           onclick={addPassword}
         >
           添加
+        </button>
+      </div>
+    </section>
+
+    <section class="glass radius-panel p-5 flex flex-col gap-3">
+      <h3 class="text-sm font-semibold text-secondary">启动</h3>
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-medium">游戏主程序</p>
+          <p class="text-xs text-secondary truncate">{config?.game_exe ?? "未配置"}</p>
+        </div>
+        <button class="glass radius-pill h-8 px-3.5 text-sm shrink-0 cursor-pointer" onclick={() => pickExe("game")}>
+          选择…
+        </button>
+      </div>
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-medium">3Dmigoto 加载器</p>
+          <p class="text-xs text-secondary truncate">{config?.loader_exe ?? "未配置"}</p>
+        </div>
+        <button class="glass radius-pill h-8 px-3.5 text-sm shrink-0 cursor-pointer" onclick={() => pickExe("loader")}>
+          选择…
         </button>
       </div>
     </section>

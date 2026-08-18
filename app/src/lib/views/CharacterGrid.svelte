@@ -3,6 +3,9 @@
   import { filterCharacters, type CharacterSummary } from "$lib/api";
   import CharacterCard from "$lib/components/CharacterCard.svelte";
 
+  // 卡片信息条固定高度：p-2 上下 16 + gap-2 8 + h-9 36 = 60
+  const CARD_EXTRA = 60;
+
   let {
     characters,
     query,
@@ -22,11 +25,10 @@
     if (typeof ResizeObserver === "undefined") return;
     const measure = () => {
       const cs = getComputedStyle(gridEl);
-      const cols = cs.gridTemplateColumns.split(" ").filter(Boolean).length;
-      if (cols === 0) return;
-      const gap = parseFloat(cs.columnGap) || 0;
-      const inner = gridEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-      rowHeight = (inner - (cols - 1) * gap) / cols;
+      // 固定轨宽布局：第一条轨道的像素宽即卡片宽
+      const first = cs.gridTemplateColumns.split(" ").filter(Boolean)[0];
+      const w = parseFloat(first);
+      if (w > 0) rowHeight = w + CARD_EXTRA;
     };
     const ro = new ResizeObserver(measure);
     ro.observe(gridEl);
@@ -37,7 +39,7 @@
 
 <div
   bind:this={gridEl}
-  class="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-5 px-8 pt-2 pb-8 overflow-y-auto flex-1 min-h-0 content-start"
+  class="grid grid-cols-[repeat(auto-fill,180px)] justify-center gap-5 px-6 pt-2 pb-8 overflow-y-auto flex-1 min-h-0 content-start"
   style:grid-auto-rows={rowHeight > 0 ? `${rowHeight}px` : undefined}
 >
   {#each filtered as c (c.internal_name)}

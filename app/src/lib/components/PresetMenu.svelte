@@ -2,7 +2,7 @@
   import { api, type PresetDto } from "$lib/api";
   import { toast } from "$lib/toast.svelte";
 
-  let { onapplied }: { onapplied: () => void } = $props();
+  let { onapplied, block = false }: { onapplied: () => void; block?: boolean } = $props();
 
   let open = $state(false);
   let presets = $state<PresetDto[]>([]);
@@ -74,6 +74,8 @@
 <div class="relative">
   <button
     class="glass radius-pill h-9 px-4 text-sm flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-[1.03]"
+    class:w-full={block}
+    class:justify-center={block}
     aria-label="预设"
     aria-expanded={open}
     onclick={toggleOpen}
@@ -95,7 +97,13 @@
       tabindex="-1"
       onclick={() => (open = false)}
     ></button>
-    <div class="glass radius-panel absolute right-0 top-11 z-50 w-72 p-2.5 flex flex-col gap-1">
+    <div
+      class="glass radius-panel absolute top-11 z-50 p-2.5 flex flex-col gap-1"
+      class:left-0={block}
+      class:right-0={!block}
+      class:w-72={!block}
+      style={block ? "left: 0; right: 0" : ""}
+    >
       {#each presets as p (p.id)}
         <div class="flex items-center gap-1 rounded-xl px-1.5 py-1 transition-colors hover:bg-[var(--glass-stroke)]">
           <button
