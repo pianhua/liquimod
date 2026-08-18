@@ -3,10 +3,51 @@ use crate::state::AppState;
 use liquimod_core::archive::install::{install_archive, install_archive_inferred, InstallOutcome};
 use liquimod_core::deploy::Deployer;
 use liquimod_core::error::LiquiModError;
+use liquimod_core::games::hsr::Hsr;
 use liquimod_core::games::{CharacterInfo, Game};
 use liquimod_core::library::Library;
+use liquimod_core::refresh::{is_game_running, RefreshClient, HELPER_EXE};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use tauri::Emitter;
+
+/// 游戏运行中则通知 helper 发 F10；失败只 toast 不阻断。
+/// 阻塞（UAC 弹窗 + 最多 5s 管道轮询）：必须在 spawn_blocking 工作线程内调用。
+fn maybe_refresh_game(app: &tauri::AppHandle, refresh: &Mutex<Option<RefreshClient>>) {
+    if !is_game_running(Hsr::shared().process_names()) {
+        return;
+    }
+    let helper = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(HELPER_EXE)));
+    let Some(helper) = helper.filter(|p| p.exists()) else {
+        let _ = app.emit(
+            "liquimod-toast",
+            "未找到刷新 helper，跳过游戏内刷新".to_string(),
+        );
+        return;
+    };
+    let mut guard = refresh.lock().unwrap();
+    if guard.is_none() {
+        match RefreshClient::connect_or_launch(&helper) {
+            Ok(c) => *guard = Some(c),
+            Err(e) => {
+                let _ = app.emit("liquimod-toast", format!("刷新 helper 启动失败：{e}"));
+                return;
+            }
+        }
+    }
+    if let Some(client) = guard.as_mut() {
+        if client.poke().is_err() {
+            *guard = None; // helper 死了，下次重连
+            let _ = app.emit(
+                "liquimod-toast",
+                "刷新 helper 连接断开，下次操作将重试".to_string(),
+            );
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ConfigDto {
@@ -220,12 +261,20 @@ pub fn get_config(state: tauri::State<AppState>) -> ConfigDto {
 }
 
 #[tauri::command]
-pub fn choose_mods_dir(state: tauri::State<AppState>, path: String) -> Result<ConfigDto, String> {
-    let mut config = state.config.lock().unwrap();
-    let dto = set_mods_dir(&mut config, PathBuf::from(path))?;
-    config
-        .save_to(&state.config_path)
-        .map_err(|e| format!("配置保存失败：{e}"))?;
+pub fn choose_mods_dir(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    path: String,
+) -> Result<ConfigDto, String> {
+    let dto = {
+        let mut config = state.config.lock().unwrap();
+        let dto = set_mods_dir(&mut config, PathBuf::from(path))?;
+        config
+            .save_to(&state.config_path)
+            .map_err(|e| format!("配置保存失败：{e}"))?;
+        dto
+    };
+    crate::start_watcher(&app, state.inner());
     Ok(dto)
 }
 
@@ -258,15 +307,22 @@ pub async fn list_mods(
 
 #[tauri::command]
 pub async fn set_mod_enabled(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: i64,
     enabled: bool,
 ) -> Result<(), String> {
     let library = std::sync::Arc::clone(&state.library);
+    let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
+    let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
-        set_enabled(&lib, mods_dir.as_deref(), id, enabled)
+        let result = set_enabled(&lib, mods_dir.as_deref(), id, enabled);
+        if result.is_ok() {
+            maybe_refresh_game(&app2, &refresh);
+        }
+        result
     })
     .await
     .map_err(|e| format!("切换 Mod 失败：{e}"))?
@@ -274,33 +330,50 @@ pub async fn set_mod_enabled(
 
 #[tauri::command]
 pub async fn install_mod(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     path: String,
     character: Option<String>,
     password: Option<String>,
 ) -> Result<InstallResultDto, String> {
     let library = std::sync::Arc::clone(&state.library);
+    let refresh = std::sync::Arc::clone(&state.refresh);
+    let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
-        install_entry(
+        let result = install_entry(
             &lib,
-            liquimod_core::games::hsr::Hsr::shared(),
+            Hsr::shared(),
             Path::new(&path),
             character.as_deref(),
             password.as_deref(),
-        )
+        );
+        if matches!(result, Ok(InstallResultDto::Installed { .. })) {
+            maybe_refresh_game(&app2, &refresh);
+        }
+        result
     })
     .await
     .map_err(|e| format!("安装任务失败：{e}"))?
 }
 
 #[tauri::command]
-pub async fn uninstall_mod(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
+pub async fn uninstall_mod(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: i64,
+) -> Result<(), String> {
     let library = std::sync::Arc::clone(&state.library);
+    let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
+    let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
-        remove_entry(&lib, mods_dir.as_deref(), id)
+        let result = remove_entry(&lib, mods_dir.as_deref(), id);
+        if result.is_ok() {
+            maybe_refresh_game(&app2, &refresh);
+        }
+        result
     })
     .await
     .map_err(|e| format!("卸载任务失败：{e}"))?
@@ -311,6 +384,14 @@ mod tests {
     use super::*;
     use liquimod_core::games::hsr::Hsr;
     use std::fs;
+
+    #[test]
+    fn library_changed_payload_shape() {
+        let v = serde_json::json!({ "added": 2usize, "removed": 1usize });
+        assert_eq!(v["added"], 2);
+        assert_eq!(v["removed"], 1);
+        assert!(v.get("count").is_none());
+    }
 
     fn temp_lib() -> (tempfile::TempDir, Library) {
         let dir = tempfile::tempdir().unwrap();
