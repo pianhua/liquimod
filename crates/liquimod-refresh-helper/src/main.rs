@@ -2,6 +2,8 @@
 //! 客户端（主 app）断开管道即退出，随 app 生命周期。
 //! 由主 app 以 ShellExecuteW runas 提权启动（无清单，无键盘监听，无网络）。
 
+#![windows_subsystem = "windows"]
+
 use std::io::Read;
 
 const PIPE: &str = r"\\.\pipe\liquimod-refresh";
@@ -67,10 +69,12 @@ fn main() {
             None,
         );
         if handle == INVALID_HANDLE_VALUE {
-            return; // 已在运行或创建失败：直接退出
+            std::process::exit(2); // 已在运行或创建失败
         }
-        if ConnectNamedPipe(handle, None).is_err() {
-            return;
+        if let Err(e) = ConnectNamedPipe(handle, None) {
+            if e.code() != windows::Win32::Foundation::ERROR_PIPE_CONNECTED.into() {
+                std::process::exit(3); // 连接失败
+            }
         }
         let file = std::fs::File::from_raw_handle(handle.0);
         serve(file, send_f10);
@@ -87,8 +91,7 @@ mod tests {
 
     #[test]
     fn each_batch_with_one_triggers_once_and_eof_stops() {
-        let data = b"111xx1"; // 两批读：第一模拟一次 read 返回 "111"，第二批 "xx1"？
-                              // Cursor 一次 read 尽量填满缓冲——64 > 6，故只 read 一次，应触发 1 次。
+        let data = b"111xx1"; // Cursor 一次 read 返回全部 6 字节（64 > 6），含 b'1' → 触发 1 次
         let mut count = 0;
         serve(std::io::Cursor::new(data.to_vec()), || count += 1);
         assert_eq!(count, 1);

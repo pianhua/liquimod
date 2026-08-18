@@ -58,6 +58,9 @@ impl RefreshClient {
     }
 
     /// 通知 helper 发一次 F10。
+    ///
+    /// 同一 read 批次内到达的多次 poke 会合并为单次 F10（helper 按"批次含 b'1'"触发）：
+    /// 属故意的突发去重，契合"一次变更爆发只刷新一次"的语义。
     pub fn poke(&mut self) -> Result<()> {
         self.pipe.write_all(b"1")?;
         self.pipe.flush()?;
