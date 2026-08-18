@@ -1,0 +1,16 @@
+<script lang="ts">
+  import { fly } from "svelte/transition";
+  import { toasts } from "$lib/toast.svelte";
+</script>
+
+<div class="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2 pointer-events-none">
+  {#each toasts as t (t.id)}
+    <div
+      transition:fly={{ y: 12, duration: 200 }}
+      class="glass radius-pill px-4 h-9 flex items-center text-sm"
+      role="status"
+    >
+      {t.message}
+    </div>
+  {/each}
+</div>

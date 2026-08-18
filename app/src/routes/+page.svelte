@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
   import { api, isTauri, type CharacterSummary, type ConfigDto } from "$lib/api";
+  import { toast } from "$lib/toast.svelte";
   import { enqueueInstalls, installJobs } from "$lib/install.svelte";
   import InstallOverlay from "$lib/components/InstallOverlay.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
@@ -50,9 +52,25 @@
         })
         .catch(() => {});
     });
+    let unlistenChanged: (() => void) | undefined;
+    let unlistenToast: (() => void) | undefined;
+    listen<{ added: number; removed: number }>("library-changed", (e) => {
+      const { added, removed } = e.payload;
+      if (added > 0 || removed > 0) toast(`检测到仓库变动：+${added} / -${removed}`);
+      refresh();
+    }).then((u) => {
+      if (cancelled) u();
+      else unlistenChanged = u;
+    });
+    listen<string>("liquimod-toast", (e) => toast(e.payload)).then((u) => {
+      if (cancelled) u();
+      else unlistenToast = u;
+    });
     return () => {
       cancelled = true;
       unlisten?.();
+      unlistenChanged?.();
+      unlistenToast?.();
     };
   });
 </script>
