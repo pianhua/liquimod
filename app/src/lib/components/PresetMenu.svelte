@@ -98,10 +98,13 @@
       onclick={() => (open = false)}
     ></button>
     <div
-      class="glass radius-panel absolute top-11 z-50 p-2.5 flex flex-col gap-1"
+      class="glass radius-panel absolute z-50 p-2.5 flex flex-col gap-1"
       class:left-0={block}
       class:right-0={!block}
       class:w-72={!block}
+      class:bottom-full={block}
+      class:mb-2={block}
+      class:top-11={!block}
       style={block ? "left: 0; right: 0" : ""}
     >
       {#each presets as p (p.id)}
