@@ -1,19 +1,24 @@
 <script lang="ts">
-  import type { ModDto } from "$lib/api";
+  import type { CategoryDto, ModDto } from "$lib/api";
   import Toggle from "./Toggle.svelte";
+  import CategoryMenu from "./CategoryMenu.svelte";
 
   let {
     mod,
+    categories,
     ontoggle,
     onrename,
     onuninstall,
     onopen,
+    onmove,
   }: {
     mod: ModDto;
+    categories: CategoryDto[];
     ontoggle: (next: boolean) => void;
     onrename: (name: string) => Promise<boolean>;
     onuninstall: () => Promise<void>;
     onopen: () => void;
+    onmove: (categoryId: number | null) => void;
   } = $props();
 
   let renaming = $state(false);
@@ -176,6 +181,12 @@
             <path d="M8.6 2.2 10.8 4.4 4.7 10.5l-2.9.7.7-2.9 6.1-6.1Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
           </svg>
         </button>
+        <CategoryMenu
+          {categories}
+          current={mod.category_id}
+          label={`移到分类 ${mod.name}`}
+          onpick={onmove}
+        />
         <button
           class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer transition-colors hover:text-white"
           onmouseenter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--danger)")}

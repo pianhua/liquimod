@@ -82,6 +82,20 @@
       error = String(e);
     }
   }
+
+  async function moveCategory(mod: ModDto, categoryId: number | null) {
+    error = "";
+    try {
+      await api.setModCategory(mod.id, categoryId);
+      if (categoryId !== null) {
+        // 移出角色视图后从列表消失
+        mods = mods.filter((m) => m.id !== mod.id);
+      }
+      onconfigured(); // 刷新侧边栏计数
+    } catch (e) {
+      error = String(e);
+    }
+  }
 </script>
 
 <div class="flex flex-col h-full min-h-0">
@@ -124,10 +138,12 @@
     {#each mods as mod (mod.id)}
       <ModRow
         {mod}
+        {categories}
         ontoggle={(next) => toggle(mod, next)}
         onrename={(name) => renameMod(mod, name)}
         onuninstall={() => uninstallMod(mod)}
         onopen={() => openModDir(mod)}
+        onmove={(cid) => moveCategory(mod, cid)}
       />
     {/each}
     {#if mods.length === 0}

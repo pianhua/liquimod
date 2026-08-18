@@ -18,10 +18,12 @@ const mod: ModDto = {
 function setup(overrides = {}) {
   const props = {
     mod: { ...mod },
+    categories: [],
     ontoggle: vi.fn(),
     onrename: vi.fn(async () => true),
     onuninstall: vi.fn(async () => {}),
     onopen: vi.fn(),
+    onmove: vi.fn(),
     ...overrides,
   };
   render(ModRow, { props });

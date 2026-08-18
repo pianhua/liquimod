@@ -5,6 +5,15 @@
     character,
     onclick,
   }: { character: CharacterSummary; onclick: () => void } = $props();
+
+  // 信号灯：恰好 1 个启用 = 绿；2 个及以上 = 黄；0 = 灰
+  let dot = $derived(
+    character.enabled === 1
+      ? { color: "#34c759", glow: "0 0 6px rgba(52,199,89,0.9)" }
+      : character.enabled >= 2
+        ? { color: "#ffd60a", glow: "0 0 6px rgba(255,214,10,0.9)" }
+        : { color: "rgba(142,142,147,0.65)", glow: "none" },
+  );
 </script>
 
 <div
@@ -34,15 +43,16 @@
       {character.display_name.slice(0, 1)}
     </div>
   {/if}
-  <div class="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/55 via-black/20 to-transparent pointer-events-none"></div>
-  <div class="absolute bottom-2.5 inset-x-2.5 flex items-end justify-between gap-1.5 pointer-events-none">
-    <span class="glass radius-pill px-3 py-1 text-[13px] font-medium text-white truncate">
-      {character.display_name}
-    </span>
+  <span
+    class="absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full z-10"
+    title={character.enabled > 0 ? `${character.enabled} 个 Mod 启用中` : "没有启用的 Mod"}
+    style:background={dot.color}
+    style:box-shadow={dot.glow}
+  ></span>
+  <div class="absolute inset-x-2 bottom-2 glass radius-pill pl-3 pr-2 py-1.5 flex items-center justify-between gap-1.5 pointer-events-none z-10">
+    <span class="text-[13px] font-medium truncate">{character.display_name}</span>
     {#if character.total > 0}
-      <span class="glass radius-pill px-2 py-1 text-[11px] text-white shrink-0">
-        {character.enabled}/{character.total}
-      </span>
+      <span class="text-[11px] text-secondary shrink-0">{character.enabled}/{character.total}</span>
     {/if}
   </div>
 </div>

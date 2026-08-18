@@ -20,6 +20,7 @@
   import CharacterGrid from "$lib/views/CharacterGrid.svelte";
   import CharacterDetail from "$lib/views/CharacterDetail.svelte";
   import Settings from "$lib/views/Settings.svelte";
+  import ModCardGrid from "$lib/components/ModCardGrid.svelte";
 
   let config = $state<ConfigDto | null>(null);
   let characters = $state<CharacterSummary[]>([]);
@@ -124,6 +125,59 @@
     await restoreScroll();
   }
 
+  function catLabelOf(m: ModDto): string {
+    if (m.category_id == null) return charCatName;
+    return categories.find((c) => c.id === m.category_id)?.name ?? "未分类";
+  }
+
+  async function toggleViewMod(m: ModDto, next: boolean) {
+    try {
+      await api.setModEnabled(m.id, next);
+      m.enabled = next;
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function renameViewMod(m: ModDto, name: string): Promise<boolean> {
+    try {
+      await api.renameMod(m.id, name);
+      m.name = name;
+      return true;
+    } catch (e) {
+      toast(String(e));
+      return false;
+    }
+  }
+
+  async function uninstallViewMod(m: ModDto) {
+    try {
+      await api.uninstallMod(m.id);
+      await refresh();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function openViewMod(m: ModDto) {
+    if (!isTauri()) return;
+    try {
+      const { openPath } = await import("@tauri-apps/plugin-opener");
+      await openPath(m.path);
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function moveViewMod(m: ModDto, categoryId: number | null) {
+    try {
+      await api.setModCategory(m.id, categoryId);
+      await refresh();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
   onMount(() => {
     void refresh();
     if (!isTauri()) return;
@@ -221,10 +275,18 @@
             onconfigured={refresh}
           />
         {:else}
-          <!-- ModCardGrid 由 Task 5 提供；本任务先占位保证骨架可编译 -->
-          <div class="flex-1 min-h-0 overflow-y-auto px-6 pb-8">
-            <p class="text-secondary text-center mt-24">该视图 {viewMods.length} 个 Mod（卡片网格见下一任务）</p>
-          </div>
+          <ModCardGrid
+            mods={viewMods}
+            {categories}
+            {sort}
+            {query}
+            {catLabelOf}
+            ontoggle={toggleViewMod}
+            onrename={renameViewMod}
+            onuninstall={uninstallViewMod}
+            onopen={openViewMod}
+            onmove={moveViewMod}
+          />
         {/if}
       {/if}
     </div>
