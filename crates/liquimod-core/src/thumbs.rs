@@ -76,9 +76,17 @@ pub fn ensure_thumbnail(
         Err(_) => return Ok(None), // 损坏图片不阻断列表
     };
     let thumb = img.thumbnail(THUMB_LONG_EDGE, THUMB_LONG_EDGE);
-    thumb
-        .save_with_format(&dest, image::ImageFormat::Jpeg)
-        .map_err(std::io::Error::other)?;
+    let tmp = thumb_dir.join(format!("{mod_id}.jpg.tmp"));
+    {
+        let file = std::fs::File::create(&tmp)?;
+        let writer = std::io::BufWriter::new(file);
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(writer, 80);
+        thumb
+            .to_rgb8()
+            .write_with_encoder(encoder)
+            .map_err(std::io::Error::other)?;
+    }
+    std::fs::rename(&tmp, &dest)?;
     Ok(Some(dest))
 }
 
