@@ -239,9 +239,10 @@ fn print_installation(outcome: InstallOutcome) -> std::result::Result<(), CliErr
         InstallOutcome::Installed {
             mod_id,
             name,
+            character,
             warnings,
         } => {
-            println!("Installed: {name} (id {mod_id})");
+            println!("Installed: {name} -> {character} (id {mod_id})");
             for warning in warnings {
                 println!("Warning: {warning}");
             }

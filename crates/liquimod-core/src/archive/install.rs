@@ -1,6 +1,7 @@
 use super::{extract_recursive, resolve_content_root, ExtractReport, PasswordBook};
 use crate::db::Database;
 use crate::error::{LiquiModError, Result};
+use crate::games::{infer_character, Game};
 use crate::library::{Library, INSTALL_LOCK};
 use crate::paths::is_valid_segment;
 use std::path::{Path, PathBuf};
@@ -11,9 +12,37 @@ pub enum InstallOutcome {
     Installed {
         mod_id: i64,
         name: String,
+        character: String,
         warnings: Vec<String>,
     },
     NeedsPassword,
+}
+
+/// 指定角色安装（CLI 与前端确认角色后使用）。
+pub fn install_archive(
+    db: &Database,
+    library: &Library,
+    archive_path: &Path,
+    character: &str,
+    explicit_password: Option<&str>,
+) -> Result<InstallOutcome> {
+    let character = character.to_owned();
+    install_inner(db, library, archive_path, explicit_password, |_| {
+        Ok(character)
+    })
+}
+
+/// 自动推断角色安装：解压后从内容推断，无线索时归入 "Others"。
+pub fn install_archive_inferred(
+    db: &Database,
+    library: &Library,
+    game: &dyn Game,
+    archive_path: &Path,
+    explicit_password: Option<&str>,
+) -> Result<InstallOutcome> {
+    install_inner(db, library, archive_path, explicit_password, |temp| {
+        Ok(infer_character(temp, game).unwrap_or_else(|| "Others".to_string()))
+    })
 }
 
 /// Installs an archive into the library. Destination ownership checking, copying, and rollback are
@@ -21,12 +50,13 @@ pub enum InstallOutcome {
 /// library are outside the protection scope because the desktop application is single-instance.
 /// Successful nested extraction keeps both each `__nested_<n>/` result and the original nested
 /// archive file under the installed content root.
-pub fn install_archive(
+/// 单阶段安装：解压（含密码本重试）→ 解析角色 → 复制入库 → 写 DB。
+fn install_inner(
     db: &Database,
     library: &Library,
     archive_path: &Path,
-    character: &str,
     explicit_password: Option<&str>,
+    resolve_character: impl FnOnce(&Path) -> Result<String>,
 ) -> Result<InstallOutcome> {
     let name = archive_path
         .file_stem()
@@ -77,21 +107,22 @@ pub fn install_archive(
     let Some(password) = successful_password else {
         return Ok(InstallOutcome::NeedsPassword);
     };
+    let character = resolve_character(temp_dir.path())?;
     let content_root = resolve_content_root(temp_dir.path())?;
     let _install_lock = INSTALL_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if !is_valid_segment(character) {
-        return Err(LiquiModError::InvalidName(character.into()));
+    if !is_valid_segment(&character) {
+        return Err(LiquiModError::InvalidName(character));
     }
     if !is_valid_segment(&name) {
         return Err(LiquiModError::InvalidName(name));
     }
-    let destination = library.layout.mod_dir(character, &name);
+    let destination = library.layout.mod_dir(&character, &name);
     match std::fs::symlink_metadata(&destination) {
         Ok(_) => {
             return Err(LiquiModError::DestinationExists {
-                character: character.into(),
+                character: character.clone(),
                 name: name.clone(),
             });
         }
@@ -102,7 +133,7 @@ pub fn install_archive(
     let marker = destination.join(crate::library::INSTALLING_MARKER);
     std::fs::create_dir_all(&destination)?;
     std::fs::File::create(&marker)?;
-    let entry = match library.add_folder(&content_root, character, &name) {
+    let entry = match library.add_folder(&content_root, &character, &name) {
         Ok(entry) => entry,
         Err(error) => {
             let _ = std::fs::remove_dir_all(&destination);
@@ -123,6 +154,7 @@ pub fn install_archive(
     Ok(InstallOutcome::Installed {
         mod_id: entry.id,
         name: entry.name,
+        character,
         warnings,
     })
 }
@@ -242,12 +274,14 @@ mod tests {
         let InstallOutcome::Installed {
             mod_id,
             name,
+            character,
             warnings,
         } = outcome
         else {
             panic!("expected installed outcome");
         };
         assert_eq!(name, "PlainMod");
+        assert_eq!(character, "Firefly");
         assert!(mod_id > 0);
         assert!(warnings.is_empty());
         assert!(library
@@ -628,5 +662,53 @@ mod tests {
         assert!(destination.join("mod.ini").is_file());
         assert!(!destination.join("FooMod-v1").exists());
         assert!(!destination.join("FooMod").exists());
+    }
+
+    #[test]
+    fn inferred_install_picks_character_from_ini() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("MysteryMod.zip");
+        write_zip(
+            &archive,
+            &[("mod.ini", b"; firefly skin\nglobal $firefly = 1")],
+            None,
+        );
+
+        let outcome = install_archive_inferred(
+            &library.db,
+            &library,
+            crate::games::hsr::Hsr::shared(),
+            &archive,
+            None,
+        )
+        .unwrap();
+
+        let InstallOutcome::Installed { character, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(character, "Firefly");
+        assert!(library.layout.mod_dir("Firefly", "MysteryMod").is_dir());
+    }
+
+    #[test]
+    fn inferred_install_falls_back_to_others() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("UnknownMod.zip");
+        write_zip(&archive, &[("mod.ini", b"[Constants]")], None);
+
+        let outcome = install_archive_inferred(
+            &library.db,
+            &library,
+            crate::games::hsr::Hsr::shared(),
+            &archive,
+            None,
+        )
+        .unwrap();
+
+        let InstallOutcome::Installed { character, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(character, "Others");
+        assert!(library.layout.mod_dir("Others", "UnknownMod").is_dir());
     }
 }
