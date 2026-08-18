@@ -74,4 +74,12 @@ describe("PresetMenu", () => {
     await fireEvent.click(screen.getByLabelText("删除预设 日常出战"));
     expect(api.deletePreset).toHaveBeenCalledWith(1);
   });
+
+  it("按 Escape 关闭弹层", async () => {
+    render(PresetMenu, { props: { onapplied: () => {} } });
+    await fireEvent.click(screen.getByRole("button", { name: "预设" }));
+    await waitFor(() => screen.getByText("日常出战"));
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("日常出战")).toBeNull());
+  });
 });

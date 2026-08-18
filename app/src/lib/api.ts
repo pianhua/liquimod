@@ -104,7 +104,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       case "list_presets":
         return structuredClone(mockPresets) as T;
       case "save_preset": {
-        const p = { id: mockPresets.length + 1, name: String(args?.name ?? "预设"), created_at: 1755000000 };
+        const p = { id: Math.max(0, ...mockPresets.map((x) => x.id)) + 1, name: String(args?.name ?? "预设"), created_at: 1755000000 };
         const i = mockPresets.findIndex((x) => x.name === p.name);
         if (i >= 0) mockPresets[i] = { ...p, id: mockPresets[i].id };
         else mockPresets.push(p);

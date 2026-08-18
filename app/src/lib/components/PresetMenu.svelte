@@ -52,19 +52,30 @@
   }
 
   async function remove(p: PresetDto) {
+    if (busy) return;
+    busy = true;
     try {
       await api.deletePreset(p.id);
       await load();
     } catch (e) {
       toast(String(e));
+    } finally {
+      busy = false;
     }
   }
 </script>
+
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === "Escape" && open) open = false;
+  }}
+/>
 
 <div class="relative">
   <button
     class="glass radius-pill h-9 px-4 text-sm flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-[1.03]"
     aria-label="预设"
+    aria-expanded={open}
     onclick={toggleOpen}
   >
     <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -81,6 +92,7 @@
     <button
       class="fixed inset-0 z-40 cursor-default bg-transparent"
       aria-label="关闭预设菜单"
+      tabindex="-1"
       onclick={() => (open = false)}
     ></button>
     <div class="glass radius-panel absolute right-0 top-11 z-50 w-72 p-2.5 flex flex-col gap-1">
@@ -94,8 +106,9 @@
             {p.name}
           </button>
           <button
-            class="w-6 h-6 grid place-items-center rounded-full text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white"
+            class="w-6 h-6 grid place-items-center rounded-full text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white disabled:opacity-50 disabled:cursor-default"
             aria-label={`删除预设 ${p.name}`}
+            disabled={busy}
             onclick={() => remove(p)}
           >
             <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
