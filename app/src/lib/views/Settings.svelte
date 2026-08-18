@@ -16,6 +16,7 @@
 
   let passwords = $state<string[]>([]);
   let newPassword = $state("");
+  let busy = $state(false);
 
   onMount(async () => {
     try {
@@ -39,7 +40,11 @@
   }
 
   async function openLibrary() {
-    if (!isTauri() || !config) return;
+    if (!isTauri()) return;
+    if (!config) {
+      toast("配置尚未加载");
+      return;
+    }
     try {
       const { openPath } = await import("@tauri-apps/plugin-opener");
       await openPath(config.library_root);
@@ -50,22 +55,29 @@
 
   async function addPassword() {
     const v = newPassword.trim();
-    if (!v) return;
+    if (!v || busy) return;
+    busy = true;
     try {
       await api.addPassword(v);
       newPassword = "";
       passwords = await api.listPasswords();
     } catch (e) {
       toast(String(e));
+    } finally {
+      busy = false;
     }
   }
 
   async function removePassword(v: string) {
+    if (busy) return;
+    busy = true;
     try {
       await api.removePassword(v);
       passwords = await api.listPasswords();
     } catch (e) {
       toast(String(e));
+    } finally {
+      busy = false;
     }
   }
 </script>
@@ -121,8 +133,9 @@
           style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
           <span class="text-sm font-mono">{p}</span>
           <button
-            class="w-6 h-6 grid place-items-center rounded-full text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white"
+            class="w-6 h-6 grid place-items-center rounded-full text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white disabled:opacity-50 disabled:cursor-default"
             aria-label={`移除密码 ${p}`}
+            disabled={busy}
             onclick={() => removePassword(p)}
           >
             <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
@@ -143,7 +156,7 @@
         />
         <button
           class="accent-fill accent-text radius-pill h-8 px-3.5 text-sm font-medium cursor-pointer disabled:opacity-50"
-          disabled={!newPassword.trim()}
+          disabled={!newPassword.trim() || busy}
           onclick={addPassword}
         >
           添加

@@ -97,6 +97,7 @@
               class="w-11 h-11 rounded-xl object-cover shrink-0"
               style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
               draggable="false"
+              onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
             />
           {/if}
           <span class="font-medium truncate">{mod.name}</span>
