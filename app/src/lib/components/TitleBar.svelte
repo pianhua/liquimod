@@ -35,7 +35,7 @@
       </svg>
     </button>
     <button
-      aria-label="鏈€灏忓寲"
+      aria-label="最小化"
       class="w-8 h-8 grid place-items-center rounded-full transition-colors hover:bg-[var(--glass-stroke)]"
       onclick={() => act("minimize")}
     >
@@ -44,7 +44,7 @@
       </svg>
     </button>
     <button
-      aria-label="鏈€澶у寲"
+      aria-label="最大化"
       class="w-8 h-8 grid place-items-center rounded-full transition-colors hover:bg-[var(--glass-stroke)]"
       onclick={() => act("toggleMaximize")}
     >
@@ -53,7 +53,7 @@
       </svg>
     </button>
     <button
-      aria-label="鍏抽棴"
+      aria-label="关闭"
       class="w-8 h-8 grid place-items-center rounded-full transition-colors hover:bg-[var(--danger)] hover:text-white"
       onclick={() => act("close")}
     >
