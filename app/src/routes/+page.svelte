@@ -58,7 +58,7 @@
     listen<{ added: number; removed: number }>("library-changed", (e) => {
       if (cancelled) return;
       const { added, removed } = e.payload;
-      if (added > 0 || removed > 0) toast(`检测到仓库变动�?${added} / -${removed}`);
+      if (added > 0 || removed > 0) toast(`检测到仓库变动：+${added} / -${removed}`);
       refresh();
     })
       .then((u) => {
@@ -105,7 +105,7 @@
     <header class="flex items-end justify-between px-8 pt-3 pb-5 shrink-0">
       <div>
         <h1 class="text-[34px] leading-tight font-bold tracking-tight">角色</h1>
-        <p class="text-sm text-secondary mt-0.5">{characters.length} 位角�?· {modTotal} �?Mod</p>
+        <p class="text-sm text-secondary mt-0.5">{characters.length} 位角色 · {modTotal} 个 Mod</p>
       </div>
       <div class="flex items-center gap-2.5">
         <PresetMenu onapplied={refresh} />
