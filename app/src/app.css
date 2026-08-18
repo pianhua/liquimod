@@ -21,6 +21,7 @@
     inset 0 0.5px 0 var(--glass-highlight),
     0 16px 40px rgba(0, 0, 0, 0.14),
     0 4px 10px rgba(0, 0, 0, 0.08);
+  --scroll-thumb: rgba(0, 0, 0, 0.22);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -45,6 +46,7 @@
       inset 0 0.5px 0 var(--glass-highlight),
       0 16px 44px rgba(0, 0, 0, 0.5),
       0 4px 10px rgba(0, 0, 0, 0.32);
+    --scroll-thumb: rgba(255, 255, 255, 0.32);
   }
 }
 
@@ -65,10 +67,11 @@
     inset 0 0.5px 0 var(--glass-highlight),
     0 8px 24px rgba(0, 0, 0, 0.35),
     0 2px 6px rgba(0, 0, 0, 0.28);
-  --shadow-lift:
-    inset 0 0.5px 0 var(--glass-highlight),
-    0 16px 44px rgba(0, 0, 0, 0.5),
-    0 4px 10px rgba(0, 0, 0, 0.32);
+--shadow-lift:
+      inset 0 0.5px 0 var(--glass-highlight),
+      0 16px 44px rgba(0, 0, 0, 0.5),
+      0 4px 10px rgba(0, 0, 0, 0.32);
+  --scroll-thumb: rgba(255, 255, 255, 0.32);
 }
 
 html,
@@ -104,7 +107,7 @@ body::before {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--glass-stroke);
+  background: var(--scroll-thumb);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {

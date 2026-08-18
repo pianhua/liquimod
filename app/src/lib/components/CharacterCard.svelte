@@ -20,7 +20,7 @@
 <div
   role="button"
   tabindex="0"
-  class="radius-card relative cursor-pointer transition-all duration-200 hover:scale-[1.03] hover:-translate-y-0.5 active:scale-[0.98] outline-none p-2 flex flex-col gap-2"
+  class="radius-card relative cursor-pointer transition-all duration-200 hover:scale-[1.03] hover:-translate-y-0.5 active:scale-[0.98] outline-none focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 p-2 flex flex-col gap-2"
   style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke), var(--shadow-soft)"
   {onclick}
   onkeydown={(e) => {
