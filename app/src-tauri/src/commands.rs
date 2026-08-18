@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::state::AppState;
+use base64::Engine;
 use liquimod_core::archive::install::{install_archive, install_archive_inferred, InstallOutcome};
 use liquimod_core::deploy::Deployer;
 use liquimod_core::error::LiquiModError;
@@ -56,6 +57,19 @@ pub struct ConfigDto {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PresetDto {
+    pub id: i64,
+    pub name: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ApplyResultDto {
+    pub enabled: usize,
+    pub disabled: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CharacterSummary {
     pub internal_name: String,
     pub display_name: String,
@@ -70,6 +84,7 @@ pub struct ModDto {
     pub name: String,
     pub enabled: bool,
     pub installed_at: i64,
+    pub thumb: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -141,20 +156,69 @@ fn summary(c: &CharacterInfo, total: usize, enabled: usize) -> CharacterSummary 
 }
 
 pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
+    let root = lib.layout.root.clone();
     let mut mods: Vec<ModDto> = lib
         .list()
         .map_err(|e| e.to_string())?
         .into_iter()
         .filter(|m| m.character == character)
-        .map(|m| ModDto {
-            id: m.id,
-            name: m.name,
-            enabled: m.enabled,
-            installed_at: m.installed_at,
+        .map(|m| {
+            let dir = lib.layout.mod_dir(&m.character, &m.name);
+            let thumb = thumb_data_url(&root, &dir, m.id);
+            ModDto {
+                id: m.id,
+                name: m.name,
+                enabled: m.enabled,
+                installed_at: m.installed_at,
+                thumb,
+            }
         })
         .collect();
     mods.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(mods)
+}
+
+pub fn save_preset_named(
+    db: &liquimod_core::db::Database,
+    name: &str,
+    mod_ids: &[i64],
+) -> Result<i64, String> {
+    db.save_preset(name, mod_ids).map_err(|e| e.to_string())
+}
+
+pub fn preset_dtos(db: &liquimod_core::db::Database) -> Result<Vec<PresetDto>, String> {
+    db.list_presets().map_err(|e| e.to_string()).map(|ps| {
+        ps.into_iter()
+            .map(|p| PresetDto {
+                id: p.id,
+                name: p.name,
+                created_at: p.created_at,
+            })
+            .collect()
+    })
+}
+
+pub fn apply_preset_by_id(
+    lib: &Library,
+    mods_dir: Option<&Path>,
+    preset_id: i64,
+) -> Result<ApplyResultDto, String> {
+    let mods_dir = mods_dir.ok_or_else(|| "未配置 3Dmigoto Mods 目录，无法应用预设".to_string())?;
+    let (enabled, disabled) =
+        liquimod_core::preset::apply_preset(lib, mods_dir, preset_id).map_err(|e| e.to_string())?;
+    Ok(ApplyResultDto { enabled, disabled })
+}
+
+/// 缩略图 data URL；缓存未生成时现场生成，失败静默为 None（不阻断列表）。
+pub fn thumb_data_url(library_root: &Path, mod_dir: &Path, mod_id: i64) -> Option<String> {
+    let path = liquimod_core::thumbs::ensure_thumbnail(library_root, mod_dir, mod_id)
+        .ok()
+        .flatten()?;
+    let bytes = std::fs::read(path).ok()?;
+    Some(format!(
+        "data:image/jpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 pub fn set_enabled(
@@ -380,6 +444,118 @@ pub async fn uninstall_mod(
     })
     .await
     .map_err(|e| format!("卸载任务失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn list_presets(state: tauri::State<'_, AppState>) -> Result<Vec<PresetDto>, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        preset_dtos(&lib.db)
+    })
+    .await
+    .map_err(|e| format!("读取预设失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn save_preset(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<PresetDto, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        let ids = liquimod_core::preset::snapshot_enabled(&lib).map_err(|e| e.to_string())?;
+        let id = save_preset_named(&lib.db, &name, &ids)?;
+        preset_dtos(&lib.db)?
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| "预设保存后读取失败".to_string())
+    })
+    .await
+    .map_err(|e| format!("保存预设失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn apply_preset(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    name: String,
+) -> Result<ApplyResultDto, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    let refresh = std::sync::Arc::clone(&state.refresh);
+    let mods_dir = state.config.lock().unwrap().mods_dir.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        let result = apply_preset_by_id(&lib, mods_dir.as_deref(), id);
+        if let Ok(r) = &result {
+            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
+            let _ = app2.emit(
+                "liquimod-toast",
+                format!(
+                    "已应用预设「{name}」：启用 {} / 停用 {}",
+                    r.enabled, r.disabled
+                ),
+            );
+            maybe_refresh_game(&app2, &refresh);
+        }
+        result
+    })
+    .await
+    .map_err(|e| format!("应用预设失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn delete_preset(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db.delete_preset(id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("删除预设失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn list_passwords(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db.list_passwords().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("读取密码本失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn add_password(state: tauri::State<'_, AppState>, value: String) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let v = value.trim().to_string();
+        if v.is_empty() {
+            return Err("密码不能为空".to_string());
+        }
+        let lib = library.lock().unwrap();
+        lib.db.add_password(&v).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("添加密码失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn remove_password(
+    state: tauri::State<'_, AppState>,
+    value: String,
+) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db.remove_password(&value).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("移除密码失败：{e}"))?
 }
 
 #[cfg(test)]
@@ -613,5 +789,30 @@ mod tests {
         std::fs::write(&zip, b"not a zip").unwrap();
         let err = install_entry(&lib, Hsr::shared(), &zip, None, None).unwrap_err();
         assert!(err.contains("不是支持的压缩包"));
+    }
+
+    #[test]
+    fn preset_dto_roundtrip() {
+        let db = liquimod_core::db::Database::open_in_memory().unwrap();
+        let m = db.upsert_mod("Asta", "m1", "mods/Asta/m1").unwrap();
+        let id = crate::commands::save_preset_named(&db, "日常", &[m]).unwrap();
+        let list = crate::commands::preset_dtos(&db).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, id);
+        assert_eq!(list[0].name, "日常");
+    }
+
+    #[test]
+    fn apply_preset_requires_mods_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = liquimod_core::library::Library::init(dir.path()).unwrap();
+        let pid = lib.db.save_preset("p", &[]).unwrap();
+        assert!(crate::commands::apply_preset_by_id(&lib, None, pid).is_err());
+    }
+
+    #[test]
+    fn thumb_data_url_missing_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(crate::commands::thumb_data_url(dir.path(), dir.path(), 42).is_none());
     }
 }

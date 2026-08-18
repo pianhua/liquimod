@@ -77,6 +77,7 @@ pub fn start_watcher(app: &tauri::AppHandle, state: &AppState) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(state::AppState::bootstrap())
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -91,6 +92,13 @@ pub fn run() {
             commands::set_mod_enabled,
             commands::install_mod,
             commands::uninstall_mod,
+            commands::list_presets,
+            commands::save_preset,
+            commands::apply_preset,
+            commands::delete_preset,
+            commands::list_passwords,
+            commands::add_password,
+            commands::remove_password,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
