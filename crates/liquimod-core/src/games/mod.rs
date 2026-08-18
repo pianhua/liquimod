@@ -13,6 +13,8 @@ pub struct CharacterInfo {
 pub trait Game {
     fn id(&self) -> &'static str;
     fn characters(&self) -> &[CharacterInfo];
+    /// 游戏主进程可执行文件名（小写，含 .exe）。
+    fn process_names(&self) -> &'static [&'static str];
 }
 
 const MAX_DEPTH: usize = 8;

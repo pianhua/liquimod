@@ -54,6 +54,9 @@ impl Game for Hsr {
     fn characters(&self) -> &[CharacterInfo] {
         &self.characters
     }
+    fn process_names(&self) -> &'static [&'static str] {
+        &["starrail.exe"]
+    }
 }
 
 #[cfg(test)]

@@ -6,4 +6,5 @@ pub mod games;
 pub mod library;
 pub mod models;
 pub mod paths;
+pub mod refresh;
 pub mod watch;
