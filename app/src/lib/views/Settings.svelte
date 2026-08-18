@@ -250,11 +250,11 @@
       <h3 class="text-sm font-semibold text-secondary">解压密码本</h3>
       <p class="text-xs text-secondary">安装加密压缩包时自动逐个尝试</p>
       {#each passwords as p (p)}
-        <div class="flex items-center justify-between rounded-xl px-3 py-2"
+        <div class="flex items-center justify-between rounded-lg px-3 py-2"
           style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
           <span class="text-sm font-mono">{p}</span>
           <button
-            class="w-6 h-6 grid place-items-center rounded-full text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white disabled:opacity-50 disabled:cursor-default"
+            class="glass radius-pill w-8 h-8 grid place-items-center text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white disabled:opacity-50 disabled:cursor-default"
             aria-label={`移除密码 ${p}`}
             disabled={busy}
             onclick={() => removePassword(p)}
@@ -325,7 +325,7 @@
         </div>
       </div>
       <pre
-        class="text-xs font-mono rounded-xl p-3 max-h-48 overflow-auto whitespace-pre-wrap break-all select-text"
+        class="text-xs font-mono rounded-lg p-3 max-h-48 overflow-auto whitespace-pre-wrap break-all select-text"
         style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
       >{logText || "（暂无日志）"}</pre>
     </section>

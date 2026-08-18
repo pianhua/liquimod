@@ -200,7 +200,7 @@ let {
                 role="button"
                 tabindex="0"
                 aria-label={`分类操作 ${c.name}`}
-                class="w-6 h-6 grid place-items-center rounded-full text-secondary transition-colors hover:bg-[var(--glass-stroke)]"
+                class="glass radius-pill w-8 h-8 grid place-items-center text-secondary transition-colors hover:bg-[var(--glass-stroke)]"
                 onclick={(e) => {
                   e.stopPropagation();
                   confirmingDelete = null;
@@ -213,7 +213,7 @@ let {
                   }
                 }}
               >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
                   <circle cx="6" cy="2.5" r="1.2" /><circle cx="6" cy="6" r="1.2" /><circle cx="6" cy="9.5" r="1.2" />
                 </svg>
               </span>

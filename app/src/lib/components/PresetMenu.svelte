@@ -108,7 +108,7 @@
       style={block ? "left: 0; right: 0" : ""}
     >
       {#each presets as p (p.id)}
-        <div class="flex items-center gap-1 rounded-xl px-1.5 py-1 transition-colors hover:bg-[var(--glass-stroke)]">
+        <div class="flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-[var(--glass-stroke)]">
           <button
             class="flex-1 text-left text-sm px-1.5 py-1 cursor-pointer truncate disabled:opacity-50"
             disabled={busy}
@@ -117,7 +117,7 @@
             {p.name}
           </button>
           <button
-            class="w-6 h-6 grid place-items-center rounded-full text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white disabled:opacity-50 disabled:cursor-default"
+            class="glass radius-pill w-8 h-8 grid place-items-center text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white disabled:opacity-50 disabled:cursor-default"
             aria-label={`删除预设 ${p.name}`}
             disabled={busy}
             onclick={() => remove(p)}
