@@ -320,6 +320,7 @@ pub async fn set_mod_enabled(
         let lib = library.lock().unwrap();
         let result = set_enabled(&lib, mods_dir.as_deref(), id, enabled);
         if result.is_ok() {
+            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
             maybe_refresh_game(&app2, &refresh);
         }
         result
@@ -349,6 +350,7 @@ pub async fn install_mod(
             password.as_deref(),
         );
         if matches!(result, Ok(InstallResultDto::Installed { .. })) {
+            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
             maybe_refresh_game(&app2, &refresh);
         }
         result
@@ -371,6 +373,7 @@ pub async fn uninstall_mod(
         let lib = library.lock().unwrap();
         let result = remove_entry(&lib, mods_dir.as_deref(), id);
         if result.is_ok() {
+            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
             maybe_refresh_game(&app2, &refresh);
         }
         result
