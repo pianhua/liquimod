@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -26,7 +25,7 @@ pub fn infer_character(dir: &Path, game: &dyn Game) -> Option<String> {
     let mut corpus = String::new();
     let mut budget = MAX_TOTAL_BYTES;
     collect_text(dir, 0, &mut budget, &mut corpus);
-    let mut scores: HashMap<&str, usize> = HashMap::new();
+    let mut best: Option<(usize, &str)> = None;
     for c in game.characters() {
         let mut score = 0usize;
         let stem = Path::new(&c.image)
@@ -43,14 +42,11 @@ pub fn infer_character(dir: &Path, game: &dyn Game) -> Option<String> {
             }
             score += corpus.matches(&needle).count();
         }
-        if score > 0 {
-            scores.insert(c.internal_name.as_str(), score);
+        if score > 0 && best.is_none_or(|(best_score, _)| score > best_score) {
+            best = Some((score, c.internal_name.as_str()));
         }
     }
-    scores
-        .into_iter()
-        .max_by_key(|(_, score)| *score)
-        .map(|(name, _)| name.to_owned())
+    best.map(|(_, name)| name.to_owned())
 }
 
 fn collect_text(dir: &Path, depth: usize, budget: &mut usize, out: &mut String) {
@@ -61,6 +57,9 @@ fn collect_text(dir: &Path, depth: usize, budget: &mut usize, out: &mut String) 
         return;
     };
     for entry in entries.flatten() {
+        if *budget == 0 {
+            break;
+        }
         out.push_str(&entry.file_name().to_string_lossy().to_lowercase());
         out.push('\n');
         let path = entry.path();
@@ -139,6 +138,16 @@ mod tests {
         assert_eq!(
             infer_character(tmp.path(), fixture_game()),
             Some("Acheron".to_string())
+        );
+    }
+
+    #[test]
+    fn tie_prefers_earlier_character_in_game_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("mod.ini"), "; acheron blade\n").unwrap();
+        assert_eq!(
+            infer_character(tmp.path(), fixture_game()),
+            Some("Blade".to_string())
         );
     }
 }
