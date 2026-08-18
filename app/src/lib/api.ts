@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export interface ConfigDto {
   library_root: string;
   mods_dir: string | null;
+  auto_enable: boolean;
 }
 
 export interface CharacterSummary {
@@ -19,6 +20,9 @@ export interface ModDto {
   enabled: boolean;
   installed_at: number;
   thumb: string | null;
+  size_bytes: number;
+  file_count: number;
+  path: string;
 }
 
 export interface PresetDto {
@@ -63,9 +67,9 @@ const mockCharacters: CharacterSummary[] = [
 }));
 
 const mockMods: ModDto[] = [
-  { id: 1, name: "Summer Skin", enabled: true, installed_at: 1755000000, thumb: null },
-  { id: 2, name: "Battle FX+", enabled: false, installed_at: 1755100000, thumb: null },
-  { id: 3, name: "HD Textures", enabled: false, installed_at: 1755200000, thumb: null },
+  { id: 1, name: "Summer Skin", enabled: true, installed_at: 1755000000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Summer Skin" },
+  { id: 2, name: "Battle FX+", enabled: false, installed_at: 1755100000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Battle FX+" },
+  { id: 3, name: "HD Textures", enabled: false, installed_at: 1755200000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/HD Textures" },
 ];
 
 const mockPresets: PresetDto[] = [
@@ -79,7 +83,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   if (!isTauri()) {
     switch (cmd) {
       case "get_config":
-        return { library_root: "C:/mock/Library", mods_dir: null } as T;
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false } as T;
       case "get_characters":
         return structuredClone(mockCharacters) as T;
       case "list_mods":
@@ -127,6 +131,18 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         if (i >= 0) mockPasswords.splice(i, 1);
         return undefined as T;
       }
+      case "rename_mod": {
+        const m = mockMods.find((x) => x.id === Number(args?.id));
+        const n = String(args?.name ?? "").trim();
+        if (!n) throw "名字不合法（不能为空，不能含 / \\，不能以空格或点结尾）";
+        if (mockMods.some((x) => x.id !== m?.id && x.name === n)) throw `已存在同名 Mod：${n}`;
+        if (m) m.name = n;
+        return undefined as T;
+      }
+      case "set_auto_enable":
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: Boolean(args?.enabled) } as T;
+      case "read_log":
+        return "2026-08-18T10:00:00 INFO LiquiMod starting\n2026-08-18T10:01:00 INFO installed mod 99" as T;
       default:
         return undefined as T;
     }
@@ -152,6 +168,9 @@ export const api = {
   listPasswords: () => call<string[]>("list_passwords"),
   addPassword: (value: string) => call<void>("add_password", { value }),
   removePassword: (value: string) => call<void>("remove_password", { value }),
+  renameMod: (id: number, name: string) => call<void>("rename_mod", { id, name }),
+  setAutoEnable: (enabled: boolean) => call<ConfigDto>("set_auto_enable", { enabled }),
+  readLog: () => call<string>("read_log"),
 };
 
 /// 立绘 URL（SvelteKit files.assets 指向 assets/hsr）。

@@ -17,7 +17,7 @@ vi.mock("$lib/api", async (importOriginal) => {
   };
 });
 
-const config = { library_root: "C:/mock/Library", mods_dir: "D:/game/Mods" };
+const config = { library_root: "C:/mock/Library", mods_dir: "D:/game/Mods", auto_enable: false };
 
 describe("Settings", () => {
   beforeEach(() => {

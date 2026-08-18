@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, portraitUrl, type CharacterSummary, type ModDto } from "$lib/api";
-  import Toggle from "$lib/components/Toggle.svelte";
+  import { api, isTauri, portraitUrl, type CharacterSummary, type ModDto } from "$lib/api";
+  import ModRow from "$lib/components/ModRow.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
 
   let {
@@ -48,6 +48,38 @@
       error = String(e);
     }
   }
+
+  async function renameMod(mod: ModDto, name: string): Promise<boolean> {
+    error = "";
+    try {
+      await api.renameMod(mod.id, name);
+      mod.name = name;
+      return true;
+    } catch (e) {
+      error = String(e);
+      return false;
+    }
+  }
+
+  async function uninstallMod(mod: ModDto) {
+    error = "";
+    try {
+      await api.uninstallMod(mod.id);
+      mods = mods.filter((m) => m.id !== mod.id);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function openModDir(mod: ModDto) {
+    if (!isTauri()) return;
+    try {
+      const { openPath } = await import("@tauri-apps/plugin-opener");
+      await openPath(mod.path);
+    } catch (e) {
+      error = String(e);
+    }
+  }
 </script>
 
 <div class="flex flex-col h-full min-h-0">
@@ -88,26 +120,13 @@
 
   <div class="flex flex-col gap-2.5 px-8 pb-8 overflow-y-auto flex-1 min-h-0 max-w-3xl w-full mx-auto">
     {#each mods as mod (mod.id)}
-      <div class="glass radius-card px-5 py-3.5 flex items-center justify-between gap-3">
-        <div class="flex items-center gap-3 min-w-0">
-          {#if mod.thumb}
-            <img
-              src={mod.thumb}
-              alt=""
-              class="w-11 h-11 rounded-xl object-cover shrink-0"
-              style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
-              draggable="false"
-              onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
-            />
-          {/if}
-          <span class="font-medium truncate">{mod.name}</span>
-        </div>
-        <Toggle
-          checked={mod.enabled}
-          ariaLabel={`启用 ${mod.name}`}
-          onchange={(next) => toggle(mod, next)}
-        />
-      </div>
+      <ModRow
+        {mod}
+        ontoggle={(next) => toggle(mod, next)}
+        onrename={(name) => renameMod(mod, name)}
+        onuninstall={() => uninstallMod(mod)}
+        onopen={() => openModDir(mod)}
+      />
     {/each}
     {#if mods.length === 0}
       <p class="text-secondary text-center mt-24">该角色还没有 Mod，拖入压缩包即可安装</p>
