@@ -48,7 +48,8 @@
   }
 
   function openSettings() {
-    saveHomeScroll();
+    // 仅在主页可见时采样滚动；详情页里开设置时主页已隐藏（scrollTop 已被浏览器归零）
+    if (!showSettings && selected === null) saveHomeScroll();
     showSettings = true;
   }
 

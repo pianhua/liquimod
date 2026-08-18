@@ -50,6 +50,7 @@ pub fn start_watcher(app: &tauri::AppHandle, state: &AppState) {
         match reconcile_and_diff(&lib, mods_dir2.as_deref()) {
             Ok((added, removed)) => {
                 drop(lib);
+                tracing::info!("reconcile: +{added} / -{removed}");
                 let _ = app2.emit(
                     "library-changed",
                     serde_json::json!({ "added": added, "removed": removed }),
@@ -96,21 +97,21 @@ pub fn run() {
             // 启动恢复：完成上次崩溃遗留的启停事务（op_log）
             let state = app.state::<AppState>();
             let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-    if let Some(dir) = mods_dir {
-        let lib = state.library.lock().unwrap();
-        if let Err(e) = liquimod_core::deploy::Deployer::new(&lib, &dir).recover() {
-            tracing::warn!("startup recover failed: {e}");
-        }
-    }
-    // 启动对账：索引库目录、统计大小/文件数、对齐 junction（含应用关闭期间的外部变动）
-    {
-        let lib = state.library.lock().unwrap();
-        let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-        match reconcile_and_diff(&lib, mods_dir.as_deref()) {
-            Ok((added, removed)) => tracing::info!("startup scan: +{added} / -{removed}"),
-            Err(e) => tracing::warn!("startup scan failed: {e}"),
-        }
-    }
+            if let Some(dir) = mods_dir {
+                let lib = state.library.lock().unwrap();
+                if let Err(e) = liquimod_core::deploy::Deployer::new(&lib, &dir).recover() {
+                    tracing::warn!("startup recover failed: {e}");
+                }
+            }
+            // 启动对账：索引库目录、统计大小/文件数、对齐 junction（含应用关闭期间的外部变动）
+            {
+                let lib = state.library.lock().unwrap();
+                let mods_dir = state.config.lock().unwrap().mods_dir.clone();
+                match reconcile_and_diff(&lib, mods_dir.as_deref()) {
+                    Ok((added, removed)) => tracing::info!("startup scan: +{added} / -{removed}"),
+                    Err(e) => tracing::warn!("startup scan failed: {e}"),
+                }
+            }
             let app_handle = app.handle().clone();
             start_watcher(&app_handle, app.state::<AppState>().inner());
             Ok(())
