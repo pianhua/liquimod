@@ -22,7 +22,7 @@ describe("CharacterCard 信号灯", () => {
   it("0 个 = 灰灯", () => {
     const { container } = render(CharacterCard, { props: { character: c(0, 0), onclick: () => {} } });
     const dot = container.querySelector("span[title]")!;
-    expect(dot.getAttribute("style")).toContain("142, 142, 147");
+    expect(dot.getAttribute("style")).toContain("155, 155, 162");
     expect(dot.getAttribute("title")).toBe("没有启用的 Mod");
   });
 });

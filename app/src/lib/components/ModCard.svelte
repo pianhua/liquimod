@@ -155,9 +155,7 @@
             onpick={onmove}
           />
           <button
-            class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer transition-colors hover:text-white"
-            onmouseenter={(e) => ((e.currentTarget as HTMLElement).style.background = "var(--danger)")}
-            onmouseleave={(e) => ((e.currentTarget as HTMLElement).style.background = "")}
+            class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer transition-colors hover:text-white hover:bg-[var(--danger)]"
             aria-label={`卸载 ${mod.name}`}
             title="卸载"
             onclick={() => (confirming = true)}

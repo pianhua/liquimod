@@ -7,12 +7,13 @@
   }: { character: CharacterSummary; onclick: () => void } = $props();
 
   // 信号灯：恰好 1 个启用 = 绿；2 个及以上 = 黄；0 = 灰
+  // 灰色在亮色胶囊上易「融入」，用更深的灰 + 细描边保证两套主题都清晰
   let dot = $derived(
     character.enabled === 1
-      ? { color: "#34c759", glow: "0 0 6px rgba(52,199,89,0.9)" }
+      ? { color: "#34c759", glow: "0 0 0 1px rgba(255,255,255,0.7), 0 0 6px rgba(52,199,89,0.7)" }
       : character.enabled >= 2
-        ? { color: "#ffd60a", glow: "0 0 6px rgba(255,214,10,0.9)" }
-        : { color: "rgba(142,142,147,0.65)", glow: "none" },
+        ? { color: "#ffd60a", glow: "0 0 0 1px rgba(0,0,0,0.18), 0 0 6px rgba(255,214,10,0.7)" }
+        : { color: "#9b9ba2", glow: "0 0 0 1px rgba(255,255,255,0.8)" },
   );
 </script>
 
