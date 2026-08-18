@@ -8,4 +8,5 @@ pub mod models;
 pub mod paths;
 pub mod preset;
 pub mod refresh;
+pub mod thumbs;
 pub mod watch;
