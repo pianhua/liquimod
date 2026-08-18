@@ -178,6 +178,10 @@ pub fn install_entry(
 fn humanize_install_error(error: &LiquiModError) -> String {
     match error {
         LiquiModError::DestinationExists { name, .. } => format!("已存在同名 Mod：{name}"),
+        LiquiModError::InvalidName(_) => {
+            "压缩包或角色名称不合法（不能含路径分隔符等特殊字符）".to_string()
+        }
+        LiquiModError::Io(_) => "文件读写失败（可能磁盘空间不足或文件被占用）".to_string(),
         LiquiModError::UnsupportedArchive(_) => {
             "不是支持的压缩包（支持 zip / 7z / rar）".to_string()
         }
@@ -198,7 +202,7 @@ pub fn remove_entry(lib: &Library, mods_dir: Option<&Path>, id: i64) -> Result<(
     match std::fs::remove_dir_all(&dir) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e.to_string()),
+        Err(_) => return Err("删除 Mod 文件失败，可能有文件被占用".to_string()),
     }
     lib.db.remove_mod(id).map_err(|e| e.to_string())
 }
@@ -461,5 +465,36 @@ mod tests {
 
         assert!(!link.exists());
         assert!(lib.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn remove_entry_missing_id_errors() {
+        let (_d, lib) = temp_lib();
+        assert!(remove_entry(&lib, None, 99999).is_err());
+    }
+
+    #[test]
+    fn install_entry_missing_file_errors() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let err = install_entry(
+            &lib,
+            Hsr::shared(),
+            &dir.path().join("Nope.zip"),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("文件不存在"));
+    }
+
+    #[test]
+    fn install_entry_rejects_non_archive() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("Fake.zip");
+        std::fs::write(&zip, b"not a zip").unwrap();
+        let err = install_entry(&lib, Hsr::shared(), &zip, None, None).unwrap_err();
+        assert!(err.contains("不是支持的压缩包"));
     }
 }
