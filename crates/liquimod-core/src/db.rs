@@ -1,5 +1,5 @@
 use crate::error::{LiquiModError, Result};
-use crate::models::ModEntry;
+use crate::models::{ModEntry, Preset};
 use rusqlite::Connection;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -47,8 +47,19 @@ impl Database {
              CREATE TABLE IF NOT EXISTS passwords (
                value TEXT PRIMARY KEY,
                created_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS presets (
+               id INTEGER PRIMARY KEY,
+               name TEXT NOT NULL UNIQUE,
+               created_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS preset_entries (
+               preset_id INTEGER NOT NULL REFERENCES presets(id) ON DELETE CASCADE,
+               mod_id INTEGER NOT NULL,
+               PRIMARY KEY (preset_id, mod_id)
              );",
         )?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Self { conn })
     }
 
@@ -169,6 +180,60 @@ impl Database {
         let rows = stmt.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
+
+    /// 同名覆盖：条目整体替换并复用 id。
+    pub fn save_preset(&self, name: &str, mod_ids: &[i64]) -> Result<i64> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(LiquiModError::InvalidName("预设名不能为空".into()));
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "INSERT INTO presets (name, created_at) VALUES (?1, ?2)
+             ON CONFLICT(name) DO UPDATE SET created_at = excluded.created_at",
+            rusqlite::params![name, now_unix()],
+        )?;
+        let id: i64 = tx.query_row("SELECT id FROM presets WHERE name = ?1", [name], |r| {
+            r.get(0)
+        })?;
+        tx.execute("DELETE FROM preset_entries WHERE preset_id = ?1", [id])?;
+        for mid in mod_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO preset_entries (preset_id, mod_id) VALUES (?1, ?2)",
+                rusqlite::params![id, mid],
+            )?;
+        }
+        tx.commit()?;
+        Ok(id)
+    }
+
+    pub fn list_presets(&self) -> Result<Vec<Preset>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, created_at FROM presets ORDER BY created_at DESC, id DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Preset {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                created_at: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn preset_mod_ids(&self, preset_id: i64) -> Result<Vec<i64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT mod_id FROM preset_entries WHERE preset_id = ?1")?;
+        let rows = stmt.query_map([preset_id], |r| r.get(0))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn delete_preset(&self, preset_id: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM presets WHERE id = ?1", [preset_id])?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -231,5 +296,37 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         db.add_password("").unwrap();
         assert!(db.list_passwords().unwrap().is_empty());
+    }
+
+    #[test]
+    fn preset_roundtrip_and_overwrite() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.upsert_mod("Asta", "m1", "mods/Asta/m1").unwrap();
+        let b = db.upsert_mod("Asta", "m2", "mods/Asta/m2").unwrap();
+        let id1 = db.save_preset("日常", &[a, b]).unwrap();
+        assert_eq!(db.preset_mod_ids(id1).unwrap(), vec![a, b]);
+        // 同名覆盖：条目整体替换，id 复用
+        let id2 = db.save_preset("日常", &[b]).unwrap();
+        assert_eq!(id1, id2);
+        assert_eq!(db.preset_mod_ids(id1).unwrap(), vec![b]);
+        let list = db.list_presets().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "日常");
+    }
+
+    #[test]
+    fn preset_delete_cascades_entries() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.upsert_mod("Asta", "m1", "mods/Asta/m1").unwrap();
+        let id = db.save_preset("x", &[a]).unwrap();
+        db.delete_preset(id).unwrap();
+        assert!(db.list_presets().unwrap().is_empty());
+        assert!(db.preset_mod_ids(id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn preset_rejects_empty_name() {
+        let db = Database::open_in_memory().unwrap();
+        assert!(db.save_preset("  ", &[]).is_err());
     }
 }
