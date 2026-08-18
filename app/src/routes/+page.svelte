@@ -10,11 +10,13 @@
   import PresetMenu from "$lib/components/PresetMenu.svelte";
   import CharacterGrid from "$lib/views/CharacterGrid.svelte";
   import CharacterDetail from "$lib/views/CharacterDetail.svelte";
+  import Settings from "$lib/views/Settings.svelte";
 
   let config = $state<ConfigDto | null>(null);
   let characters = $state<CharacterSummary[]>([]);
   let query = $state("");
   let selected = $state<CharacterSummary | null>(null);
+  let showSettings = $state(false);
   let error = $state("");
   let dragHover = $state(false);
 
@@ -85,13 +87,22 @@
 </script>
 
 <div class="flex flex-col h-screen">
-  <TitleBar />
+  <TitleBar onsettings={() => (showSettings = true)} />
   {#if error}
     <div class="glass radius-panel mx-8 mt-2 px-4 py-2.5 text-sm" style="color: var(--danger)">
       {error}
     </div>
   {/if}
-  {#if selected}
+  {#if showSettings}
+    <Settings
+      {config}
+      onback={() => {
+        showSettings = false;
+        refresh();
+      }}
+      onchanged={refresh}
+    />
+  {:else if selected}
     <CharacterDetail
       character={selected}
       modsDirConfigured={config?.mods_dir != null}

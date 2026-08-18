@@ -88,8 +88,19 @@
 
   <div class="flex flex-col gap-2.5 px-8 pb-8 overflow-y-auto flex-1 min-h-0 max-w-3xl w-full mx-auto">
     {#each mods as mod (mod.id)}
-      <div class="glass radius-card px-5 py-3.5 flex items-center justify-between">
-        <span class="font-medium">{mod.name}</span>
+      <div class="glass radius-card px-5 py-3.5 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          {#if mod.thumb}
+            <img
+              src={mod.thumb}
+              alt=""
+              class="w-11 h-11 rounded-xl object-cover shrink-0"
+              style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+              draggable="false"
+            />
+          {/if}
+          <span class="font-medium truncate">{mod.name}</span>
+        </div>
         <Toggle
           checked={mod.enabled}
           ariaLabel={`启用 ${mod.name}`}

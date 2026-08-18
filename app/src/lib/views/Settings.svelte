@@ -1,0 +1,154 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { api, isTauri, type ConfigDto } from "$lib/api";
+  import { toast } from "$lib/toast.svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
+
+  let {
+    config,
+    onback,
+    onchanged,
+  }: {
+    config: ConfigDto | null;
+    onback: () => void;
+    onchanged: () => void;
+  } = $props();
+
+  let passwords = $state<string[]>([]);
+  let newPassword = $state("");
+
+  onMount(async () => {
+    try {
+      passwords = await api.listPasswords();
+    } catch (e) {
+      toast(String(e));
+    }
+  });
+
+  async function pickModsDir() {
+    try {
+      const path = await open({ directory: true, title: "选择 3Dmigoto Mods 目录" });
+      if (typeof path === "string") {
+        await api.chooseModsDir(path);
+        toast("已更新 Mods 目录");
+        onchanged();
+      }
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function openLibrary() {
+    if (!isTauri() || !config) return;
+    try {
+      const { openPath } = await import("@tauri-apps/plugin-opener");
+      await openPath(config.library_root);
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function addPassword() {
+    const v = newPassword.trim();
+    if (!v) return;
+    try {
+      await api.addPassword(v);
+      newPassword = "";
+      passwords = await api.listPasswords();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function removePassword(v: string) {
+    try {
+      await api.removePassword(v);
+      passwords = await api.listPasswords();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+</script>
+
+<div class="flex flex-col h-full min-h-0">
+  <div class="flex items-center gap-4 px-8 pt-3 pb-4 shrink-0">
+    <button
+      class="glass radius-pill pl-2.5 pr-3.5 h-8 text-sm flex items-center gap-1 cursor-pointer transition-transform hover:-translate-x-0.5"
+      onclick={onback}
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <path d="M7 1L2.5 5L7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      返回
+    </button>
+    <h2 class="text-2xl font-bold tracking-tight">设置</h2>
+  </div>
+
+  <div class="flex flex-col gap-3 px-8 pb-8 overflow-y-auto flex-1 min-h-0 max-w-2xl w-full mx-auto">
+    <section class="glass radius-panel p-5 flex flex-col gap-3">
+      <h3 class="text-sm font-semibold text-secondary">目录</h3>
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-medium">Mod 仓库（Library）</p>
+          <p class="text-xs text-secondary truncate">{config?.library_root ?? "…"}</p>
+        </div>
+        <button
+          class="glass radius-pill h-8 px-3.5 text-sm shrink-0 cursor-pointer"
+          onclick={openLibrary}
+        >
+          打开
+        </button>
+      </div>
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-medium">3Dmigoto Mods 目录</p>
+          <p class="text-xs text-secondary truncate">{config?.mods_dir ?? "未配置"}</p>
+        </div>
+        <button
+          class="glass radius-pill h-8 px-3.5 text-sm shrink-0 cursor-pointer"
+          onclick={pickModsDir}
+        >
+          选择…
+        </button>
+      </div>
+    </section>
+
+    <section class="glass radius-panel p-5 flex flex-col gap-3">
+      <h3 class="text-sm font-semibold text-secondary">解压密码本</h3>
+      <p class="text-xs text-secondary">安装加密压缩包时自动逐个尝试</p>
+      {#each passwords as p (p)}
+        <div class="flex items-center justify-between rounded-xl px-3 py-2"
+          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+          <span class="text-sm font-mono">{p}</span>
+          <button
+            class="w-6 h-6 grid place-items-center rounded-full text-secondary cursor-pointer transition-colors hover:bg-[var(--danger)] hover:text-white"
+            aria-label={`移除密码 ${p}`}
+            onclick={() => removePassword(p)}
+          >
+            <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+              <path d="M2 2l5 5M7 2L2 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+      {:else}
+        <p class="text-xs text-secondary">空</p>
+      {/each}
+      <div class="flex gap-1.5 mt-1">
+        <input
+          bind:value={newPassword}
+          placeholder="添加解压密码…"
+          class="flex-1 h-8 px-3 text-sm bg-transparent outline-none rounded-full"
+          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+          onkeydown={(e) => e.key === "Enter" && addPassword()}
+        />
+        <button
+          class="accent-fill accent-text radius-pill h-8 px-3.5 text-sm font-medium cursor-pointer disabled:opacity-50"
+          disabled={!newPassword.trim()}
+          onclick={addPassword}
+        >
+          添加
+        </button>
+      </div>
+    </section>
+  </div>
+</div>
