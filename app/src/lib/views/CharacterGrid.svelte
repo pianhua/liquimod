@@ -3,8 +3,9 @@
   import { filterCharacters, type CharacterSummary } from "$lib/api";
   import CharacterCard from "$lib/components/CharacterCard.svelte";
 
-  // 卡片信息条固定高度：p-2 上下 16 + gap-2 8 + h-9 36 = 60
-  const CARD_EXTRA = 60;
+  // 卡片自然高度 = 轨道宽 + 44：立绘宽 = 轨道宽 − p-2 左右 16（1:1），
+  // 再加 p-2 上下 16 + gap-2 8 + 信息条 h-9 36
+  const CARD_EXTRA = 44;
 
   let {
     characters,

@@ -6,17 +6,17 @@ import SearchBar from "./SearchBar.svelte";
 import PresetMenu from "./PresetMenu.svelte";
 
 let {
-    view,
-    categories,
-    charCatName,
-    allCount,
-    charCount,
-    uncatCount,
-    query = $bindable(),
-    onnavigate,
-    onchanged,
-    onapplied,
-  }: {
+  view,
+  categories,
+  charCatName,
+  allCount,
+  charCount,
+  uncatCount,
+  query = $bindable(),
+  onnavigate,
+  onchanged,
+  onapplied,
+}: {
     view: View;
     categories: CategoryDto[];
     charCatName: string;
