@@ -55,17 +55,25 @@
     let unlistenChanged: (() => void) | undefined;
     let unlistenToast: (() => void) | undefined;
     listen<{ added: number; removed: number }>("library-changed", (e) => {
+      if (cancelled) return;
       const { added, removed } = e.payload;
       if (added > 0 || removed > 0) toast(`检测到仓库变动：+${added} / -${removed}`);
       refresh();
-    }).then((u) => {
-      if (cancelled) u();
-      else unlistenChanged = u;
-    });
-    listen<string>("liquimod-toast", (e) => toast(e.payload)).then((u) => {
-      if (cancelled) u();
-      else unlistenToast = u;
-    });
+    })
+      .then((u) => {
+        if (cancelled) u();
+        else unlistenChanged = u;
+      })
+      .catch(() => {});
+    listen<string>("liquimod-toast", (e) => {
+      if (cancelled) return;
+      toast(e.payload);
+    })
+      .then((u) => {
+        if (cancelled) u();
+        else unlistenToast = u;
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
       unlisten?.();
