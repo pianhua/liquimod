@@ -20,6 +20,8 @@ pub fn reconcile_and_diff(
         .map(key)
         .collect();
     lib.scan().map_err(|e| e.to_string())?;
+    // 扫描后统一归类（角色→NULL；非角色→对应固定分类）
+    let _ = commands::sync_mod_categories(lib, liquimod_core::games::hsr::Hsr::shared());
     if let Some(dir) = mods_dir {
         let _ = liquimod_core::deploy::Deployer::new(lib, dir).reconcile();
     }

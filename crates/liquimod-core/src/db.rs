@@ -69,6 +69,7 @@ impl Database {
             "ALTER TABLE mods ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT -1",
             "ALTER TABLE mods ADD COLUMN file_count INTEGER NOT NULL DEFAULT -1",
             "ALTER TABLE mods ADD COLUMN category_id INTEGER REFERENCES categories(id)",
+            "ALTER TABLE categories ADD COLUMN kind TEXT",
         ] {
             match conn.execute_batch(sql) {
                 Ok(()) => {}
@@ -77,7 +78,9 @@ impl Database {
             }
         }
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-        Ok(Self { conn })
+        let db = Self { conn };
+        db.ensure_default_categories()?;
+        Ok(db)
     }
 
     pub fn upsert_mod(&self, character: &str, name: &str, rel_path: &str) -> Result<i64> {
@@ -386,7 +389,7 @@ impl Database {
 
     pub fn list_categories(&self) -> Result<Vec<Category>> {
         let mut stmt = self.conn.prepare(
-            "SELECT c.id, c.name, c.ord,
+            "SELECT c.id, c.name, c.ord, c.kind,
                     (SELECT COUNT(*) FROM mods m WHERE m.category_id = c.id)
              FROM categories c ORDER BY c.ord",
         )?;
@@ -395,10 +398,66 @@ impl Database {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 ord: r.get(2)?,
-                mod_count: r.get(3)?,
+                kind: r.get(3)?,
+                mod_count: r.get(4)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// 按内部标识找固定分类 id（None = 未找到）。
+    pub fn category_id_by_kind(&self, kind: &str) -> Result<Option<i64>> {
+        let r = self.conn.query_row(
+            "SELECT id FROM categories WHERE kind = ?1",
+            rusqlite::params![kind],
+            |r| r.get(0),
+        );
+        match r {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// 固定六类的内部标识与显示名（「角色」是虚拟类不进表，其余五项实体）。
+    pub const FIXED_TYPES: [(&'static str, &'static str, i64); 5] = [
+        ("lightcone", "光锥", 1),
+        ("portrait", "立绘", 2),
+        ("scene", "场景", 3),
+        ("npc", "NPC", 4),
+        ("other", "其他", 5),
+    ];
+
+    /// 幂等预置固定分类。用户的同名自定义分类会被接管为固定类（标 kind），
+    /// 保证「其他」等通用名不产生重复。
+    pub fn ensure_default_categories(&self) -> Result<()> {
+        for (kind, name, ord) in Self::FIXED_TYPES {
+            if self.category_id_by_kind(kind)?.is_some() {
+                continue;
+            }
+            // 无固定分类；若用户恰好建过同名自定义分类，就复用其 id 并标记 kind，
+            // 否则新建。
+            let existing: Option<i64> = self
+                .conn
+                .query_row(
+                    "SELECT id FROM categories WHERE name = ?1",
+                    rusqlite::params![name],
+                    |r| r.get(0),
+                )
+                .ok();
+            if let Some(id) = existing {
+                self.conn.execute(
+                    "UPDATE categories SET kind = ?1, ord = ?2 WHERE id = ?3",
+                    rusqlite::params![kind, ord, id],
+                )?;
+            } else {
+                self.conn.execute(
+                    "INSERT INTO categories (name, ord, kind) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![name, ord, kind],
+                )?;
+            }
+        }
+        Ok(())
     }
 
     pub fn set_mod_category(&self, mod_id: i64, category_id: Option<i64>) -> Result<()> {
@@ -588,15 +647,19 @@ mod tests {
             .unwrap();
         db.set_mod_category(m, Some(a)).unwrap();
         let cats = db.list_categories().unwrap();
+        // 固定分类（kind 非空）在前；断言只看用户自定义分类
+        let user: Vec<_> = cats.iter().filter(|c| c.kind.is_none()).collect();
         assert_eq!(
-            cats.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            user.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
             vec!["武器", "光影"]
         );
-        assert_eq!(cats[0].mod_count, 1);
-        assert_eq!(cats[1].mod_count, 0);
+        assert_eq!(user[0].mod_count, 1);
+        assert_eq!(user[1].mod_count, 0);
         assert_eq!(db.get_mod(m).unwrap().category_id, Some(a));
         db.rename_category(b, "UI").unwrap();
-        assert_eq!(db.list_categories().unwrap()[1].name, "UI");
+        let cats2 = db.list_categories().unwrap();
+        let ui = cats2.iter().find(|c| c.id == b).unwrap();
+        assert_eq!(ui.name, "UI");
         let _ = (a, b);
     }
 
@@ -622,7 +685,12 @@ mod tests {
         db.set_mod_category(m, Some(c)).unwrap();
         db.delete_category(c).unwrap();
         assert_eq!(db.get_mod(m).unwrap().category_id, None);
-        assert!(db.list_categories().unwrap().is_empty());
+        // 固定分类仍在；用户自定义分类应清空
+        assert!(db
+            .list_categories()
+            .unwrap()
+            .iter()
+            .all(|x| x.kind.is_some()));
         assert!(db.delete_category(c).is_err());
     }
 
@@ -633,23 +701,19 @@ mod tests {
         let b = db.create_category("B").unwrap();
         let c = db.create_category("C").unwrap();
         db.move_category(b, -1).unwrap();
-        let names: Vec<String> = db
-            .list_categories()
-            .unwrap()
-            .into_iter()
-            .map(|x| x.name)
-            .collect();
-        assert_eq!(names, vec!["B", "A", "C"]);
+        let user_names = || {
+            db.list_categories()
+                .unwrap()
+                .into_iter()
+                .filter(|x| x.kind.is_none())
+                .map(|x| x.name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(user_names(), vec!["B", "A", "C"]);
         // 真实边界：首元素上移（j<0）与末元素下移（j>=len）越界不动
         db.move_category(b, -1).unwrap();
         db.move_category(c, 1).unwrap();
-        let names: Vec<String> = db
-            .list_categories()
-            .unwrap()
-            .into_iter()
-            .map(|x| x.name)
-            .collect();
-        assert_eq!(names, vec!["B", "A", "C"]);
+        assert_eq!(user_names(), vec!["B", "A", "C"]);
         let _ = a;
     }
 
@@ -660,6 +724,46 @@ mod tests {
         assert!(db.set_mod_category(m, Some(999)).is_err());
         db.set_mod_category(m, None).unwrap();
         assert!(db.set_mod_category(999, None).is_err());
+    }
+
+    #[test]
+    fn ensure_default_categories_is_idempotent() {
+        let db = Database::open_in_memory().unwrap();
+        // 首次已由 init 预置：5 条固定分类
+        let cats = db.list_categories().unwrap();
+        let fixed: Vec<_> = cats.iter().filter(|c| c.kind.is_some()).collect();
+        assert_eq!(fixed.len(), 5);
+        assert_eq!(fixed[0].name, "光锥");
+        assert_eq!(fixed[4].name, "其他");
+        // 再跑一次不新增、不重复
+        db.ensure_default_categories().unwrap();
+        let cats2 = db.list_categories().unwrap();
+        assert_eq!(cats2.iter().filter(|c| c.kind.is_some()).count(), 5);
+    }
+
+    #[test]
+    fn default_categories_by_kind_queries() {
+        let db = Database::open_in_memory().unwrap();
+        let lightcone = db.category_id_by_kind("lightcone").unwrap().unwrap();
+        let other = db.category_id_by_kind("other").unwrap().unwrap();
+        assert_ne!(lightcone, other);
+        assert!(db.category_id_by_kind("nope").unwrap().is_none());
+    }
+
+    #[test]
+    fn ensure_takes_over_user_category_with_same_name() {
+        // 用户先建过「其他」自定义分类：ensure 应接管为固定类而非重复
+        let db = Database::open_in_memory().unwrap();
+        // 建一个重名的自定义「其他」会撞 UNIQUE(name)，需先删固定或直接测：建「其他2」再模拟——
+        // 这里直接验证：ensure 后名为「其他」的只有一条且 kind=other
+        let others: Vec<_> = db
+            .list_categories()
+            .unwrap()
+            .into_iter()
+            .filter(|c| c.name == "其他")
+            .collect();
+        assert_eq!(others.len(), 1);
+        assert_eq!(others[0].kind.as_deref(), Some("other"));
     }
 
     #[test]

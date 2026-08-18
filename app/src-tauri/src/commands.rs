@@ -66,6 +66,7 @@ pub struct CategoryDto {
     pub id: i64,
     pub name: String,
     pub ord: i64,
+    pub kind: Option<String>,
     pub mod_count: i64,
 }
 
@@ -128,7 +129,7 @@ pub fn config_dto(c: &Config) -> ConfigDto {
     }
 }
 
-/// 角色网格汇总：游戏角色按数据顺序在前，未匹配的 Mod 归入最后的 "Others"。
+/// 角色网格汇总：游戏角色按数据顺序在前（仅角色虚拟类；非角色归实体分类）。
 pub fn character_summaries(
     lib: &Library,
     game: &dyn Game,
@@ -146,24 +147,6 @@ pub fn character_summaries(
             group.iter().filter(|m| m.enabled).count(),
         ));
     }
-    let known: Vec<&str> = game
-        .characters()
-        .iter()
-        .map(|c| c.internal_name.as_str())
-        .collect();
-    let others: Vec<_> = mods
-        .iter()
-        .filter(|m| m.category_id.is_none() && !known.contains(&m.character.as_str()))
-        .collect();
-    if !others.is_empty() {
-        out.push(CharacterSummary {
-            internal_name: "Others".into(),
-            display_name: "其他".into(),
-            image: None,
-            total: others.len(),
-            enabled: others.iter().filter(|m| m.enabled).count(),
-        });
-    }
     Ok(out)
 }
 
@@ -175,6 +158,62 @@ fn summary(c: &CharacterInfo, total: usize, enabled: usize) -> CharacterSummary 
         total,
         enabled,
     }
+}
+
+/// character → 固定分类 kind。已知角色返回 None（角色虚拟类）；
+/// npc/lightcone/portrait/scene 返回对应 kind；其它一律「other」。
+fn char_category_kind(character: &str, game: &dyn Game) -> Option<&'static str> {
+    if game
+        .characters()
+        .iter()
+        .any(|c| c.internal_name == character)
+    {
+        return None;
+    }
+    match character {
+        "npc" => Some("npc"),
+        "lightcone" => Some("lightcone"),
+        "portrait" => Some("portrait"),
+        "scene" => Some("scene"),
+        _ => Some("other"),
+    }
+}
+
+/// 幂等归类：让每个 Mod 的 category_id 与 character 推导一致。
+/// 已知角色 → NULL；非角色 → 对应固定分类。不动已正确的行。
+pub fn sync_mod_categories(lib: &Library, game: &dyn Game) -> Result<usize, String> {
+    let mut changed = 0;
+    for m in lib.list().map_err(|e| e.to_string())? {
+        let want = char_category_kind(&m.character, game);
+        let want_id = match want {
+            None => None,
+            Some(kind) => {
+                let id = lib
+                    .db
+                    .category_id_by_kind(kind)
+                    .map_err(|e| e.to_string())?;
+                match id {
+                    Some(id) => Some(id),
+                    None => {
+                        // 固定分类缺失（极罕见）——补种后重查
+                        lib.db
+                            .ensure_default_categories()
+                            .map_err(|e| e.to_string())?;
+                        lib.db
+                            .category_id_by_kind(kind)
+                            .map_err(|e| e.to_string())?
+                    }
+                }
+            }
+        };
+        if m.category_id != want_id {
+            lib.db
+                .set_mod_category(m.id, want_id)
+                .map_err(|e| e.to_string())?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
 }
 
 /// 阶段一：在库锁内收集角色 Mod 的基础字段与缩略图目录（纯数据，不做 IO 重的图像工作）。
@@ -802,6 +841,7 @@ pub async fn list_categories(
                         id: c.id,
                         name: c.name,
                         ord: c.ord,
+                        kind: c.kind,
                         mod_count: c.mod_count,
                     })
                     .collect()
@@ -1050,9 +1090,35 @@ mod tests {
         let out = character_summaries(&lib, Hsr::shared()).unwrap();
         let acheron = out.iter().find(|c| c.internal_name == "Acheron").unwrap();
         assert_eq!(acheron.total, 1);
-        let others = out.iter().find(|c| c.internal_name == "Others").unwrap();
-        assert_eq!(others.total, 1);
-        assert_eq!(others.image, None);
+        // 未知角色不再以 Others 桶混进角色网格（实体「其他」分类承接，见 sync 测试）
+        assert!(!out.iter().any(|c| c.internal_name == "Others"));
+    }
+
+    #[test]
+    fn sync_mod_categories_assigns_entities_and_keeps_roles_null() {
+        let (_d, lib) = temp_lib();
+        let src = tempfile::tempdir().unwrap();
+        lib.add_folder(src.path(), "Acheron", "M1").unwrap();
+        lib.add_folder(src.path(), "Stranger", "M2").unwrap();
+        lib.add_folder(src.path(), "npc", "N1").unwrap();
+        lib.add_folder(src.path(), "lightcone", "L1").unwrap();
+        let changed = sync_mod_categories(&lib, Hsr::shared()).unwrap();
+        assert_eq!(changed, 3); // Stranger→other, npc→npc, lightcone→lightcone（Acheron 是角色不动）
+                                // 校验：Acheron 保持 NULL；Stranger/npc/lightcone 落到对应分类
+        let mods = lib.list().unwrap();
+        let by_char = |c: &str| mods.iter().find(|m| m.character == c).unwrap().clone();
+        assert_eq!(by_char("Acheron").category_id, None);
+        let stranger = by_char("Stranger");
+        let cat_other = lib.db.category_id_by_kind("other").unwrap().unwrap();
+        assert_eq!(stranger.category_id, Some(cat_other));
+        let npc = by_char("npc");
+        let cat_npc = lib.db.category_id_by_kind("npc").unwrap().unwrap();
+        assert_eq!(npc.category_id, Some(cat_npc));
+        let lc = by_char("lightcone");
+        let cat_lc = lib.db.category_id_by_kind("lightcone").unwrap().unwrap();
+        assert_eq!(lc.category_id, Some(cat_lc));
+        // 幂等：再跑一次不再改动
+        assert_eq!(sync_mod_categories(&lib, Hsr::shared()).unwrap(), 0);
     }
 
     #[test]

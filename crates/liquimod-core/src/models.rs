@@ -26,5 +26,7 @@ pub struct Category {
     pub id: i64,
     pub name: String,
     pub ord: i64,
+    /// 固定分类的内部标识（lightcone/portrait/scene/npc/other）；None = 用户自定义分类
+    pub kind: Option<String>,
     pub mod_count: i64,
 }
