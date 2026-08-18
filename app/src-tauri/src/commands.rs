@@ -151,8 +151,11 @@ pub fn install_entry(
     character: Option<&str>,
     password: Option<&str>,
 ) -> Result<InstallResultDto, String> {
-    if !path.is_file() {
+    if !path.exists() {
         return Err(format!("文件不存在：{}", path.display()));
+    }
+    if !path.is_file() {
+        return Err("不支持的内容：请拖入压缩包文件".to_string());
     }
     let outcome = match character {
         Some(c) => install_archive(&lib.db, lib, path, c, password),
@@ -185,6 +188,8 @@ fn humanize_install_error(error: &LiquiModError) -> String {
         LiquiModError::UnsupportedArchive(_) => {
             "不是支持的压缩包（支持 zip / 7z / rar）".to_string()
         }
+        LiquiModError::Archive { .. } => "压缩包损坏或读取失败".to_string(),
+        LiquiModError::Db(_) => "数据库错误，请重启应用".to_string(),
         _ => error.to_string(),
     }
 }
@@ -225,26 +230,46 @@ pub fn choose_mods_dir(state: tauri::State<AppState>, path: String) -> Result<Co
 }
 
 #[tauri::command]
-pub fn get_characters(state: tauri::State<AppState>) -> Result<Vec<CharacterSummary>, String> {
-    let lib = state.library.lock().unwrap();
-    character_summaries(&lib, liquimod_core::games::hsr::Hsr::shared())
+pub async fn get_characters(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<CharacterSummary>, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        character_summaries(&lib, liquimod_core::games::hsr::Hsr::shared())
+    })
+    .await
+    .map_err(|e| format!("读取角色失败：{e}"))?
 }
 
 #[tauri::command]
-pub fn list_mods(state: tauri::State<AppState>, character: String) -> Result<Vec<ModDto>, String> {
-    let lib = state.library.lock().unwrap();
-    mod_list(&lib, &character)
+pub async fn list_mods(
+    state: tauri::State<'_, AppState>,
+    character: String,
+) -> Result<Vec<ModDto>, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        mod_list(&lib, &character)
+    })
+    .await
+    .map_err(|e| format!("读取 Mod 列表失败：{e}"))?
 }
 
 #[tauri::command]
-pub fn set_mod_enabled(
-    state: tauri::State<AppState>,
+pub async fn set_mod_enabled(
+    state: tauri::State<'_, AppState>,
     id: i64,
     enabled: bool,
 ) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-    let lib = state.library.lock().unwrap();
-    set_enabled(&lib, mods_dir.as_deref(), id, enabled)
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        set_enabled(&lib, mods_dir.as_deref(), id, enabled)
+    })
+    .await
+    .map_err(|e| format!("切换 Mod 失败：{e}"))?
 }
 
 #[tauri::command]
@@ -486,6 +511,14 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("文件不存在"));
+    }
+
+    #[test]
+    fn install_entry_rejects_directory_path() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let err = install_entry(&lib, Hsr::shared(), dir.path(), None, None).unwrap_err();
+        assert!(err.contains("请拖入压缩包文件"));
     }
 
     #[test]
