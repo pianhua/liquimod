@@ -1,16 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, isTauri, portraitUrl, type CharacterSummary, type ModDto } from "$lib/api";
+  import { api, isTauri, portraitUrl, type CategoryDto, type CharacterSummary, type ModDto } from "$lib/api";
   import ModRow from "$lib/components/ModRow.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
 
   let {
     character,
+    categories,
     modsDirConfigured,
     onback,
     onconfigured,
   }: {
     character: CharacterSummary;
+    categories: CategoryDto[];
     modsDirConfigured: boolean;
     onback: () => void;
     onconfigured: () => void;

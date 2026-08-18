@@ -16,6 +16,13 @@ export interface CharacterSummary {
   enabled: number;
 }
 
+export interface CategoryDto {
+  id: number;
+  name: string;
+  ord: number;
+  mod_count: number;
+}
+
 export interface ModDto {
   id: number;
   name: string;
@@ -25,6 +32,7 @@ export interface ModDto {
   size_bytes: number;
   file_count: number;
   path: string;
+  category_id: number | null;
 }
 
 export interface PresetDto {
@@ -69,9 +77,9 @@ const mockCharacters: CharacterSummary[] = [
 }));
 
 const mockMods: ModDto[] = [
-  { id: 1, name: "Summer Skin", enabled: true, installed_at: 1755000000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Summer Skin" },
-  { id: 2, name: "Battle FX+", enabled: false, installed_at: 1755100000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Battle FX+" },
-  { id: 3, name: "HD Textures", enabled: false, installed_at: 1755200000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/HD Textures" },
+  { id: 1, name: "Summer Skin", enabled: true, installed_at: 1755000000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Summer Skin", category_id: null },
+  { id: 2, name: "Battle FX+", enabled: false, installed_at: 1755100000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Battle FX+", category_id: null },
+  { id: 3, name: "HD Textures", enabled: false, installed_at: 1755200000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/HD Textures", category_id: 1 },
 ];
 
 const mockPresets: PresetDto[] = [
@@ -80,6 +88,11 @@ const mockPresets: PresetDto[] = [
 ];
 
 const mockPasswords: string[] = ["1234"];
+
+const mockCategories: CategoryDto[] = [
+  { id: 1, name: "武器", ord: 1, mod_count: 1 },
+  { id: 2, name: "光影", ord: 2, mod_count: 0 },
+];
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauri()) {
@@ -142,7 +155,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return undefined as T;
       }
       case "set_auto_enable":
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: Boolean(args?.enabled) } as T;
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: Boolean(args?.enabled), theme: "auto", character_category_name: "角色" } as T;
       case "set_theme":
         return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: String(args?.theme ?? "auto"), character_category_name: "角色" } as T;
       case "set_character_category_name": {
@@ -150,6 +163,62 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         if (!n) throw "名称不能为空";
         return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: n } as T;
       }
+      case "list_categories":
+        return structuredClone([...mockCategories].sort((a, b) => a.ord - b.ord)) as T;
+      case "create_category": {
+        const n = String(args?.name ?? "").trim();
+        if (!n) throw "分类名不能为空";
+        if (mockCategories.some((c) => c.name === n)) throw `分类已存在：${n}`;
+        const c = { id: Math.max(0, ...mockCategories.map((x) => x.id)) + 1, name: n, ord: Math.max(0, ...mockCategories.map((x) => x.ord)) + 1, mod_count: 0 };
+        mockCategories.push(c);
+        return c.id as T;
+      }
+      case "rename_category": {
+        const n = String(args?.name ?? "").trim();
+        if (!n) throw "分类名不能为空";
+        if (mockCategories.some((c) => c.name === n && c.id !== Number(args?.id))) throw `分类已存在：${n}`;
+        const c = mockCategories.find((x) => x.id === Number(args?.id));
+        if (!c) throw "分类不存在";
+        c.name = n;
+        return undefined as T;
+      }
+      case "delete_category": {
+        const id = Number(args?.id);
+        const i = mockCategories.findIndex((x) => x.id === id);
+        if (i < 0) throw "分类不存在";
+        mockCategories.splice(i, 1);
+        for (const m of mockMods) if (m.category_id === id) m.category_id = null;
+        return undefined as T;
+      }
+      case "move_category": {
+        const id = Number(args?.id);
+        const delta = Number(args?.delta);
+        const sorted = [...mockCategories].sort((a, b) => a.ord - b.ord);
+        const i = sorted.findIndex((x) => x.id === id);
+        const j = i + delta;
+        if (i >= 0 && j >= 0 && j < sorted.length) {
+          const t = sorted[i].ord;
+          sorted[i].ord = sorted[j].ord;
+          sorted[j].ord = t;
+        }
+        return undefined as T;
+      }
+      case "set_mod_category": {
+        const m = mockMods.find((x) => x.id === Number(args?.id));
+        if (!m) throw "Mod 不存在";
+        const cid = args?.categoryId == null ? null : Number(args.categoryId);
+        if (cid !== null && !mockCategories.some((c) => c.id === cid)) throw "分类不存在";
+        m.category_id = cid;
+        for (const c of mockCategories)
+          c.mod_count = mockMods.filter((x) => x.category_id === c.id).length;
+        return undefined as T;
+      }
+      case "list_category_mods":
+        return structuredClone(mockMods.filter((m) => m.category_id === Number(args?.categoryId))) as T;
+      case "list_all_mods":
+        return structuredClone(mockMods) as T;
+      case "list_uncategorized_mods":
+        return [] as T;
       case "read_log":
         return "2026-08-18T10:00:00 INFO LiquiMod starting\n2026-08-18T10:01:00 INFO installed mod 99" as T;
       default:
@@ -181,6 +250,16 @@ export const api = {
   setAutoEnable: (enabled: boolean) => call<ConfigDto>("set_auto_enable", { enabled }),
   setTheme: (theme: string) => call<ConfigDto>("set_theme", { theme }),
   setCharacterCategoryName: (name: string) => call<ConfigDto>("set_character_category_name", { name }),
+  listCategories: () => call<CategoryDto[]>("list_categories"),
+  createCategory: (name: string) => call<number>("create_category", { name }),
+  renameCategory: (id: number, name: string) => call<void>("rename_category", { id, name }),
+  deleteCategory: (id: number) => call<void>("delete_category", { id }),
+  moveCategory: (id: number, delta: number) => call<void>("move_category", { id, delta }),
+  setModCategory: (id: number, categoryId: number | null) =>
+    call<void>("set_mod_category", { id, categoryId }),
+  listCategoryMods: (categoryId: number) => call<ModDto[]>("list_category_mods", { categoryId }),
+  listAllMods: () => call<ModDto[]>("list_all_mods"),
+  listUncategorizedMods: () => call<ModDto[]>("list_uncategorized_mods"),
   readLog: () => call<string>("read_log"),
 };
 

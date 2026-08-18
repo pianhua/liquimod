@@ -29,6 +29,7 @@ describe("CharacterDetail", () => {
     ]);
     render(CharacterDetail, {
       character,
+      categories: [],
       modsDirConfigured: true,
       onback: () => {},
       onconfigured: () => {},
@@ -43,6 +44,7 @@ describe("CharacterDetail", () => {
     ]);
     render(CharacterDetail, {
       character,
+      categories: [],
       modsDirConfigured: true,
       onback: () => {},
       onconfigured: () => {},
@@ -60,6 +62,7 @@ describe("CharacterDetail", () => {
     mockedInvoke.mockResolvedValue([]);
     render(CharacterDetail, {
       character,
+      categories: [],
       modsDirConfigured: false,
       onback: () => {},
       onconfigured: () => {},

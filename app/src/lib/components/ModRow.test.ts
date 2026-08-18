@@ -12,6 +12,7 @@ const mod: ModDto = {
   size_bytes: 12.5 * 1024 * 1024,
   file_count: 42,
   path: "C:/mock/m",
+  category_id: null,
 };
 
 function setup(overrides = {}) {
