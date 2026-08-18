@@ -181,7 +181,7 @@ impl Database {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    /// 同名覆盖：条目整体替换并复用 id。
+    /// 同名覆盖：条目整体替换并复用 id。条目为 id 快照——引用的 mod 被删除后条目仍保留（应用时忽略失效 id）。
     pub fn save_preset(&self, name: &str, mod_ids: &[i64]) -> Result<i64> {
         let name = name.trim();
         if name.is_empty() {
@@ -193,10 +193,15 @@ impl Database {
              ON CONFLICT(name) DO UPDATE SET created_at = excluded.created_at",
             rusqlite::params![name, now_unix()],
         )?;
-        let id: i64 = tx.query_row("SELECT id FROM presets WHERE name = ?1", [name], |r| {
-            r.get(0)
-        })?;
-        tx.execute("DELETE FROM preset_entries WHERE preset_id = ?1", [id])?;
+        let id: i64 = tx.query_row(
+            "SELECT id FROM presets WHERE name = ?1",
+            rusqlite::params![name],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "DELETE FROM preset_entries WHERE preset_id = ?1",
+            rusqlite::params![id],
+        )?;
         for mid in mod_ids {
             tx.execute(
                 "INSERT OR IGNORE INTO preset_entries (preset_id, mod_id) VALUES (?1, ?2)",
@@ -221,17 +226,20 @@ impl Database {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    /// 返回清单内 mod_id（按 id 升序；语义为集合，无插入顺序）。
     pub fn preset_mod_ids(&self, preset_id: i64) -> Result<Vec<i64>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT mod_id FROM preset_entries WHERE preset_id = ?1")?;
-        let rows = stmt.query_map([preset_id], |r| r.get(0))?;
+            .prepare("SELECT mod_id FROM preset_entries WHERE preset_id = ?1 ORDER BY mod_id")?;
+        let rows = stmt.query_map(rusqlite::params![preset_id], |r| r.get(0))?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     pub fn delete_preset(&self, preset_id: i64) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM presets WHERE id = ?1", [preset_id])?;
+        self.conn.execute(
+            "DELETE FROM presets WHERE id = ?1",
+            rusqlite::params![preset_id],
+        )?;
         Ok(())
     }
 }
