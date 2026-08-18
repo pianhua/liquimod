@@ -68,6 +68,7 @@ impl Library {
         for m in self.db.list_mods()? {
             if !seen.contains(&(m.character.clone(), m.name.clone())) {
                 self.db.remove_mod(m.id)?;
+                crate::thumbs::remove_thumbnail(&self.layout.root, m.id);
             }
         }
         self.db.list_mods()

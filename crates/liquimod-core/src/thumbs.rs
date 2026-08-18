@@ -90,9 +90,34 @@ pub fn ensure_thumbnail(
     Ok(Some(dest))
 }
 
+/// 删除缩略图缓存（mod 被移除时调用，防止 rowid 复用后串图）。不存在则静默。
+pub fn remove_thumbnail(library_root: &Path, mod_id: i64) {
+    let dest = library_root.join("thumbs").join(format!("{mod_id}.jpg"));
+    match std::fs::remove_file(&dest) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remove_thumbnail_deletes_cache_and_tolerates_missing() {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let mod_dir = tempfile::tempdir().unwrap();
+        let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([9, 9, 9, 255]));
+        img.save(mod_dir.path().join("preview.png")).unwrap();
+        let t = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 3)
+            .unwrap()
+            .unwrap();
+        assert!(t.exists());
+        remove_thumbnail(lib_dir.path(), 3);
+        assert!(!t.exists());
+        remove_thumbnail(lib_dir.path(), 3); // 幂等
+    }
 
     #[test]
     fn finds_preview_stem_first() {

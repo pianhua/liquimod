@@ -340,7 +340,9 @@ pub fn remove_entry(lib: &Library, mods_dir: Option<&Path>, id: i64) -> Result<(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(_) => return Err("删除 Mod 文件失败，可能有文件被占用".to_string()),
     }
-    lib.db.remove_mod(id).map_err(|e| e.to_string())
+    lib.db.remove_mod(id).map_err(|e| e.to_string())?;
+    liquimod_core::thumbs::remove_thumbnail(&lib.layout.root, id);
+    Ok(())
 }
 
 // ---- Tauri 薄命令 ----
