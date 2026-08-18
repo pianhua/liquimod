@@ -45,16 +45,16 @@
       </div>
     {/if}
   </div>
-  <span
-    class="absolute top-3.5 right-3.5 w-2.5 h-2.5 rounded-full z-10"
-    title={character.enabled > 0 ? `${character.enabled} 个 Mod 启用中` : "没有启用的 Mod"}
-    style:background={dot.color}
-    style:box-shadow={dot.glow}
-  ></span>
-  <div class="glass radius-pill px-3 h-9 flex items-center justify-between gap-1.5 shrink-0">
+  <div class="glass radius-pill px-3 h-9 flex items-center gap-2 shrink-0">
+    <span
+      class="w-2.5 h-2.5 rounded-full shrink-0"
+      title={character.enabled > 0 ? `${character.enabled} 个 Mod 启用中` : "没有启用的 Mod"}
+      style:background={dot.color}
+      style:box-shadow={dot.glow}
+    ></span>
     <span class="text-[13px] font-medium truncate">{character.display_name}</span>
     {#if character.total > 0}
-      <span class="text-[11px] text-secondary shrink-0">{character.enabled}/{character.total}</span>
+      <span class="text-[11px] text-secondary shrink-0 ml-auto">{character.enabled}/{character.total}</span>
     {/if}
   </div>
 </div>
