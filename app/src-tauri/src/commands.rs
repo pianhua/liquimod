@@ -378,7 +378,8 @@ pub fn rename_entry(
         let _ = dep.enable(id); // 改名失败，恢复旧 junction
         return Err(humanize_install_error(&e));
     }
-    dep.enable(id).map_err(|e| e.to_string())?;
+    dep.enable(id)
+        .map_err(|e| format!("已改名为 {new_name}，但重新启用失败：{e}"))?;
     tracing::info!("renamed mod {id} to {new_name}");
     Ok(())
 }
@@ -406,8 +407,9 @@ pub fn maybe_auto_enable(
     }
 }
 
-/// 读最新滚动日志尾部（最多 max_bytes、最后 200 行）。
+/// 读最新滚动日志尾部（最多 max_bytes、最后 200 行）。seek 定位，不全量读入内存。
 pub fn read_log_tail(log_dir: &Path, max_bytes: u64) -> Result<String, String> {
+    use std::io::{Read, Seek, SeekFrom};
     let rd = match std::fs::read_dir(log_dir) {
         Ok(r) => r,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok("（暂无日志）".into()),
@@ -421,9 +423,20 @@ pub fn read_log_tail(log_dir: &Path, max_bytes: u64) -> Result<String, String> {
     let Some(latest) = files.last() else {
         return Ok("（暂无日志）".into());
     };
-    let bytes = std::fs::read(latest.path()).map_err(|e| format!("读取日志失败：{e}"))?;
-    let start = bytes.len().saturating_sub(max_bytes as usize);
-    let text = String::from_utf8_lossy(&bytes[start..]);
+    let mut file = std::fs::File::open(latest.path()).map_err(|e| format!("读取日志失败：{e}"))?;
+    let len = file
+        .metadata()
+        .map_err(|e| format!("读取日志失败：{e}"))?
+        .len();
+    if len > max_bytes {
+        // 只读末尾 max_bytes；文件小于 max_bytes 时从头读
+        file.seek(SeekFrom::End(-(max_bytes as i64)))
+            .map_err(|e| format!("读取日志失败：{e}"))?;
+    }
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf)
+        .map_err(|e| format!("读取日志失败：{e}"))?;
+    let text = String::from_utf8_lossy(&buf);
     let lines: Vec<&str> = text.lines().collect();
     let keep = if lines.len() > 200 {
         &lines[lines.len() - 200..]
@@ -703,19 +716,27 @@ pub async fn remove_password(
 }
 
 #[tauri::command]
-pub fn rename_mod(
+pub async fn rename_mod(
     app: tauri::AppHandle,
-    state: tauri::State<AppState>,
+    state: tauri::State<'_, AppState>,
     id: i64,
     name: String,
 ) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-    {
-        let lib = state.library.lock().unwrap();
-        rename_entry(&lib, mods_dir.as_deref(), id, &name)?;
-    }
-    maybe_refresh_game(&app, &state.refresh);
-    Ok(())
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        let result = rename_entry(&lib, mods_dir.as_deref(), id, &name);
+        if result.is_ok() {
+            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
+            maybe_refresh_game(&app2, &refresh);
+        }
+        result
+    })
+    .await
+    .map_err(|e| format!("重命名任务失败：{e}"))?
 }
 
 #[tauri::command]
@@ -1021,6 +1042,20 @@ mod tests {
     }
 
     #[test]
+    fn rename_entry_rebuilds_junction_targeting_new_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "A", "old").unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        set_enabled(&lib, Some(mods.path()), m.id, true).unwrap();
+        rename_entry(&lib, Some(mods.path()), m.id, "new").unwrap();
+        let target = junction::get_target(mods.path().join("A--new")).unwrap();
+        assert_eq!(target, lib.layout.mod_dir("A", "new"));
+    }
+
+    #[test]
     fn rename_entry_conflict_keeps_everything() {
         let tmp = tempfile::tempdir().unwrap();
         let lib = Library::init(tmp.path()).unwrap();
@@ -1072,5 +1107,20 @@ mod tests {
             read_log_tail(&tmp.path().join("nope"), 1024).unwrap(),
             "（暂无日志）"
         );
+    }
+
+    #[test]
+    fn read_log_tail_respects_max_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("logs");
+        std::fs::create_dir_all(&dir).unwrap();
+        // 约 35KB > max_bytes：只读尾部，不得全量进内存
+        let body: String = (0..5000).map(|i| format!("line {i}\n")).collect();
+        std::fs::write(dir.join("liquimod.log.2026-08-18"), body).unwrap();
+        let s = read_log_tail(&dir, 4096).unwrap();
+        assert!(s.len() <= 4096);
+        assert!(s.contains("line 4999"));
+        assert!(!s.contains("line 3000"));
+        assert_eq!(s.lines().count(), 200);
     }
 }

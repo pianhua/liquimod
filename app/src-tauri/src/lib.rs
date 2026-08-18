@@ -79,7 +79,9 @@ pub fn run() {
     std::fs::create_dir_all(&log_dir).ok();
     let appender = tracing_appender::rolling::daily(&log_dir, "liquimod.log");
     let (nb, guard) = tracing_appender::non_blocking(appender);
-    std::mem::forget(guard); // 驻留整个进程生命周期
+    // guard 需活到 run() 返回：作为局部变量绑定，进程退出时 natural flush 缓冲日志落盘。
+    // 勿 mem::forget——那会跳过 flush。
+    let _guard = guard;
     tracing_subscriber::fmt()
         .with_writer(nb)
         .with_ansi(false)
