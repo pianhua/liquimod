@@ -75,11 +75,31 @@ pub fn start_watcher(app: &tauri::AppHandle, state: &AppState) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let log_dir = config::Config::log_dir();
+    std::fs::create_dir_all(&log_dir).ok();
+    let appender = tracing_appender::rolling::daily(&log_dir, "liquimod.log");
+    let (nb, guard) = tracing_appender::non_blocking(appender);
+    std::mem::forget(guard); // 驻留整个进程生命周期
+    tracing_subscriber::fmt()
+        .with_writer(nb)
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .init();
+    tracing::info!("LiquiMod starting");
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(state::AppState::bootstrap())
         .setup(|app| {
+            // 启动恢复：完成上次崩溃遗留的启停事务（op_log）
+            let state = app.state::<AppState>();
+            let mods_dir = state.config.lock().unwrap().mods_dir.clone();
+            if let Some(dir) = mods_dir {
+                let lib = state.library.lock().unwrap();
+                if let Err(e) = liquimod_core::deploy::Deployer::new(&lib, &dir).recover() {
+                    tracing::warn!("startup recover failed: {e}");
+                }
+            }
             let app_handle = app.handle().clone();
             start_watcher(&app_handle, app.state::<AppState>().inner());
             Ok(())
@@ -92,6 +112,9 @@ pub fn run() {
             commands::set_mod_enabled,
             commands::install_mod,
             commands::uninstall_mod,
+            commands::rename_mod,
+            commands::set_auto_enable,
+            commands::read_log,
             commands::list_presets,
             commands::save_preset,
             commands::apply_preset,

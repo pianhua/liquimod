@@ -54,6 +54,7 @@ fn maybe_refresh_game(app: &tauri::AppHandle, refresh: &Mutex<Option<RefreshClie
 pub struct ConfigDto {
     pub library_root: String,
     pub mods_dir: Option<String>,
+    pub auto_enable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -85,6 +86,9 @@ pub struct ModDto {
     pub enabled: bool,
     pub installed_at: i64,
     pub thumb: Option<String>,
+    pub size_bytes: i64,
+    pub file_count: i64,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -103,6 +107,7 @@ pub fn config_dto(c: &Config) -> ConfigDto {
     ConfigDto {
         library_root: c.library_root.display().to_string(),
         mods_dir: c.mods_dir.as_ref().map(|p| p.display().to_string()),
+        auto_enable: c.auto_enable,
     }
 }
 
@@ -169,6 +174,8 @@ fn collect_mod_rows(lib: &Library, character: &str) -> Result<Vec<ModRow>, Strin
                 name: m.name,
                 enabled: m.enabled,
                 installed_at: m.installed_at,
+                size_bytes: m.size_bytes,
+                file_count: m.file_count,
                 dir,
             }
         })
@@ -182,6 +189,8 @@ struct ModRow {
     name: String,
     enabled: bool,
     installed_at: i64,
+    size_bytes: i64,
+    file_count: i64,
     dir: PathBuf,
 }
 
@@ -199,6 +208,9 @@ pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
                 enabled: m.enabled,
                 installed_at: m.installed_at,
                 thumb,
+                size_bytes: m.size_bytes,
+                file_count: m.file_count,
+                path: m.dir.display().to_string(),
             }
         })
         .collect())
@@ -345,6 +357,82 @@ pub fn remove_entry(lib: &Library, mods_dir: Option<&Path>, id: i64) -> Result<(
     Ok(())
 }
 
+/// 重命名：启用中则 拆 Junction → 改名 → 按新名重建。冲突时恢复原启用状态。
+pub fn rename_entry(
+    lib: &Library,
+    mods_dir: Option<&Path>,
+    id: i64,
+    new_name: &str,
+) -> Result<(), String> {
+    let entry = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    if !entry.enabled {
+        return lib
+            .rename_mod(id, new_name)
+            .map(|_| ())
+            .map_err(|e| humanize_install_error(&e));
+    }
+    let mods_dir = mods_dir.ok_or("未配置 3Dmigoto Mods 目录")?;
+    let dep = Deployer::new(lib, mods_dir);
+    dep.disable(id).map_err(|e| e.to_string())?;
+    if let Err(e) = lib.rename_mod(id, new_name) {
+        let _ = dep.enable(id); // 改名失败，恢复旧 junction
+        return Err(humanize_install_error(&e));
+    }
+    dep.enable(id).map_err(|e| e.to_string())?;
+    tracing::info!("renamed mod {id} to {new_name}");
+    Ok(())
+}
+
+/// 安装后自动启用（设置开启时）；失败仅告警，不否决安装。
+pub fn maybe_auto_enable(
+    lib: &Library,
+    config: &Config,
+    mod_id: i64,
+    app: Option<&tauri::AppHandle>,
+) {
+    if !config.auto_enable {
+        return;
+    }
+    let Some(dir) = &config.mods_dir else {
+        return;
+    };
+    if let Err(e) = Deployer::new(lib, dir).enable(mod_id) {
+        tracing::warn!("auto-enable failed for mod {mod_id}: {e}");
+        if let Some(app) = app {
+            let _ = app.emit("liquimod-toast", format!("自动启用失败：{e}"));
+        }
+    } else {
+        tracing::info!("auto-enabled mod {mod_id}");
+    }
+}
+
+/// 读最新滚动日志尾部（最多 max_bytes、最后 200 行）。
+pub fn read_log_tail(log_dir: &Path, max_bytes: u64) -> Result<String, String> {
+    let rd = match std::fs::read_dir(log_dir) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok("（暂无日志）".into()),
+        Err(e) => return Err(format!("读取日志目录失败：{e}")),
+    };
+    let mut files: Vec<_> = rd
+        .flatten()
+        .filter(|f| f.file_name().to_string_lossy().starts_with("liquimod.log"))
+        .collect();
+    files.sort_by_key(|f| f.metadata().and_then(|m| m.modified()).ok());
+    let Some(latest) = files.last() else {
+        return Ok("（暂无日志）".into());
+    };
+    let bytes = std::fs::read(latest.path()).map_err(|e| format!("读取日志失败：{e}"))?;
+    let start = bytes.len().saturating_sub(max_bytes as usize);
+    let text = String::from_utf8_lossy(&bytes[start..]);
+    let lines: Vec<&str> = text.lines().collect();
+    let keep = if lines.len() > 200 {
+        &lines[lines.len() - 200..]
+    } else {
+        &lines[..]
+    };
+    Ok(keep.join("\n"))
+}
+
 // ---- Tauri 薄命令 ----
 
 #[tauri::command]
@@ -406,6 +494,9 @@ pub async fn list_mods(
                     enabled: m.enabled,
                     installed_at: m.installed_at,
                     thumb,
+                    size_bytes: m.size_bytes,
+                    file_count: m.file_count,
+                    path: m.dir.display().to_string(),
                 }
             })
             .collect())
@@ -429,6 +520,7 @@ pub async fn set_mod_enabled(
         let lib = library.lock().unwrap();
         let result = set_enabled(&lib, mods_dir.as_deref(), id, enabled);
         if result.is_ok() {
+            tracing::info!("set mod {id} enabled={enabled}");
             drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
             maybe_refresh_game(&app2, &refresh);
         }
@@ -448,6 +540,7 @@ pub async fn install_mod(
 ) -> Result<InstallResultDto, String> {
     let library = std::sync::Arc::clone(&state.library);
     let refresh = std::sync::Arc::clone(&state.refresh);
+    let config_arc = std::sync::Arc::clone(&state.config);
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
@@ -458,7 +551,11 @@ pub async fn install_mod(
             character.as_deref(),
             password.as_deref(),
         );
-        if matches!(result, Ok(InstallResultDto::Installed { .. })) {
+        if let Ok(InstallResultDto::Installed { mod_id, .. }) = &result {
+            let mod_id = *mod_id;
+            let cfg = config_arc.lock().unwrap().clone();
+            maybe_auto_enable(&lib, &cfg, mod_id, Some(&app2));
+            tracing::info!("installed mod {mod_id}");
             drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
             maybe_refresh_game(&app2, &refresh);
         }
@@ -482,6 +579,7 @@ pub async fn uninstall_mod(
         let lib = library.lock().unwrap();
         let result = remove_entry(&lib, mods_dir.as_deref(), id);
         if result.is_ok() {
+            tracing::info!("uninstalled mod {id}");
             drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
             maybe_refresh_game(&app2, &refresh);
         }
@@ -536,6 +634,7 @@ pub async fn apply_preset(
         let lib = library.lock().unwrap();
         let result = apply_preset_by_id(&lib, mods_dir.as_deref(), id);
         if let Ok(r) = &result {
+            tracing::info!("applied preset {id}（{name}）");
             drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
             let _ = app2.emit(
                 "liquimod-toast",
@@ -601,6 +700,38 @@ pub async fn remove_password(
     })
     .await
     .map_err(|e| format!("移除密码失败：{e}"))?
+}
+
+#[tauri::command]
+pub fn rename_mod(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    id: i64,
+    name: String,
+) -> Result<(), String> {
+    let mods_dir = state.config.lock().unwrap().mods_dir.clone();
+    {
+        let lib = state.library.lock().unwrap();
+        rename_entry(&lib, mods_dir.as_deref(), id, &name)?;
+    }
+    maybe_refresh_game(&app, &state.refresh);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_auto_enable(state: tauri::State<AppState>, enabled: bool) -> Result<ConfigDto, String> {
+    let mut config = state.config.lock().unwrap();
+    config.auto_enable = enabled;
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    tracing::info!("auto_enable = {enabled}");
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn read_log() -> Result<String, String> {
+    read_log_tail(&crate::config::Config::log_dir(), 64 * 1024)
 }
 
 #[cfg(test)]
@@ -678,6 +809,7 @@ mod tests {
         let mut c = Config {
             library_root: PathBuf::from("x"),
             mods_dir: None,
+            auto_enable: false,
         };
         assert!(set_mods_dir(&mut c, PathBuf::from("C:/no/such/dir")).is_err());
         assert!(c.mods_dir.is_none());
@@ -859,5 +991,86 @@ mod tests {
     fn thumb_data_url_missing_is_none() {
         let dir = tempfile::tempdir().unwrap();
         assert!(crate::commands::thumb_data_url(dir.path(), dir.path(), 42).is_none());
+    }
+
+    #[test]
+    fn rename_entry_disabled_mod() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "A", "old").unwrap();
+        rename_entry(&lib, None, m.id, "new").unwrap();
+        assert_eq!(lib.db.get_mod(m.id).unwrap().name, "new");
+        assert!(lib.layout.mod_dir("A", "new").is_dir());
+    }
+
+    #[test]
+    fn rename_entry_enabled_rebuilds_junction() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "A", "old").unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        set_enabled(&lib, Some(mods.path()), m.id, true).unwrap();
+        rename_entry(&lib, Some(mods.path()), m.id, "new").unwrap();
+        assert!(junction::exists(mods.path().join("A--new")).unwrap());
+        assert!(!mods.path().join("A--old").exists());
+        assert!(lib.db.get_mod(m.id).unwrap().enabled);
+    }
+
+    #[test]
+    fn rename_entry_conflict_keeps_everything() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m1 = lib.add_folder(src.path(), "A", "m1").unwrap();
+        lib.add_folder(src.path(), "A", "m2").unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        set_enabled(&lib, Some(mods.path()), m1.id, true).unwrap();
+        let err = rename_entry(&lib, Some(mods.path()), m1.id, "m2").unwrap_err();
+        assert!(err.contains("已存在同名 Mod"));
+        assert_eq!(lib.db.get_mod(m1.id).unwrap().name, "m1");
+        assert!(junction::exists(mods.path().join("A--m1")).unwrap());
+        assert!(lib.db.get_mod(m1.id).unwrap().enabled);
+    }
+
+    #[test]
+    fn maybe_auto_enable_deploys_when_on() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "A", "m1").unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        let mut c = Config {
+            library_root: tmp.path().to_path_buf(),
+            mods_dir: Some(mods.path().to_path_buf()),
+            auto_enable: false,
+        };
+        maybe_auto_enable(&lib, &c, m.id, None);
+        assert!(!lib.db.get_mod(m.id).unwrap().enabled);
+        c.auto_enable = true;
+        maybe_auto_enable(&lib, &c, m.id, None);
+        assert!(lib.db.get_mod(m.id).unwrap().enabled);
+    }
+
+    #[test]
+    fn read_log_tail_truncates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("logs");
+        std::fs::create_dir_all(&dir).unwrap();
+        let body: String = (0..300).map(|i| format!("line {i}\n")).collect();
+        std::fs::write(dir.join("liquimod.log.2026-08-18"), body).unwrap();
+        let s = read_log_tail(&dir, 64 * 1024).unwrap();
+        assert_eq!(s.lines().count(), 200);
+        assert!(s.contains("line 299"));
+        assert!(!s.contains("line 0\n"));
+        assert_eq!(
+            read_log_tail(&tmp.path().join("nope"), 1024).unwrap(),
+            "（暂无日志）"
+        );
     }
 }

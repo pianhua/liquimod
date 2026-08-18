@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     pub library_root: PathBuf,
     pub mods_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub auto_enable: bool,
 }
 
 impl Config {
@@ -15,6 +17,14 @@ impl Config {
             .expect("无法定位用户配置目录")
             .join("LiquiMod")
             .join("config.json")
+    }
+
+    /// 日志目录：%APPDATA%/LiquiMod/logs
+    pub fn log_dir() -> PathBuf {
+        Self::config_path()
+            .parent()
+            .expect("配置路径应有父目录")
+            .join("logs")
     }
 
     pub fn load() -> Self {
@@ -34,6 +44,7 @@ impl Config {
                     .unwrap_or_else(|| Path::new("."))
                     .join("Library"),
                 mods_dir: None,
+                auto_enable: false,
             },
         }
     }
@@ -69,6 +80,7 @@ mod tests {
         let c = Config {
             library_root: PathBuf::from("C:/lib"),
             mods_dir: Some(PathBuf::from("C:/game/Mods")),
+            auto_enable: true,
         };
         c.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path), c);
@@ -81,5 +93,19 @@ mod tests {
         fs::write(&path, "{ not json").unwrap();
         let c = Config::load_from(&path);
         assert_eq!(c.library_root, dir.path().join("Library"));
+    }
+
+    #[test]
+    fn auto_enable_defaults_false_and_roundtrips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.json");
+        std::fs::write(&path, r#"{"library_root":"C:/L","mods_dir":null}"#).unwrap();
+        let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(!c.auto_enable);
+        let mut c = c;
+        c.auto_enable = true;
+        c.save_to(&path).unwrap();
+        let c2: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(c2.auto_enable);
     }
 }
