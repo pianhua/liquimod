@@ -20,6 +20,7 @@
   let draft = $state("");
   let confirming = $state(false);
   let busy = $state(false);
+  let cancelled = $state(false);
 
   function fmtSize(b: number): string {
     if (b < 0) return "—";
@@ -40,15 +41,22 @@
   }
 
   async function commitRename() {
+    if (cancelled) {
+      cancelled = false;
+      return;
+    }
     const v = draft.trim();
     if (!v || v === mod.name || busy) {
       renaming = false;
       return;
     }
     busy = true;
-    const ok = await onrename(v);
-    busy = false;
-    if (ok) renaming = false;
+    try {
+      const ok = await onrename(v);
+      if (ok) renaming = false;
+    } finally {
+      busy = false;
+    }
   }
 
   async function confirmUninstall() {
@@ -128,7 +136,10 @@
           style="box-shadow: inset 0 0 0 1.5px var(--accent)"
           onkeydown={(e) => {
             if (e.key === "Enter") commitRename();
-            else if (e.key === "Escape") renaming = false;
+            else if (e.key === "Escape") {
+              cancelled = true;
+              renaming = false;
+            }
           }}
           onblur={commitRename}
           autofocus

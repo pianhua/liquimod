@@ -80,6 +80,29 @@ describe("ModRow", () => {
     expect(p.onrename).not.toHaveBeenCalled();
   });
 
+  it("Esc 取消后 blur 不再提交（浏览器移除聚焦元素会派发 blur）", async () => {
+    const p = setup();
+    await fireEvent.click(screen.getByLabelText("重命名 Summer Skin"));
+    const input = screen.getByDisplayValue("Summer Skin");
+    await fireEvent.input(input, { target: { value: "Should Not Save" } });
+    await fireEvent.keyDown(input, { key: "Escape" });
+    await fireEvent.blur(input); // 模拟浏览器行为
+    await new Promise((r) => setTimeout(r, 0));
+    expect(p.onrename).not.toHaveBeenCalled();
+  });
+
+  it("onrename 挂起期间重入被 busy 拦截", async () => {
+    let resolveFn: ((v: boolean) => void) | undefined;
+    const p = setup({ onrename: vi.fn(() => new Promise<boolean>((r) => (resolveFn = r))) });
+    await fireEvent.click(screen.getByLabelText("重命名 Summer Skin"));
+    const input = screen.getByDisplayValue("Summer Skin");
+    await fireEvent.input(input, { target: { value: "X" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    expect(p.onrename).toHaveBeenCalledTimes(1);
+    resolveFn?.(true);
+  });
+
   it("卸载需二次确认", async () => {
     const p = setup();
     await fireEvent.click(screen.getByLabelText("卸载 Summer Skin"));
