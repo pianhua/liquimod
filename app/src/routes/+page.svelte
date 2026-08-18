@@ -30,6 +30,7 @@
   onMount(() => {
     void refresh();
     if (!isTauri()) return;
+    let cancelled = false;
     let unlisten: (() => void) | undefined;
     import("@tauri-apps/api/webviewWindow").then(({ getCurrentWebviewWindow }) => {
       getCurrentWebviewWindow()
@@ -45,9 +46,16 @@
             if (paths.length > 0) enqueueInstalls(paths, refresh);
           }
         })
-        .then((u) => (unlisten = u));
+        .then((u) => {
+          if (cancelled) u();
+          else unlisten = u;
+        })
+        .catch(() => {});
     });
-    return () => unlisten?.();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   });
 </script>
 

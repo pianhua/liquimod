@@ -18,6 +18,7 @@ function job(partial: Partial<InstallJob>): InstallJob {
     modId: null,
     message: null,
     warnings: [],
+    busy: false,
     ...partial,
   };
 }

@@ -11,6 +11,7 @@ export interface InstallJob {
   modId: number | null;
   message: string | null;
   warnings: string[];
+  busy: boolean;
 }
 
 let nextId = 1;
@@ -28,6 +29,7 @@ export function enqueueInstalls(paths: string[], onInstalled: () => void): void 
       modId: null,
       message: null,
       warnings: [],
+      busy: false,
     };
     installJobs.push(job);
     void runInstall(installJobs[installJobs.length - 1], null, onInstalled);
@@ -39,6 +41,8 @@ async function runInstall(
   password: string | null,
   onInstalled: () => void,
 ): Promise<void> {
+  if (job.busy) return;
+  job.busy = true;
   job.stage = "installing";
   job.message = null;
   try {
@@ -55,6 +59,8 @@ async function runInstall(
   } catch (e) {
     job.stage = "error";
     job.message = e instanceof Error ? e.message : String(e);
+  } finally {
+    job.busy = false;
   }
 }
 

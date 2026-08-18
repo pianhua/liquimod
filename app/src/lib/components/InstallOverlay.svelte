@@ -26,8 +26,8 @@
 </script>
 
 {#if jobs.length > 0}
-  <div class="install-overlay fixed bottom-6 inset-x-0 z-50 flex justify-center pointer-events-none">
-    <div class="glass radius-panel pointer-events-auto w-[420px] max-w-[90vw] px-5 py-4 flex flex-col gap-3"
+  <div class="install-overlay fixed bottom-6 inset-x-0 z-50 flex justify-center pointer-events-none" aria-live="polite">
+    <div class="glass radius-panel pointer-events-auto w-[420px] max-w-[90vw] px-5 py-4 flex flex-col gap-3 max-h-[70vh] overflow-y-auto"
       style="box-shadow: var(--shadow-lift)">
       {#each jobs as job (job.id)}
         <div class="flex items-center gap-3 min-h-9">
@@ -42,17 +42,24 @@
             <input
               class="glass radius-pill px-3 h-8 text-sm w-32 outline-none bg-transparent text-white"
               placeholder="压缩包密码"
+              aria-label="压缩包密码"
               type="password"
               bind:value={passwords[job.id]}
               onkeydown={(e) => {
                 if (e.key === "Enter" && passwords[job.id]) {
-                  submitInstallPassword(job, passwords[job.id], onInstalled);
+                  const pw = passwords[job.id];
+                  submitInstallPassword(job, pw, onInstalled);
+                  delete passwords[job.id];
                 }
               }}
             />
             <button
               class="accent-fill accent-text radius-pill px-3.5 h-8 text-sm font-medium cursor-pointer shrink-0"
-              onclick={() => submitInstallPassword(job, passwords[job.id] ?? "", onInstalled)}
+              onclick={() => {
+                const pw = passwords[job.id] ?? "";
+                submitInstallPassword(job, pw, onInstalled);
+                delete passwords[job.id];
+              }}
             >确认</button>
           {:else if job.stage === "done"}
             <span class="text-sm shrink-0">已安装到 {displayName(job.character ?? "")}</span>
@@ -62,7 +69,10 @@
             >撤销</button>
             <button
               class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
-              onclick={() => dismissInstall(job)}
+              onclick={() => {
+                delete passwords[job.id];
+                dismissInstall(job);
+              }}
             >关闭</button>
           {:else if job.stage === "error"}
             <span class="text-sm shrink-0" style="color: var(--danger)">{job.message}</span>
@@ -72,7 +82,10 @@
             >重试</button>
             <button
               class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
-              onclick={() => dismissInstall(job)}
+              onclick={() => {
+                delete passwords[job.id];
+                dismissInstall(job);
+              }}
             >关闭</button>
           {/if}
         </div>

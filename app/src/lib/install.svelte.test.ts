@@ -109,6 +109,24 @@ describe("install queue", () => {
     expect(onInstalled).toHaveBeenCalledTimes(2);
   });
 
+  it("ignores concurrent submit while busy", async () => {
+    let resolveSecond: ((v: any) => void) | undefined;
+    vi.mocked(api.installMod)
+      .mockResolvedValueOnce({ status: "needs_password" })
+      .mockImplementationOnce(
+        () => new Promise((r) => { resolveSecond = r; }),
+      );
+    enqueueInstalls(["C:/dl/L.zip"], vi.fn());
+    await flush(); await flush();
+    const job = installJobs[0];
+    void submitInstallPassword(job, "a", vi.fn());
+    await submitInstallPassword(job, "b", vi.fn());
+    expect(api.installMod).toHaveBeenCalledTimes(2);
+    resolveSecond?.({ status: "installed", mod_id: 1, name: "L", character: "Bailu", warnings: [] });
+    await flush(); await flush();
+    expect(installJobs[0].stage).toBe("done");
+  });
+
   it("dismiss removes without side effects", () => {
     installJobs.push({
       id: 999,
@@ -119,6 +137,7 @@ describe("install queue", () => {
       modId: 1,
       message: null,
       warnings: [],
+      busy: false,
     });
     dismissInstall(installJobs[0]);
     expect(installJobs).toHaveLength(0);
