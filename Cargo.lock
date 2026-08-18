@@ -2447,6 +2447,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "liquimod-refresh-helper"
+version = "0.1.0"
+dependencies = [
+ "windows 0.61.3",
+]
+
+[[package]]
 name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
