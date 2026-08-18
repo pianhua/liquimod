@@ -13,6 +13,8 @@ pub fn run() {
             commands::get_characters,
             commands::list_mods,
             commands::set_mod_enabled,
+            commands::install_mod,
+            commands::uninstall_mod,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

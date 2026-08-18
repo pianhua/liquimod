@@ -1,6 +1,8 @@
 use crate::config::Config;
 use crate::state::AppState;
+use liquimod_core::archive::install::{install_archive, install_archive_inferred, InstallOutcome};
 use liquimod_core::deploy::Deployer;
+use liquimod_core::error::LiquiModError;
 use liquimod_core::games::{CharacterInfo, Game};
 use liquimod_core::library::Library;
 use serde::Serialize;
@@ -27,6 +29,18 @@ pub struct ModDto {
     pub name: String,
     pub enabled: bool,
     pub installed_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum InstallResultDto {
+    Installed {
+        mod_id: i64,
+        name: String,
+        character: String,
+        warnings: Vec<String>,
+    },
+    NeedsPassword,
 }
 
 pub fn config_dto(c: &Config) -> ConfigDto {
@@ -129,6 +143,66 @@ pub fn set_mods_dir(c: &mut Config, path: PathBuf) -> Result<ConfigDto, String> 
     Ok(config_dto(c))
 }
 
+/// 安装压缩包：character=None 时从内容推断。人话错误信息。
+pub fn install_entry(
+    lib: &Library,
+    game: &dyn Game,
+    path: &Path,
+    character: Option<&str>,
+    password: Option<&str>,
+) -> Result<InstallResultDto, String> {
+    if !path.is_file() {
+        return Err(format!("文件不存在：{}", path.display()));
+    }
+    let outcome = match character {
+        Some(c) => install_archive(&lib.db, lib, path, c, password),
+        None => install_archive_inferred(&lib.db, lib, game, path, password),
+    };
+    match outcome {
+        Ok(InstallOutcome::Installed {
+            mod_id,
+            name,
+            character,
+            warnings,
+        }) => Ok(InstallResultDto::Installed {
+            mod_id,
+            name,
+            character,
+            warnings,
+        }),
+        Ok(InstallOutcome::NeedsPassword) => Ok(InstallResultDto::NeedsPassword),
+        Err(error) => Err(humanize_install_error(&error)),
+    }
+}
+
+fn humanize_install_error(error: &LiquiModError) -> String {
+    match error {
+        LiquiModError::DestinationExists { name, .. } => format!("已存在同名 Mod：{name}"),
+        LiquiModError::UnsupportedArchive(_) => {
+            "不是支持的压缩包（支持 zip / 7z / rar）".to_string()
+        }
+        _ => error.to_string(),
+    }
+}
+
+/// 卸载：启用中则先拆 Junction，再删库目录与 DB 记录。
+pub fn remove_entry(lib: &Library, mods_dir: Option<&Path>, id: i64) -> Result<(), String> {
+    let entry = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    if entry.enabled {
+        let mods_dir = mods_dir.ok_or("未配置 3Dmigoto Mods 目录")?;
+        Deployer::new(lib, mods_dir)
+            .disable(id)
+            .map_err(|e| e.to_string())?;
+    }
+    let dir = lib.layout.root.join(&entry.rel_path);
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    lib.db.remove_mod(id).map_err(|e| e.to_string())
+}
+
 // ---- Tauri 薄命令 ----
 
 #[tauri::command]
@@ -167,6 +241,40 @@ pub fn set_mod_enabled(
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
     let lib = state.library.lock().unwrap();
     set_enabled(&lib, mods_dir.as_deref(), id, enabled)
+}
+
+#[tauri::command]
+pub async fn install_mod(
+    state: tauri::State<'_, AppState>,
+    path: String,
+    character: Option<String>,
+    password: Option<String>,
+) -> Result<InstallResultDto, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        install_entry(
+            &lib,
+            liquimod_core::games::hsr::Hsr::shared(),
+            Path::new(&path),
+            character.as_deref(),
+            password.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| format!("安装任务失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn uninstall_mod(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    let mods_dir = state.config.lock().unwrap().mods_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        remove_entry(&lib, mods_dir.as_deref(), id)
+    })
+    .await
+    .map_err(|e| format!("卸载任务失败：{e}"))?
 }
 
 #[cfg(test)]
@@ -239,5 +347,119 @@ mod tests {
         };
         assert!(set_mods_dir(&mut c, PathBuf::from("C:/no/such/dir")).is_err());
         assert!(c.mods_dir.is_none());
+    }
+
+    fn write_zip(path: &std::path::Path, files: &[(&str, &[u8])], password: Option<&str>) {
+        use std::io::Write;
+        let file = std::fs::File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        for (name, contents) in files {
+            let options = match password {
+                Some(p) => zip::write::SimpleFileOptions::default()
+                    .with_aes_encryption(zip::AesMode::Aes256, p),
+                None => zip::write::SimpleFileOptions::default(),
+            };
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(contents).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn install_entry_with_explicit_character() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("CoolMod.zip");
+        write_zip(&zip, &[("mod.ini", b"[Constants]")], None);
+
+        let dto = install_entry(&lib, Hsr::shared(), &zip, Some("Bailu"), None).unwrap();
+
+        let InstallResultDto::Installed {
+            character, name, ..
+        } = dto
+        else {
+            panic!("expected installed");
+        };
+        assert_eq!((character.as_str(), name.as_str()), ("Bailu", "CoolMod"));
+    }
+
+    #[test]
+    fn install_entry_infers_character() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("Mystery.zip");
+        write_zip(&zip, &[("mod.ini", b"; kafka kafka kafka")], None);
+
+        let dto = install_entry(&lib, Hsr::shared(), &zip, None, None).unwrap();
+
+        let InstallResultDto::Installed { character, .. } = dto else {
+            panic!("expected installed");
+        };
+        assert_eq!(character, "Kafka");
+    }
+
+    #[test]
+    fn install_entry_needs_password() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("Locked.zip");
+        write_zip(&zip, &[("s.txt", b"s")], Some("pw1"));
+
+        let dto = install_entry(&lib, Hsr::shared(), &zip, None, None).unwrap();
+        assert_eq!(dto, InstallResultDto::NeedsPassword);
+
+        let dto = install_entry(&lib, Hsr::shared(), &zip, None, Some("pw1")).unwrap();
+        assert!(matches!(dto, InstallResultDto::Installed { .. }));
+    }
+
+    #[test]
+    fn install_entry_humanizes_duplicate_error() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("Dup.zip");
+        write_zip(&zip, &[("m.ini", b"x")], None);
+        install_entry(&lib, Hsr::shared(), &zip, Some("Bailu"), None).unwrap();
+
+        let err = install_entry(&lib, Hsr::shared(), &zip, Some("Bailu"), None).unwrap_err();
+        assert!(err.contains("已存在同名 Mod"));
+    }
+
+    #[test]
+    fn remove_entry_deletes_files_and_row() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("Gone.zip");
+        write_zip(&zip, &[("m.ini", b"x")], None);
+        let dto = install_entry(&lib, Hsr::shared(), &zip, Some("Bailu"), None).unwrap();
+        let InstallResultDto::Installed { mod_id, .. } = dto else {
+            panic!("expected installed");
+        };
+
+        remove_entry(&lib, None, mod_id).unwrap();
+
+        assert!(lib.list().unwrap().is_empty());
+        assert!(!lib.layout.mod_dir("Bailu", "Gone").exists());
+    }
+
+    #[test]
+    fn remove_entry_disables_junction_first() {
+        let (_d, lib) = temp_lib();
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("Active.zip");
+        write_zip(&zip, &[("m.ini", b"x")], None);
+        let dto = install_entry(&lib, Hsr::shared(), &zip, Some("Bailu"), None).unwrap();
+        let InstallResultDto::Installed { mod_id, .. } = dto else {
+            panic!("expected installed");
+        };
+        let mods = tempfile::tempdir().unwrap();
+        set_enabled(&lib, Some(mods.path()), mod_id, true).unwrap();
+        let entry = lib.db.get_mod(mod_id).unwrap();
+        let link = mods.path().join(Deployer::link_name(&entry));
+        assert!(link.exists());
+
+        remove_entry(&lib, Some(mods.path()), mod_id).unwrap();
+
+        assert!(!link.exists());
+        assert!(lib.list().unwrap().is_empty());
     }
 }
