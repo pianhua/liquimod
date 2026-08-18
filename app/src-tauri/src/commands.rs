@@ -55,6 +55,16 @@ pub struct ConfigDto {
     pub library_root: String,
     pub mods_dir: Option<String>,
     pub auto_enable: bool,
+    pub theme: String,
+    pub character_category_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct CategoryDto {
+    pub id: i64,
+    pub name: String,
+    pub ord: i64,
+    pub mod_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -89,6 +99,7 @@ pub struct ModDto {
     pub size_bytes: i64,
     pub file_count: i64,
     pub path: String,
+    pub category_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -108,6 +119,8 @@ pub fn config_dto(c: &Config) -> ConfigDto {
         library_root: c.library_root.display().to_string(),
         mods_dir: c.mods_dir.as_ref().map(|p| p.display().to_string()),
         auto_enable: c.auto_enable,
+        theme: c.theme.clone(),
+        character_category_name: c.character_category_name.clone(),
     }
 }
 
@@ -121,7 +134,7 @@ pub fn character_summaries(
     for c in game.characters() {
         let group: Vec<_> = mods
             .iter()
-            .filter(|m| m.character == c.internal_name)
+            .filter(|m| m.character == c.internal_name && m.category_id.is_none())
             .collect();
         out.push(summary(
             c,
@@ -136,7 +149,7 @@ pub fn character_summaries(
         .collect();
     let others: Vec<_> = mods
         .iter()
-        .filter(|m| !known.contains(&m.character.as_str()))
+        .filter(|m| m.category_id.is_none() && !known.contains(&m.character.as_str()))
         .collect();
     if !others.is_empty() {
         out.push(CharacterSummary {
@@ -162,11 +175,18 @@ fn summary(c: &CharacterInfo, total: usize, enabled: usize) -> CharacterSummary 
 
 /// 阶段一：在库锁内收集角色 Mod 的基础字段与缩略图目录（纯数据，不做 IO 重的图像工作）。
 fn collect_mod_rows(lib: &Library, character: &str) -> Result<Vec<ModRow>, String> {
+    collect_rows_where(lib, |m| m.character == character && m.category_id.is_none())
+}
+
+fn collect_rows_where(
+    lib: &Library,
+    pred: impl Fn(&liquimod_core::models::ModEntry) -> bool,
+) -> Result<Vec<ModRow>, String> {
     let mut rows: Vec<ModRow> = lib
         .list()
         .map_err(|e| e.to_string())?
         .into_iter()
-        .filter(|m| m.character == character)
+        .filter(|m| pred(m))
         .map(|m| {
             let dir = lib.layout.mod_dir(&m.character, &m.name);
             ModRow {
@@ -176,6 +196,7 @@ fn collect_mod_rows(lib: &Library, character: &str) -> Result<Vec<ModRow>, Strin
                 installed_at: m.installed_at,
                 size_bytes: m.size_bytes,
                 file_count: m.file_count,
+                category_id: m.category_id,
                 dir,
             }
         })
@@ -184,24 +205,10 @@ fn collect_mod_rows(lib: &Library, character: &str) -> Result<Vec<ModRow>, Strin
     Ok(rows)
 }
 
-struct ModRow {
-    id: i64,
-    name: String,
-    enabled: bool,
-    installed_at: i64,
-    size_bytes: i64,
-    file_count: i64,
-    dir: PathBuf,
-}
-
-/// 阶段一 + 阶段二（缩略图）组合；供测试使用。
-#[allow(dead_code)]
-pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
-    let root = lib.layout.root.clone();
-    Ok(collect_mod_rows(lib, character)?
-        .into_iter()
+fn rows_to_dtos(root: &Path, rows: Vec<ModRow>) -> Vec<ModDto> {
+    rows.into_iter()
         .map(|m| {
-            let thumb = thumb_data_url(&root, &m.dir, m.id);
+            let thumb = thumb_data_url(root, &m.dir, m.id);
             ModDto {
                 id: m.id,
                 name: m.name,
@@ -211,9 +218,28 @@ pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
                 size_bytes: m.size_bytes,
                 file_count: m.file_count,
                 path: m.dir.display().to_string(),
+                category_id: m.category_id,
             }
         })
-        .collect())
+        .collect()
+}
+
+struct ModRow {
+    id: i64,
+    name: String,
+    enabled: bool,
+    installed_at: i64,
+    size_bytes: i64,
+    file_count: i64,
+    category_id: Option<i64>,
+    dir: PathBuf,
+}
+
+/// 阶段一 + 阶段二（缩略图）组合；供测试使用。
+#[allow(dead_code)]
+pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
+    let root = lib.layout.root.clone();
+    Ok(rows_to_dtos(&root, collect_mod_rows(lib, character)?))
 }
 
 pub fn save_preset_named(
@@ -497,22 +523,7 @@ pub async fn list_mods(
             let rows = collect_mod_rows(&lib, &character)?;
             (root, rows)
         }; // 释放库锁后再做缩略图生成（可能慢）
-        Ok(rows
-            .into_iter()
-            .map(|m| {
-                let thumb = thumb_data_url(&root, &m.dir, m.id);
-                ModDto {
-                    id: m.id,
-                    name: m.name,
-                    enabled: m.enabled,
-                    installed_at: m.installed_at,
-                    thumb,
-                    size_bytes: m.size_bytes,
-                    file_count: m.file_count,
-                    path: m.dir.display().to_string(),
-                }
-            })
-            .collect())
+        Ok(rows_to_dtos(&root, rows))
     })
     .await
     .map_err(|e| format!("读取 Mod 列表失败：{e}"))?
@@ -755,6 +766,195 @@ pub fn read_log() -> Result<String, String> {
     read_log_tail(&crate::config::Config::log_dir(), 64 * 1024)
 }
 
+#[tauri::command]
+pub async fn list_categories(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<CategoryDto>, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db
+            .list_categories()
+            .map_err(|e| e.to_string())
+            .map(|cs| {
+                cs.into_iter()
+                    .map(|c| CategoryDto {
+                        id: c.id,
+                        name: c.name,
+                        ord: c.ord,
+                        mod_count: c.mod_count,
+                    })
+                    .collect()
+            })
+    })
+    .await
+    .map_err(|e| format!("读取分类失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn create_category(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<i64, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db.create_category(&name).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("新建分类失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn rename_category(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    name: String,
+) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db.rename_category(id, &name).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("重命名分类失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn delete_category(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db.delete_category(id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("删除分类失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn move_category(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    delta: i64,
+) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db.move_category(id, delta).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("移动分类失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn set_mod_category(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    category_id: Option<i64>,
+) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db
+            .set_mod_category(id, category_id)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("移动 Mod 失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn list_category_mods(
+    state: tauri::State<'_, AppState>,
+    category_id: i64,
+) -> Result<Vec<ModDto>, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let (root, rows) = {
+            let lib = library.lock().unwrap();
+            let root = lib.layout.root.clone();
+            let rows = collect_rows_where(&lib, move |m| m.category_id == Some(category_id))?;
+            (root, rows)
+        };
+        Ok(rows_to_dtos(&root, rows))
+    })
+    .await
+    .map_err(|e| format!("读取分类 Mod 失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn list_all_mods(state: tauri::State<'_, AppState>) -> Result<Vec<ModDto>, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let (root, rows) = {
+            let lib = library.lock().unwrap();
+            let root = lib.layout.root.clone();
+            let rows = collect_rows_where(&lib, |_| true)?;
+            (root, rows)
+        };
+        Ok(rows_to_dtos(&root, rows))
+    })
+    .await
+    .map_err(|e| format!("读取全部 Mod 失败：{e}"))?
+}
+
+/// 未分类 = 未归类（category_id NULL）且不属于任何已知游戏角色。
+#[tauri::command]
+pub async fn list_uncategorized_mods(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ModDto>, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let (root, rows) = {
+            let lib = library.lock().unwrap();
+            let root = lib.layout.root.clone();
+            let known: Vec<&str> = Hsr::shared()
+                .characters()
+                .iter()
+                .map(|c| c.internal_name.as_str())
+                .collect();
+            let rows = collect_rows_where(&lib, |m| {
+                m.category_id.is_none() && !known.contains(&m.character.as_str())
+            })?;
+            (root, rows)
+        };
+        Ok(rows_to_dtos(&root, rows))
+    })
+    .await
+    .map_err(|e| format!("读取未分类 Mod 失败：{e}"))?
+}
+
+#[tauri::command]
+pub fn set_theme(state: tauri::State<AppState>, theme: String) -> Result<ConfigDto, String> {
+    if !["auto", "light", "dark"].contains(&theme.as_str()) {
+        return Err("主题只能是 auto / light / dark".to_string());
+    }
+    let mut config = state.config.lock().unwrap();
+    config.theme = theme.clone();
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    tracing::info!("theme = {theme}");
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn set_character_category_name(
+    state: tauri::State<AppState>,
+    name: String,
+) -> Result<ConfigDto, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("名称不能为空".to_string());
+    }
+    let mut config = state.config.lock().unwrap();
+    config.character_category_name = name;
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    Ok(config_dto(&config))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -831,6 +1031,8 @@ mod tests {
             library_root: PathBuf::from("x"),
             mods_dir: None,
             auto_enable: false,
+            theme: "auto".into(),
+            character_category_name: "角色".into(),
         };
         assert!(set_mods_dir(&mut c, PathBuf::from("C:/no/such/dir")).is_err());
         assert!(c.mods_dir.is_none());
@@ -1084,6 +1286,8 @@ mod tests {
             library_root: tmp.path().to_path_buf(),
             mods_dir: Some(mods.path().to_path_buf()),
             auto_enable: false,
+            theme: "auto".into(),
+            character_category_name: "角色".into(),
         };
         maybe_auto_enable(&lib, &c, m.id, None);
         assert!(!lib.db.get_mod(m.id).unwrap().enabled);
@@ -1122,5 +1326,39 @@ mod tests {
         assert!(s.contains("line 4999"));
         assert!(!s.contains("line 3000"));
         assert_eq!(s.lines().count(), 200);
+    }
+
+    #[test]
+    fn summaries_exclude_categorized_mods() {
+        let (_d, lib) = temp_lib();
+        let src = tempfile::tempdir().unwrap();
+        let m = lib.add_folder(src.path(), "Acheron", "M1").unwrap();
+        let c = lib.db.create_category("武器").unwrap();
+        lib.db.set_mod_category(m.id, Some(c)).unwrap();
+        let out = character_summaries(&lib, Hsr::shared()).unwrap();
+        let acheron = out.iter().find(|x| x.internal_name == "Acheron").unwrap();
+        assert_eq!(acheron.total, 0);
+        assert!(mod_list(&lib, "Acheron").unwrap().is_empty());
+    }
+
+    #[test]
+    fn collect_rows_where_all_and_uncategorized() {
+        let (_d, lib) = temp_lib();
+        let src = tempfile::tempdir().unwrap();
+        lib.add_folder(src.path(), "Acheron", "M1").unwrap();
+        lib.add_folder(src.path(), "Stranger", "M2").unwrap();
+        let all = collect_rows_where(&lib, |_| true).unwrap();
+        assert_eq!(all.len(), 2);
+        let known: Vec<&str> = Hsr::shared()
+            .characters()
+            .iter()
+            .map(|c| c.internal_name.as_str())
+            .collect();
+        let uncat = collect_rows_where(&lib, |m| {
+            m.category_id.is_none() && !known.contains(&m.character.as_str())
+        })
+        .unwrap();
+        assert_eq!(uncat.len(), 1);
+        assert_eq!(uncat[0].name, "M2");
     }
 }

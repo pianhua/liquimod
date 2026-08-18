@@ -2,12 +2,23 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn default_theme() -> String {
+    "auto".into()
+}
+fn default_character_category_name() -> String {
+    "角色".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     pub library_root: PathBuf,
     pub mods_dir: Option<PathBuf>,
     #[serde(default)]
     pub auto_enable: bool,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default = "default_character_category_name")]
+    pub character_category_name: String,
 }
 
 impl Config {
@@ -45,6 +56,8 @@ impl Config {
                     .join("Library"),
                 mods_dir: None,
                 auto_enable: false,
+                theme: default_theme(),
+                character_category_name: default_character_category_name(),
             },
         }
     }
@@ -81,6 +94,8 @@ mod tests {
             library_root: PathBuf::from("C:/lib"),
             mods_dir: Some(PathBuf::from("C:/game/Mods")),
             auto_enable: true,
+            theme: "auto".into(),
+            character_category_name: "角色".into(),
         };
         c.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path), c);
@@ -107,5 +122,22 @@ mod tests {
         c.save_to(&path).unwrap();
         let c2: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(c2.auto_enable);
+    }
+
+    #[test]
+    fn theme_and_category_name_default_and_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.json");
+        std::fs::write(&path, r#"{"library_root":"C:/L","mods_dir":null}"#).unwrap();
+        let c = Config::load_from(&path);
+        assert_eq!(c.theme, "auto");
+        assert_eq!(c.character_category_name, "角色");
+        let mut c = c;
+        c.theme = "light".into();
+        c.character_category_name = "机体".into();
+        c.save_to(&path).unwrap();
+        let c2 = Config::load_from(&path);
+        assert_eq!(c2.theme, "light");
+        assert_eq!(c2.character_category_name, "机体");
     }
 }

@@ -134,6 +134,17 @@ pub fn run() {
             commands::list_passwords,
             commands::add_password,
             commands::remove_password,
+            commands::list_categories,
+            commands::create_category,
+            commands::rename_category,
+            commands::delete_category,
+            commands::move_category,
+            commands::set_mod_category,
+            commands::list_category_mods,
+            commands::list_all_mods,
+            commands::list_uncategorized_mods,
+            commands::set_theme,
+            commands::set_character_category_name,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
