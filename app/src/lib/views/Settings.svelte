@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, isTauri, type ConfigDto } from "$lib/api";
+  import { applyTheme } from "$lib/theme";
   import { toast } from "$lib/toast.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import Toggle from "$lib/components/Toggle.svelte";
@@ -32,6 +33,34 @@
       logText = "";
     }
   });
+
+  let catNameDraft = $state("");
+
+  $effect(() => {
+    if (config && !catNameDraft) catNameDraft = config.character_category_name;
+  });
+
+  async function pickTheme(t: string) {
+    try {
+      const c = await api.setTheme(t);
+      applyTheme(c.theme);
+      onchanged();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function saveCatName() {
+    const v = catNameDraft.trim();
+    if (!v || v === config?.character_category_name) return;
+    try {
+      await api.setCharacterCategoryName(v);
+      toast("已更新分类名称");
+      onchanged();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
 
   async function toggleAutoEnable(next: boolean) {
     try {
@@ -155,6 +184,47 @@
         >
           选择…
         </button>
+      </div>
+    </section>
+
+    <section class="glass radius-panel p-5 flex flex-col gap-3">
+      <h3 class="text-sm font-semibold text-secondary">外观</h3>
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm font-medium">主题</p>
+        <div class="flex gap-1 p-0.5 radius-pill" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+          {#each [["auto", "跟随系统"], ["light", "亮色"], ["dark", "暗色"]] as [value, label] (value)}
+            <button
+              class="radius-pill h-7 px-3 text-xs cursor-pointer transition-colors"
+              class:accent-fill={config?.theme === value}
+              class:accent-text={config?.theme === value}
+              onclick={() => pickTheme(value)}
+            >
+              {label}
+            </button>
+          {/each}
+        </div>
+      </div>
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-medium">角色分类名称</p>
+          <p class="text-xs text-secondary">不同游戏叫法不同（如「机体」「干员」）</p>
+        </div>
+        <div class="flex gap-1.5 shrink-0">
+          <input
+            bind:value={catNameDraft}
+            aria-label="角色分类名称"
+            class="h-8 w-28 px-3 text-sm bg-transparent outline-none rounded-full"
+            style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+            onkeydown={(e) => e.key === "Enter" && saveCatName()}
+          />
+          <button
+            class="accent-fill accent-text radius-pill h-8 px-3.5 text-sm font-medium cursor-pointer disabled:opacity-50"
+            disabled={!catNameDraft.trim() || catNameDraft.trim() === config?.character_category_name}
+            onclick={saveCatName}
+          >
+            保存
+          </button>
+        </div>
       </div>
     </section>
 

@@ -4,6 +4,8 @@ export interface ConfigDto {
   library_root: string;
   mods_dir: string | null;
   auto_enable: boolean;
+  theme: string;
+  character_category_name: string;
 }
 
 export interface CharacterSummary {
@@ -83,7 +85,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   if (!isTauri()) {
     switch (cmd) {
       case "get_config":
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false } as T;
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色" } as T;
       case "get_characters":
         return structuredClone(mockCharacters) as T;
       case "list_mods":
@@ -141,6 +143,13 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       }
       case "set_auto_enable":
         return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: Boolean(args?.enabled) } as T;
+      case "set_theme":
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: String(args?.theme ?? "auto"), character_category_name: "角色" } as T;
+      case "set_character_category_name": {
+        const n = String(args?.name ?? "").trim();
+        if (!n) throw "名称不能为空";
+        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: n } as T;
+      }
       case "read_log":
         return "2026-08-18T10:00:00 INFO LiquiMod starting\n2026-08-18T10:01:00 INFO installed mod 99" as T;
       default:
@@ -170,6 +179,8 @@ export const api = {
   removePassword: (value: string) => call<void>("remove_password", { value }),
   renameMod: (id: number, name: string) => call<void>("rename_mod", { id, name }),
   setAutoEnable: (enabled: boolean) => call<ConfigDto>("set_auto_enable", { enabled }),
+  setTheme: (theme: string) => call<ConfigDto>("set_theme", { theme }),
+  setCharacterCategoryName: (name: string) => call<ConfigDto>("set_character_category_name", { name }),
   readLog: () => call<string>("read_log"),
 };
 
