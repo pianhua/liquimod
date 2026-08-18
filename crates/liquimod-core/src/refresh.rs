@@ -10,13 +10,14 @@ use std::time::Duration;
 pub const PIPE_NAME: &str = r"\\.\pipe\liquimod-refresh";
 pub const HELPER_EXE: &str = "liquimod-refresh-helper.exe";
 
-/// 任一给定进程名存在即为游戏运行中（大小写不敏感）。
+/// 任一给定进程名存在即为游戏运行中（大小写不敏感，免分配比较）。
 pub fn is_game_running(process_names: &[&str]) -> bool {
     let mut sys = sysinfo::System::new();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     sys.processes().values().any(|p| {
-        let name = p.name().to_string_lossy().to_lowercase();
-        process_names.iter().any(|n| name == *n)
+        process_names
+            .iter()
+            .any(|n| p.name().eq_ignore_ascii_case(*n))
     })
 }
 
@@ -27,6 +28,14 @@ pub struct RefreshClient {
 
 impl RefreshClient {
     /// 连接已运行的 helper；否则 runas 提权拉起并等待管道就绪（最多 5s）。
+    ///
+    /// # 阻塞性
+    /// 本方法会阻塞调用线程：可能跨越整个 UAC 弹窗期间，外加最多 5s 的管道轮询。
+    /// **必须**从阻塞/工作线程调用（如 `spawn_blocking`），切勿在 async 或主 UI 线程上调用。
+    ///
+    /// # 单客户端管道
+    /// 管道仅支持单一客户端：第一个 app 实例持有时，第二个实例会在轮询超时后得到
+    /// `TimedOut` 错误，属可接受的 fail-fast 路径。
     pub fn connect_or_launch(helper_exe: &Path) -> Result<Self> {
         if let Ok(pipe) = Self::try_connect() {
             return Ok(Self { pipe });
