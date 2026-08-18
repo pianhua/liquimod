@@ -39,3 +39,13 @@ cd app && npm test && npm run check
 - 布局：Sidebar（分类导航）+ Toolbar（面包屑/排序/预设）+ view 状态机（`$lib/view.ts`）；滚动记忆按 viewKey 存 Map，切视图前显式保存、刷新后恢复（Chromium display:none 会清零 scrollTop）。
 - 浮层面板（预设/分类菜单）的祖先必须自带定位与 z-index（Toolbar 是 `relative z-30`）——transform 的卡片会建层叠上下文盖住无定位面板。
 - CDP 探针注意：`[...document.querySelectorAll("button")]` 按文本找按钮会误命中侧边栏导航（如「武器」），点弹层项要 scope 在面板元素内。
+
+## UI 视觉规范（铁律）
+
+**完整规范见 `STYLE.md`**（尺寸档/圆角档/间距/文本/色板/玻璃约定）。改 UI 前先读，新增组件必须遵守以下铁律，否则视为视觉回归：
+
+1. 图标操作按钮统一 `w-8 h-8 glass radius-pill`（32px 玻璃圆钮）；**禁用** 24px 透明小图标按钮（历史残留）。
+2. 圆角：按钮/矩形菜单项 **8px**，卡片 `radius-card`(18)、面板 `radius-panel`(20)、胶囊/对象 `radius-pill`；不硬写 `rounded-xl`。
+3. 按钮高度三层：主 `h-9` / 标准 `h-8` / 小 `h-7`，同层严格同规格。
+4. 颜色一律用 app.css 的 `--*` 变量，禁止硬编码色值；亮/暗两套主题都须验证对比度。
+5. 文本层级：页标题 `text-2xl`、主文本/按钮 `text-sm`、次要/元数据 `text-xs text-secondary`。
