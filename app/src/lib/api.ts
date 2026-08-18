@@ -20,6 +20,10 @@ export interface ModDto {
   installed_at: number;
 }
 
+export type InstallResult =
+  | { status: "installed"; mod_id: number; name: string; character: string; warnings: string[] }
+  | { status: "needs_password" };
+
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -61,6 +65,23 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return structuredClone(mockCharacters) as T;
       case "list_mods":
         return structuredClone(mockMods) as T;
+      case "install_mod": {
+        await new Promise((r) => setTimeout(r, 800));
+        const p = String(args?.path ?? "");
+        if (p.includes("locked") && args?.password == null)
+          return { status: "needs_password" } as T;
+        if (p.includes("locked") && args?.password !== "1234")
+          return { status: "needs_password" } as T;
+        return {
+          status: "installed",
+          mod_id: 99,
+          name: p.split(/[\\/]/).pop()?.replace(/\.(zip|7z|rar)$/i, "") ?? "Mod",
+          character: "Firefly",
+          warnings: [],
+        } as T;
+      }
+      case "uninstall_mod":
+        return undefined as T;
       default:
         return undefined as T;
     }
@@ -75,6 +96,9 @@ export const api = {
   listMods: (character: string) => call<ModDto[]>("list_mods", { character }),
   setModEnabled: (id: number, enabled: boolean) =>
     call<void>("set_mod_enabled", { id, enabled }),
+  installMod: (path: string, character?: string | null, password?: string | null) =>
+    call<InstallResult>("install_mod", { path, character: character ?? null, password: password ?? null }),
+  uninstallMod: (id: number) => call<void>("uninstall_mod", { id }),
 };
 
 /// 立绘 URL（SvelteKit files.assets 指向 assets/hsr）。

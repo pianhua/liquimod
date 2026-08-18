@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type CharacterSummary, type ConfigDto } from "$lib/api";
+  import { api, isTauri, type CharacterSummary, type ConfigDto } from "$lib/api";
+  import { enqueueInstalls, installJobs } from "$lib/install.svelte";
+  import InstallOverlay from "$lib/components/InstallOverlay.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import CharacterGrid from "$lib/views/CharacterGrid.svelte";
@@ -11,6 +13,7 @@
   let query = $state("");
   let selected = $state<CharacterSummary | null>(null);
   let error = $state("");
+  let dragHover = $state(false);
 
   let modTotal = $derived(characters.reduce((n, c) => n + c.total, 0));
 
@@ -24,7 +27,28 @@
     }
   }
 
-  onMount(refresh);
+  onMount(() => {
+    void refresh();
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/webviewWindow").then(({ getCurrentWebviewWindow }) => {
+      getCurrentWebviewWindow()
+        .onDragDropEvent((event) => {
+          const t = event.payload.type;
+          if (t === "enter" || t === "over") dragHover = true;
+          else if (t === "leave") dragHover = false;
+          else if (t === "drop") {
+            dragHover = false;
+            const paths = event.payload.paths.filter((p) =>
+              /\.(zip|7z|rar)$/i.test(p),
+            );
+            if (paths.length > 0) enqueueInstalls(paths, refresh);
+          }
+        })
+        .then((u) => (unlisten = u));
+    });
+    return () => unlisten?.();
+  });
 </script>
 
 <div class="flex flex-col h-screen">
@@ -54,4 +78,9 @@
     </header>
     <CharacterGrid {characters} {query} onselect={(c) => (selected = c)} />
   {/if}
+  {#if dragHover}
+    <div class="fixed inset-3 z-40 pointer-events-none radius-panel"
+      style="border: 2px dashed var(--accent, #409CFF); background: rgba(64,156,255,0.06)"></div>
+  {/if}
+  <InstallOverlay jobs={installJobs} {characters} onInstalled={refresh} />
 </div>
