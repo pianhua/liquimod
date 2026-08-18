@@ -18,6 +18,18 @@ export interface ModDto {
   name: string;
   enabled: boolean;
   installed_at: number;
+  thumb: string | null;
+}
+
+export interface PresetDto {
+  id: number;
+  name: string;
+  created_at: number;
+}
+
+export interface ApplyResultDto {
+  enabled: number;
+  disabled: number;
 }
 
 export type InstallResult =
@@ -51,10 +63,17 @@ const mockCharacters: CharacterSummary[] = [
 }));
 
 const mockMods: ModDto[] = [
-  { id: 1, name: "Summer Skin", enabled: true, installed_at: 1755000000 },
-  { id: 2, name: "Battle FX+", enabled: false, installed_at: 1755100000 },
-  { id: 3, name: "HD Textures", enabled: false, installed_at: 1755200000 },
+  { id: 1, name: "Summer Skin", enabled: true, installed_at: 1755000000, thumb: null },
+  { id: 2, name: "Battle FX+", enabled: false, installed_at: 1755100000, thumb: null },
+  { id: 3, name: "HD Textures", enabled: false, installed_at: 1755200000, thumb: null },
 ];
+
+const mockPresets: PresetDto[] = [
+  { id: 1, name: "日常出战", created_at: 1755000000 },
+  { id: 2, name: "截图模式", created_at: 1755100000 },
+];
+
+const mockPasswords: string[] = ["1234"];
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauri()) {
@@ -82,6 +101,32 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       }
       case "uninstall_mod":
         return undefined as T;
+      case "list_presets":
+        return structuredClone(mockPresets) as T;
+      case "save_preset": {
+        const p = { id: mockPresets.length + 1, name: String(args?.name ?? "预设"), created_at: 1755000000 };
+        const i = mockPresets.findIndex((x) => x.name === p.name);
+        if (i >= 0) mockPresets[i] = { ...p, id: mockPresets[i].id };
+        else mockPresets.push(p);
+        return structuredClone(p) as T;
+      }
+      case "apply_preset":
+        return { enabled: 2, disabled: 1 } as T;
+      case "delete_preset": {
+        const i = mockPresets.findIndex((x) => x.id === Number(args?.id));
+        if (i >= 0) mockPresets.splice(i, 1);
+        return undefined as T;
+      }
+      case "list_passwords":
+        return structuredClone(mockPasswords) as T;
+      case "add_password":
+        mockPasswords.push(String(args?.value ?? ""));
+        return undefined as T;
+      case "remove_password": {
+        const i = mockPasswords.indexOf(String(args?.value));
+        if (i >= 0) mockPasswords.splice(i, 1);
+        return undefined as T;
+      }
       default:
         return undefined as T;
     }
@@ -99,6 +144,14 @@ export const api = {
   installMod: (path: string, character?: string | null, password?: string | null) =>
     call<InstallResult>("install_mod", { path, character: character ?? null, password: password ?? null }),
   uninstallMod: (id: number) => call<void>("uninstall_mod", { id }),
+  listPresets: () => call<PresetDto[]>("list_presets"),
+  savePreset: (name: string) => call<PresetDto>("save_preset", { name }),
+  applyPreset: (id: number, name: string) =>
+    call<ApplyResultDto>("apply_preset", { id, name }),
+  deletePreset: (id: number) => call<void>("delete_preset", { id }),
+  listPasswords: () => call<string[]>("list_passwords"),
+  addPassword: (value: string) => call<void>("add_password", { value }),
+  removePassword: (value: string) => call<void>("remove_password", { value }),
 };
 
 /// 立绘 URL（SvelteKit files.assets 指向 assets/hsr）。

@@ -7,6 +7,7 @@
   import InstallOverlay from "$lib/components/InstallOverlay.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
+  import PresetMenu from "$lib/components/PresetMenu.svelte";
   import CharacterGrid from "$lib/views/CharacterGrid.svelte";
   import CharacterDetail from "$lib/views/CharacterDetail.svelte";
 
@@ -106,7 +107,10 @@
         <h1 class="text-[34px] leading-tight font-bold tracking-tight">角色</h1>
         <p class="text-sm text-secondary mt-0.5">{characters.length} 位角色 · {modTotal} 个 Mod</p>
       </div>
-      <SearchBar bind:value={query} />
+      <div class="flex items-end gap-2.5">
+        <PresetMenu onapplied={refresh} />
+        <SearchBar bind:value={query} />
+      </div>
     </header>
     <CharacterGrid {characters} {query} onselect={(c) => (selected = c)} />
   {/if}
