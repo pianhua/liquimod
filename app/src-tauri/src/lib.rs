@@ -145,6 +145,10 @@ pub fn run() {
             commands::list_uncategorized_mods,
             commands::set_theme,
             commands::set_character_category_name,
+            commands::choose_game_exe,
+            commands::choose_loader_exe,
+            commands::launch_game,
+            commands::launch_loader,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

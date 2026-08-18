@@ -19,6 +19,10 @@ pub struct Config {
     pub theme: String,
     #[serde(default = "default_character_category_name")]
     pub character_category_name: String,
+    #[serde(default)]
+    pub game_exe: Option<PathBuf>,
+    #[serde(default)]
+    pub loader_exe: Option<PathBuf>,
 }
 
 impl Config {
@@ -58,6 +62,8 @@ impl Config {
                 auto_enable: false,
                 theme: default_theme(),
                 character_category_name: default_character_category_name(),
+                game_exe: None,
+                loader_exe: None,
             },
         }
     }
@@ -96,6 +102,8 @@ mod tests {
             auto_enable: true,
             theme: "auto".into(),
             character_category_name: "角色".into(),
+            game_exe: None,
+            loader_exe: None,
         };
         c.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path), c);
@@ -122,6 +130,23 @@ mod tests {
         c.save_to(&path).unwrap();
         let c2: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(c2.auto_enable);
+    }
+
+    #[test]
+    fn exe_paths_default_none_and_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.json");
+        std::fs::write(&path, r#"{"library_root":"C:/L","mods_dir":null}"#).unwrap();
+        let c = Config::load_from(&path);
+        assert_eq!(c.game_exe, None);
+        assert_eq!(c.loader_exe, None);
+        let mut c = c;
+        c.game_exe = Some(PathBuf::from("C:/game/StarRail.exe"));
+        c.save_to(&path).unwrap();
+        assert_eq!(
+            Config::load_from(&path).game_exe,
+            Some(PathBuf::from("C:/game/StarRail.exe"))
+        );
     }
 
     #[test]

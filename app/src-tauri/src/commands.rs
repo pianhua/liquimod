@@ -57,6 +57,8 @@ pub struct ConfigDto {
     pub auto_enable: bool,
     pub theme: String,
     pub character_category_name: String,
+    pub game_exe: Option<String>,
+    pub loader_exe: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -121,6 +123,8 @@ pub fn config_dto(c: &Config) -> ConfigDto {
         auto_enable: c.auto_enable,
         theme: c.theme.clone(),
         character_category_name: c.character_category_name.clone(),
+        game_exe: c.game_exe.as_ref().map(|p| p.display().to_string()),
+        loader_exe: c.loader_exe.as_ref().map(|p| p.display().to_string()),
     }
 }
 
@@ -310,6 +314,22 @@ pub fn set_mods_dir(c: &mut Config, path: PathBuf) -> Result<ConfigDto, String> 
     }
     c.mods_dir = Some(path);
     Ok(config_dto(c))
+}
+
+/// 启动已配置的可执行文件；未配置或文件缺失时报人话错误。不真正等待进程退出。
+fn launch_exe(exe: Option<&Path>, what: &str) -> Result<(), String> {
+    let Some(exe) = exe else {
+        return Err(format!("未配置{what}路径，请在设置中配置"));
+    };
+    if !exe.is_file() {
+        return Err(format!("{what}不存在：{}", exe.display()));
+    }
+    std::process::Command::new(exe)
+        .current_dir(exe.parent().unwrap_or_else(|| Path::new(".")))
+        .spawn()
+        .map_err(|e| format!("启动{what}失败：{e}"))?;
+    tracing::info!("launched {} ({})", what, exe.display());
+    Ok(())
 }
 
 /// 安装压缩包：character=None 时从内容推断。人话错误信息。
@@ -955,6 +975,52 @@ pub fn set_character_category_name(
     Ok(config_dto(&config))
 }
 
+#[tauri::command]
+pub fn choose_game_exe(state: tauri::State<AppState>, path: String) -> Result<ConfigDto, String> {
+    let p = PathBuf::from(path);
+    if !p.is_file() {
+        return Err(format!("文件不存在：{}", p.display()));
+    }
+    if p.extension().and_then(|e| e.to_str()) != Some("exe") {
+        return Err("请选择 .exe 可执行文件".to_string());
+    }
+    let mut config = state.config.lock().unwrap();
+    config.game_exe = Some(p);
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn choose_loader_exe(state: tauri::State<AppState>, path: String) -> Result<ConfigDto, String> {
+    let p = PathBuf::from(path);
+    if !p.is_file() {
+        return Err(format!("文件不存在：{}", p.display()));
+    }
+    if p.extension().and_then(|e| e.to_str()) != Some("exe") {
+        return Err("请选择 .exe 可执行文件".to_string());
+    }
+    let mut config = state.config.lock().unwrap();
+    config.loader_exe = Some(p);
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn launch_game(state: tauri::State<AppState>) -> Result<(), String> {
+    let exe = state.config.lock().unwrap().game_exe.clone();
+    launch_exe(exe.as_deref(), "游戏")
+}
+
+#[tauri::command]
+pub fn launch_loader(state: tauri::State<AppState>) -> Result<(), String> {
+    let exe = state.config.lock().unwrap().loader_exe.clone();
+    launch_exe(exe.as_deref(), "加载器")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1033,6 +1099,8 @@ mod tests {
             auto_enable: false,
             theme: "auto".into(),
             character_category_name: "角色".into(),
+            game_exe: None,
+            loader_exe: None,
         };
         assert!(set_mods_dir(&mut c, PathBuf::from("C:/no/such/dir")).is_err());
         assert!(c.mods_dir.is_none());
@@ -1275,6 +1343,16 @@ mod tests {
     }
 
     #[test]
+    fn launch_exe_errors_when_unconfigured_or_missing() {
+        assert!(launch_exe(None, "游戏")
+            .unwrap_err()
+            .contains("未配置游戏路径"));
+        assert!(launch_exe(Some(Path::new("C:/no/such.exe")), "游戏")
+            .unwrap_err()
+            .contains("不存在"));
+    }
+
+    #[test]
     fn maybe_auto_enable_deploys_when_on() {
         let tmp = tempfile::tempdir().unwrap();
         let lib = Library::init(tmp.path()).unwrap();
@@ -1288,6 +1366,8 @@ mod tests {
             auto_enable: false,
             theme: "auto".into(),
             character_category_name: "角色".into(),
+            game_exe: None,
+            loader_exe: None,
         };
         maybe_auto_enable(&lib, &c, m.id, None);
         assert!(!lib.db.get_mod(m.id).unwrap().enabled);
