@@ -78,7 +78,12 @@
     busy = true;
     try {
       await api.renameCategory(id, v);
-      onchanged();
+      // 重命名当前正在查看的分类时同步面包屑
+      if (view.kind === "category" && view.id === id) {
+        onnavigate({ kind: "category", id, name: v });
+      } else {
+        onchanged();
+      }
     } catch (e) {
       toast(String(e));
     } finally {
