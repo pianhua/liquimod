@@ -76,7 +76,7 @@ pub fn ensure_thumbnail(
         Err(_) => return Ok(None), // 损坏图片不阻断列表
     };
     let thumb = img.thumbnail(THUMB_LONG_EDGE, THUMB_LONG_EDGE);
-    let tmp = thumb_dir.join(format!("{mod_id}.jpg.tmp"));
+    let tmp = thumb_dir.join(format!("{mod_id}.jpg.{}.tmp", uuid::Uuid::new_v4()));
     {
         let file = std::fs::File::create(&tmp)?;
         let writer = std::io::BufWriter::new(file);

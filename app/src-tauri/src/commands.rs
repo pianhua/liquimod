@@ -155,16 +155,44 @@ fn summary(c: &CharacterInfo, total: usize, enabled: usize) -> CharacterSummary 
     }
 }
 
-pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
-    let root = lib.layout.root.clone();
-    let mut mods: Vec<ModDto> = lib
+/// 阶段一：在库锁内收集角色 Mod 的基础字段与缩略图目录（纯数据，不做 IO 重的图像工作）。
+fn collect_mod_rows(lib: &Library, character: &str) -> Result<Vec<ModRow>, String> {
+    let mut rows: Vec<ModRow> = lib
         .list()
         .map_err(|e| e.to_string())?
         .into_iter()
         .filter(|m| m.character == character)
         .map(|m| {
             let dir = lib.layout.mod_dir(&m.character, &m.name);
-            let thumb = thumb_data_url(&root, &dir, m.id);
+            ModRow {
+                id: m.id,
+                name: m.name,
+                enabled: m.enabled,
+                installed_at: m.installed_at,
+                dir,
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(rows)
+}
+
+struct ModRow {
+    id: i64,
+    name: String,
+    enabled: bool,
+    installed_at: i64,
+    dir: PathBuf,
+}
+
+/// 阶段一 + 阶段二（缩略图）组合；供测试使用。
+#[allow(dead_code)]
+pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
+    let root = lib.layout.root.clone();
+    Ok(collect_mod_rows(lib, character)?
+        .into_iter()
+        .map(|m| {
+            let thumb = thumb_data_url(&root, &m.dir, m.id);
             ModDto {
                 id: m.id,
                 name: m.name,
@@ -173,9 +201,7 @@ pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
                 thumb,
             }
         })
-        .collect();
-    mods.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(mods)
+        .collect())
 }
 
 pub fn save_preset_named(
@@ -362,8 +388,25 @@ pub async fn list_mods(
 ) -> Result<Vec<ModDto>, String> {
     let library = std::sync::Arc::clone(&state.library);
     tauri::async_runtime::spawn_blocking(move || {
-        let lib = library.lock().unwrap();
-        mod_list(&lib, &character)
+        let (root, rows) = {
+            let lib = library.lock().unwrap();
+            let root = lib.layout.root.clone();
+            let rows = collect_mod_rows(&lib, &character)?;
+            (root, rows)
+        }; // 释放库锁后再做缩略图生成（可能慢）
+        Ok(rows
+            .into_iter()
+            .map(|m| {
+                let thumb = thumb_data_url(&root, &m.dir, m.id);
+                ModDto {
+                    id: m.id,
+                    name: m.name,
+                    enabled: m.enabled,
+                    installed_at: m.installed_at,
+                    thumb,
+                }
+            })
+            .collect())
     })
     .await
     .map_err(|e| format!("读取 Mod 列表失败：{e}"))?
