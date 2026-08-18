@@ -10,10 +10,8 @@ describe("viewKey", () => {
   it("每种视图唯一", () => {
     const keys = [
       viewKey({ kind: "home" }),
-      viewKey({ kind: "all" }),
-      viewKey({ kind: "uncat" }),
-      viewKey({ kind: "category", id: 1, name: "A" }),
-      viewKey({ kind: "category", id: 2, name: "A" }),
+      viewKey({ kind: "type", id: 1, name: "光锥" }),
+      viewKey({ kind: "type", id: 2, name: "NPC" }),
       viewKey({ kind: "character", name: "Firefly", display: "流萤" }),
     ];
     expect(new Set(keys).size).toBe(keys.length);
@@ -25,6 +23,23 @@ describe("filterMods", () => {
     const mods = [mod(1, "Summer Skin", false, 0), mod(2, "战斗特效", false, 0)];
     expect(filterMods(mods, "summer").map((m) => m.id)).toEqual([1]);
     expect(filterMods(mods, "战斗").map((m) => m.id)).toEqual([2]);
+    expect(filterMods(mods, "")).toHaveLength(2);
+  });
+
+  it("按启用态过滤", () => {
+    const mods = [mod(1, "A", true, 0), mod(2, "B", false, 0)];
+    expect(filterMods(mods, "", "on").map((m) => m.id)).toEqual([1]);
+    expect(filterMods(mods, "", "off").map((m) => m.id)).toEqual([2]);
+    expect(filterMods(mods, "", "all")).toHaveLength(2);
+  });
+
+  it("名称与启用态组合", () => {
+    const mods = [mod(1, "Summer", true, 0), mod(2, "Summer", false, 0), mod(3, "Winter", true, 0)];
+    expect(filterMods(mods, "summer", "on").map((m) => m.id)).toEqual([1]);
+  });
+
+  it("默认不过滤启用态", () => {
+    const mods = [mod(1, "A", true, 0), mod(2, "B", false, 0)];
     expect(filterMods(mods, "")).toHaveLength(2);
   });
 });

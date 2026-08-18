@@ -1,33 +1,36 @@
 import type { ModDto } from "$lib/api";
 
 export type View =
-  | { kind: "home" }
-  | { kind: "all" }
-  | { kind: "uncat" }
-  | { kind: "category"; id: number; name: string }
-  | { kind: "character"; name: string; display: string };
+  | { kind: "home" } // 角色网格（虚拟「角色」大类）
+  | { kind: "type"; id: number; name: string } // 光锥/立绘/场景/NPC/其他 实体分类
+  | { kind: "character"; name: string; display: string }; // 某角色详情
 
 export type ModSort = "recent" | "name" | "enabled";
+export type EnabledFilter = "all" | "on" | "off";
 
 export function viewKey(v: View): string {
   switch (v.kind) {
     case "home":
       return "home";
-    case "all":
-      return "all";
-    case "uncat":
-      return "uncat";
-    case "category":
-      return `cat:${v.id}`;
+    case "type":
+      return `type:${v.id}`;
     case "character":
       return `char:${v.name}`;
   }
 }
 
-export function filterMods(mods: ModDto[], query: string): ModDto[] {
+export function filterMods(
+  mods: ModDto[],
+  query: string,
+  enabledFilter: EnabledFilter = "all",
+): ModDto[] {
   const q = query.trim().toLowerCase();
-  if (!q) return mods;
-  return mods.filter((m) => m.name.toLowerCase().includes(q));
+  return mods.filter((m) => {
+    if (enabledFilter === "on" && !m.enabled) return false;
+    if (enabledFilter === "off" && m.enabled) return false;
+    if (!q) return true;
+    return m.name.toLowerCase().includes(q);
+  });
 }
 
 export function sortMods(mods: ModDto[], sort: ModSort): ModDto[] {

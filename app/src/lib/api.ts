@@ -22,6 +22,8 @@ export interface CategoryDto {
   id: number;
   name: string;
   ord: number;
+  /** 固定分类标识（lightcone/portrait/scene/npc/other）；undefined = 用户自定义 */
+  kind: string | null;
   mod_count: number;
 }
 
@@ -92,8 +94,12 @@ const mockPresets: PresetDto[] = [
 const mockPasswords: string[] = ["1234"];
 
 const mockCategories: CategoryDto[] = [
-  { id: 1, name: "武器", ord: 1, mod_count: 1 },
-  { id: 2, name: "光影", ord: 2, mod_count: 0 },
+  { id: 1, name: "光锥", ord: 1, kind: "lightcone", mod_count: 0 },
+  { id: 2, name: "立绘", ord: 2, kind: "portrait", mod_count: 0 },
+  { id: 3, name: "场景", ord: 3, kind: "scene", mod_count: 0 },
+  { id: 4, name: "NPC", ord: 4, kind: "npc", mod_count: 0 },
+  { id: 5, name: "其他", ord: 5, kind: "other", mod_count: 0 },
+  { id: 9, name: "武器", ord: 6, kind: null, mod_count: 1 },
 ];
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -171,7 +177,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         const n = String(args?.name ?? "").trim();
         if (!n) throw "分类名不能为空";
         if (mockCategories.some((c) => c.name === n)) throw `分类已存在：${n}`;
-        const c = { id: Math.max(0, ...mockCategories.map((x) => x.id)) + 1, name: n, ord: Math.max(0, ...mockCategories.map((x) => x.ord)) + 1, mod_count: 0 };
+        const c = { id: Math.max(0, ...mockCategories.map((x) => x.id)) + 1, name: n, ord: Math.max(0, ...mockCategories.map((x) => x.ord)) + 1, kind: null, mod_count: 0 };
         mockCategories.push(c);
         return c.id as T;
       }

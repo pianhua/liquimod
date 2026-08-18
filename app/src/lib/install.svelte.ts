@@ -1,12 +1,16 @@
 import { api } from "$lib/api";
 
-export type InstallStage = "installing" | "needs-password" | "done" | "error";
+export type InstallStage = "installing" | "needs-password" | "done" | "error" | "pick-category";
+
+/** 安装上下文：目标角色名 或 固定分类 kind（npc/lightcone/portrait/scene/other）。 */
+export type InstallTarget = string | null;
 
 export interface InstallJob {
   id: number;
   fileName: string;
   path: string;
   stage: InstallStage;
+  /** 安装目标：角色内部名 或 固定分类 kind；安装后为后端返回的 character。 */
   character: string | null;
   modId: number | null;
   message: string | null;
@@ -18,22 +22,37 @@ let nextId = 1;
 
 export const installJobs = $state<InstallJob[]>([]);
 
-export function enqueueInstalls(paths: string[], onInstalled: () => void): void {
+/** target 非空直接装；null 则进「选分类」阶段，选完再装。 */
+export function enqueueInstalls(
+  paths: string[],
+  target: InstallTarget,
+  onInstalled: () => void,
+): void {
   for (const path of paths) {
     const job: InstallJob = {
       id: nextId++,
       fileName: path.split(/[\\/]/).pop() ?? path,
       path,
-      stage: "installing",
-      character: null,
+      stage: target ? "installing" : "pick-category",
+      character: target,
       modId: null,
       message: null,
       warnings: [],
       busy: false,
     };
     installJobs.push(job);
-    void runInstall(installJobs[installJobs.length - 1], null, onInstalled);
+    if (target) void runInstall(installJobs[installJobs.length - 1], null, onInstalled);
   }
+}
+
+/** 分类弹窗选定后开始安装：target 为角色内部名或固定分类 kind。 */
+export function startInstallWithCategory(
+  job: InstallJob,
+  target: string,
+  onInstalled: () => void,
+): void {
+  job.character = target;
+  void runInstall(job, null, onInstalled);
 }
 
 async function runInstall(
@@ -46,7 +65,7 @@ async function runInstall(
   job.stage = "installing";
   job.message = null;
   try {
-    const result = await api.installMod(job.path, null, password);
+    const result = await api.installMod(job.path, job.character, password);
     if (result.status === "needs_password") {
       job.stage = "needs-password";
       return;

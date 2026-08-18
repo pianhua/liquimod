@@ -10,9 +10,10 @@ function mod(id: number, name: string, enabled: boolean, installed_at: number, c
 function props(mods: ModDto[]) {
   return {
     mods,
-    categories: [{ id: 1, name: "武器", ord: 1, mod_count: 0 }],
+    categories: [{ id: 1, name: "武器", ord: 1, kind: null, mod_count: 0 }],
     sort: "recent" as const,
     query: "",
+    enabledFilter: "all" as const,
     catLabelOf: (m: ModDto) => (m.category_id ? "武器" : "角色"),
     ontoggle: vi.fn(),
     onrename: vi.fn(async () => true),
@@ -66,5 +67,17 @@ describe("ModCardGrid", () => {
   it("空态", () => {
     render(ModCardGrid, { props: props([]) });
     expect(screen.getByText("这里还没有 Mod")).toBeTruthy();
+  });
+
+  it("启用态筛选过滤卡片", async () => {
+    const p = props([mod(1, "已启", true, 100), mod(2, "未启", false, 50)]);
+    render(ModCardGrid, { props: p });
+    // 默认全部
+    expect(screen.getByText("已启")).toBeTruthy();
+    expect(screen.getByText("未启")).toBeTruthy();
+    // 点「已启用」
+    await fireEvent.click(screen.getByText("已启用", { selector: "button" }));
+    expect(screen.queryByText("未启")).toBeNull();
+    expect(screen.getByText("已启")).toBeTruthy();
   });
 });

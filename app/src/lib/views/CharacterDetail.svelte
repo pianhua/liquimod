@@ -1,7 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, isTauri, portraitUrl, type CategoryDto, type CharacterSummary, type ModDto } from "$lib/api";
+  import {
+    api,
+    isTauri,
+    portraitUrl,
+    type CategoryDto,
+    type CharacterSummary,
+    type ModDto,
+  } from "$lib/api";
+  import { filterMods, type EnabledFilter } from "$lib/view";
   import ModRow from "$lib/components/ModRow.svelte";
+  import EnabledFilterChips from "$lib/components/EnabledFilterChips.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
 
   let {
@@ -20,6 +29,9 @@
 
   let mods = $state<ModDto[]>([]);
   let error = $state("");
+  let enabledFilter = $state<EnabledFilter>("all");
+
+  let shown = $derived(filterMods(mods, "", enabledFilter));
 
   onMount(async () => {
     try {
@@ -134,8 +146,13 @@
     <p class="mx-8 mb-2 text-sm shrink-0" style="color: var(--danger)">{error}</p>
   {/if}
 
+  <div class="flex items-center justify-between shrink-0 px-8">
+    <EnabledFilterChips bind:value={enabledFilter} />
+    <span class="text-xs text-secondary">{shown.length}/{mods.length} 个显示</span>
+  </div>
+
   <div class="flex flex-col gap-2.5 px-8 pb-8 overflow-y-auto flex-1 min-h-0 max-w-3xl w-full mx-auto">
-    {#each mods as mod (mod.id)}
+    {#each shown as mod (mod.id)}
       <ModRow
         {mod}
         {categories}
@@ -146,8 +163,10 @@
         onmove={(cid) => moveCategory(mod, cid)}
       />
     {/each}
-    {#if mods.length === 0}
-      <p class="text-secondary text-center mt-24">该角色还没有 Mod，拖入压缩包即可安装</p>
+    {#if shown.length === 0}
+      <p class="text-secondary text-center mt-24">
+        {mods.length === 0 ? "该角色还没有 Mod，拖入压缩包即可安装" : "没有匹配的 Mod"}
+      </p>
     {/if}
   </div>
 </div>

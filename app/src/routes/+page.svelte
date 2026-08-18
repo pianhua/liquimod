@@ -11,7 +11,7 @@
   } from "$lib/api";
   import { toast } from "$lib/toast.svelte";
   import { applyTheme } from "$lib/theme";
-  import { viewKey, type ModSort, type View } from "$lib/view";
+  import { viewKey, type EnabledFilter, type ModSort, type View } from "$lib/view";
   import { enqueueInstalls, installJobs } from "$lib/install.svelte";
   import InstallOverlay from "$lib/components/InstallOverlay.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
@@ -29,31 +29,24 @@
   let viewMods = $state<ModDto[]>([]);
   let query = $state("");
   let sort = $state<ModSort>("recent");
+  let enabledFilter = $state<EnabledFilter>("all");
   let showSettings = $state(false);
   let error = $state("");
   let dragHover = $state(false);
 
   let charCatName = $derived(config?.character_category_name ?? "角色");
   let charModTotal = $derived(characters.reduce((n, c) => n + c.total, 0));
-  let allCount = $derived(charModTotal + categories.reduce((n, c) => n + c.mod_count, 0));
-  let uncatCount = $derived(
-    characters.find((c) => c.internal_name === "Others")?.total ?? 0,
-  );
   let crumbs = $derived.by((): string[] => {
     switch (view.kind) {
       case "home":
         return [charCatName];
-      case "all":
-        return ["全部 Mod"];
-      case "uncat":
-        return ["未分类"];
-      case "category":
+      case "type":
         return [view.name];
       case "character":
         return [charCatName, view.display];
     }
   });
-  let showSort = $derived(view.kind === "all" || view.kind === "uncat" || view.kind === "category");
+  let showSort = $derived(view.kind === "type");
   let selectedCharacter = $derived.by((): CharacterSummary | null => {
     // view 在 navigate 等处被赋值，TS 不在闭包内收窄其属性；先快照为局部常量
     const v = view;
@@ -85,9 +78,7 @@
   }
 
   async function loadViewMods() {
-    if (view.kind === "category") viewMods = await api.listCategoryMods(view.id);
-    else if (view.kind === "all") viewMods = await api.listAllMods();
-    else if (view.kind === "uncat") viewMods = await api.listUncategorizedMods();
+    if (view.kind === "type") viewMods = await api.listCategoryMods(view.id);
   }
 
   async function refresh() {
@@ -127,8 +118,19 @@
 
   function catLabelOf(m: ModDto): string {
     if (m.category_id == null) return charCatName;
-    return categories.find((c) => c.id === m.category_id)?.name ?? "未分类";
+    return categories.find((c) => c.id === m.category_id)?.name ?? "其他";
   }
+
+  /** 当前视图的安装目标：某角色详情 → 该角色名；实体分类视图 → 该分类 kind；home → null（弹窗选）。 */
+  let installTarget = $derived.by((): string | null => {
+    const v = view; // 快照以让 TS 收窄属性
+    if (v.kind === "character") return v.name;
+    if (v.kind === "type") {
+      const c = categories.find((x) => x.id === v.id);
+      return c?.kind ?? null;
+    }
+    return null;
+  });
 
   async function toggleViewMod(m: ModDto, next: boolean) {
     try {
@@ -210,7 +212,7 @@
           else if (t === "drop") {
             dragHover = false;
             if (event.payload.paths.length > 0)
-              enqueueInstalls(event.payload.paths, refresh);
+              enqueueInstalls(event.payload.paths, installTarget, refresh);
           }
         })
         .then((u) => {
@@ -262,9 +264,7 @@
       {view}
       {categories}
       {charCatName}
-      {allCount}
       charCount={charModTotal}
-      {uncatCount}
       bind:query
       onnavigate={navigate}
       onchanged={refresh}
@@ -299,6 +299,7 @@
             {categories}
             {sort}
             {query}
+            bind:enabledFilter
             {catLabelOf}
             ontoggle={toggleViewMod}
             onrename={renameViewMod}
@@ -314,5 +315,5 @@
     <div class="fixed inset-3 z-40 pointer-events-none radius-panel"
       style="border: 2px dashed var(--accent, #409CFF); background: rgba(64,156,255,0.06)"></div>
   {/if}
-  <InstallOverlay jobs={installJobs} {characters} onInstalled={refresh} />
+  <InstallOverlay jobs={installJobs} {characters} {categories} onInstalled={refresh} />
 </div>

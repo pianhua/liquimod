@@ -34,7 +34,7 @@ describe("install queue", () => {
     });
     const onInstalled = vi.fn();
 
-    enqueueInstalls(["C:/dl/Cool.zip"], onInstalled);
+    enqueueInstalls(["C:/dl/Cool.zip"], "Firefly", onInstalled);
     expect(installJobs).toHaveLength(1);
     expect(installJobs[0].stage).toBe("installing");
     await flush(); await flush();
@@ -42,6 +42,7 @@ describe("install queue", () => {
     expect(installJobs[0].stage).toBe("done");
     expect(installJobs[0].character).toBe("Firefly");
     expect(installJobs[0].modId).toBe(7);
+    expect(api.installMod).toHaveBeenCalledWith("C:/dl/Cool.zip", "Firefly", null);
     expect(onInstalled).toHaveBeenCalledOnce();
   });
 
@@ -56,14 +57,14 @@ describe("install queue", () => {
         warnings: [],
       });
 
-    enqueueInstalls(["C:/dl/Locked.zip"], vi.fn());
+    enqueueInstalls(["C:/dl/Locked.zip"], "Kafka", vi.fn());
     await flush(); await flush();
     expect(installJobs[0].stage).toBe("needs-password");
-    expect(api.installMod).toHaveBeenCalledWith("C:/dl/Locked.zip", null, null);
+    expect(api.installMod).toHaveBeenCalledWith("C:/dl/Locked.zip", "Kafka", null);
 
     await submitInstallPassword(installJobs[0], "pw", vi.fn());
     await flush();
-    expect(api.installMod).toHaveBeenLastCalledWith("C:/dl/Locked.zip", null, "pw");
+    expect(api.installMod).toHaveBeenLastCalledWith("C:/dl/Locked.zip", "Kafka", "pw");
     expect(installJobs[0].stage).toBe("done");
   });
 
@@ -74,11 +75,11 @@ describe("install queue", () => {
         status: "installed",
         mod_id: 9,
         name: "Dup",
-        character: "Others",
+        character: "Bailu",
         warnings: [],
       });
 
-    enqueueInstalls(["C:/dl/Dup.zip"], vi.fn());
+    enqueueInstalls(["C:/dl/Dup.zip"], "Bailu", vi.fn());
     await flush(); await flush();
     expect(installJobs[0].stage).toBe("error");
     expect(installJobs[0].message).toContain("已存在同名 Mod");
@@ -100,7 +101,7 @@ describe("install queue", () => {
     vi.mocked(api.uninstallMod).mockResolvedValue(undefined);
     const onInstalled = vi.fn();
 
-    enqueueInstalls(["C:/dl/X.zip"], onInstalled);
+    enqueueInstalls(["C:/dl/X.zip"], "Bailu", onInstalled);
     await flush(); await flush();
 
     await undoInstall(installJobs[0], onInstalled);
@@ -116,7 +117,7 @@ describe("install queue", () => {
       .mockImplementationOnce(
         () => new Promise((r) => { resolveSecond = r; }),
       );
-    enqueueInstalls(["C:/dl/L.zip"], vi.fn());
+    enqueueInstalls(["C:/dl/L.zip"], "Bailu", vi.fn());
     await flush(); await flush();
     const job = installJobs[0];
     void submitInstallPassword(job, "a", vi.fn());
@@ -150,7 +151,7 @@ describe("install queue", () => {
     );
     const onInstalled = vi.fn();
 
-    enqueueInstalls(["C:/dl/Slow.zip"], onInstalled);
+    enqueueInstalls(["C:/dl/Slow.zip"], "Bailu", onInstalled);
     expect(installJobs[0].stage).toBe("installing");
 
     dismissInstall(installJobs[0]);
