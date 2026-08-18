@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { api, isTauri, type CharacterSummary, type ConfigDto } from "$lib/api";
   import { toast } from "$lib/toast.svelte";
@@ -21,6 +21,42 @@
   let dragHover = $state(false);
 
   let modTotal = $derived(characters.reduce((n, c) => n + c.total, 0));
+
+  // 主页滚动记忆：display:none 会被浏览器重置 scrollTop，需显式保存/恢复
+  let homeEl = $state<HTMLDivElement | null>(null);
+  let homeScroll = 0;
+
+  function saveHomeScroll() {
+    homeScroll = homeEl?.querySelector(".overflow-y-auto")?.scrollTop ?? 0;
+  }
+
+  async function showHome() {
+    await tick();
+    const sc = homeEl?.querySelector(".overflow-y-auto");
+    if (sc) sc.scrollTop = homeScroll;
+  }
+
+  function openCharacter(c: CharacterSummary) {
+    saveHomeScroll();
+    selected = c;
+  }
+
+  async function closeDetail() {
+    selected = null;
+    await refresh();
+    await showHome();
+  }
+
+  function openSettings() {
+    saveHomeScroll();
+    showSettings = true;
+  }
+
+  async function closeSettings() {
+    showSettings = false;
+    await refresh();
+    await showHome();
+  }
 
   async function refresh() {
     error = "";
@@ -87,13 +123,13 @@
 </script>
 
 <div class="flex flex-col h-screen">
-  <TitleBar onsettings={() => (showSettings = true)} />
+  <TitleBar onsettings={openSettings} />
   {#if error}
     <div class="glass radius-panel mx-8 mt-2 px-4 py-2.5 text-sm" style="color: var(--danger)">
       {error}
     </div>
   {/if}
-  <div class:hidden={showSettings || selected !== null} class="flex flex-col flex-1 min-h-0">
+  <div bind:this={homeEl} class:hidden={showSettings || selected !== null} class="flex flex-col flex-1 min-h-0">
     <header class="flex items-end justify-between px-8 pt-3 pb-5 shrink-0">
       <div>
         <h1 class="text-[34px] leading-tight font-bold tracking-tight">角色</h1>
@@ -104,25 +140,15 @@
         <SearchBar bind:value={query} />
       </div>
     </header>
-    <CharacterGrid {characters} {query} onselect={(c) => (selected = c)} />
+    <CharacterGrid {characters} {query} onselect={openCharacter} />
   </div>
   {#if showSettings}
-    <Settings
-      {config}
-      onback={() => {
-        showSettings = false;
-        refresh();
-      }}
-      onchanged={refresh}
-    />
+    <Settings {config} onback={closeSettings} onchanged={refresh} />
   {:else if selected}
     <CharacterDetail
       character={selected}
       modsDirConfigured={config?.mods_dir != null}
-      onback={() => {
-        selected = null;
-        refresh();
-      }}
+      onback={closeDetail}
       onconfigured={refresh}
     />
   {/if}
