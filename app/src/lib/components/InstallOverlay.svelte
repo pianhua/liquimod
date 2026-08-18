@@ -38,6 +38,13 @@
 
           {#if job.stage === "installing"}
             <span class="text-sm text-secondary shrink-0">正在安装…</span>
+            <button
+              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              onclick={() => {
+                delete passwords[job.id];
+                dismissInstall(job);
+              }}
+            >关闭</button>
           {:else if job.stage === "needs-password"}
             <input
               class="glass radius-pill px-3 h-8 text-sm w-32 outline-none bg-transparent text-white"
@@ -61,6 +68,13 @@
                 delete passwords[job.id];
               }}
             >确认</button>
+            <button
+              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              onclick={() => {
+                delete passwords[job.id];
+                dismissInstall(job);
+              }}
+            >关闭</button>
           {:else if job.stage === "done"}
             <span class="text-sm shrink-0">已安装到 {displayName(job.character ?? "")}</span>
             <button

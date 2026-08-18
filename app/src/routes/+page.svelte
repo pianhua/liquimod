@@ -40,10 +40,8 @@
           else if (t === "leave") dragHover = false;
           else if (t === "drop") {
             dragHover = false;
-            const paths = event.payload.paths.filter((p) =>
-              /\.(zip|7z|rar)$/i.test(p),
-            );
-            if (paths.length > 0) enqueueInstalls(paths, refresh);
+            if (event.payload.paths.length > 0)
+              enqueueInstalls(event.payload.paths, refresh);
           }
         })
         .then((u) => {

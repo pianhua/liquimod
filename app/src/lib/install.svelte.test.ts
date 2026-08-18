@@ -142,4 +142,24 @@ describe("install queue", () => {
     dismissInstall(installJobs[0]);
     expect(installJobs).toHaveLength(0);
   });
+
+  it("dismiss during installing removes the job and later resolution stays safe", async () => {
+    let resolveInstall: ((v: any) => void) | undefined;
+    vi.mocked(api.installMod).mockImplementationOnce(
+      () => new Promise((r) => { resolveInstall = r; }),
+    );
+    const onInstalled = vi.fn();
+
+    enqueueInstalls(["C:/dl/Slow.zip"], onInstalled);
+    expect(installJobs[0].stage).toBe("installing");
+
+    dismissInstall(installJobs[0]);
+    expect(installJobs).toHaveLength(0);
+
+    resolveInstall?.({ status: "installed", mod_id: 3, name: "Slow", character: "Bailu", warnings: [] });
+    await flush(); await flush();
+
+    expect(installJobs).toHaveLength(0);
+    expect(onInstalled).toHaveBeenCalled();
+  });
 });

@@ -28,6 +28,7 @@ describe("InstallOverlay", () => {
     render(InstallOverlay, { props: { jobs: [job({})], characters, onInstalled: vi.fn() } });
     expect(screen.getByText("Cool.zip")).toBeTruthy();
     expect(screen.getByText(/正在安装/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "关闭" })).toBeTruthy();
   });
 
   it("shows done stage with character display name and undo", () => {
