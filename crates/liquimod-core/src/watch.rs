@@ -9,10 +9,21 @@ use std::time::Duration;
 
 const DEBOUNCE: Duration = Duration::from_millis(500);
 
-/// 持有即监听；Drop 即停止。
+/// 持有即监听；Drop 即停止（同步 join 防抖线程）。
+/// 注意：Drop 时可能因队列中的最后一个信号同步再触发一次 `on_change()`，
+/// 这是正确的停止语义（对账幂等，重复执行无害）。
 pub struct LibraryWatcher {
-    _watcher: RecommendedWatcher,
-    _debouncer: std::thread::JoinHandle<()>,
+    watcher: Option<RecommendedWatcher>,
+    debouncer: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for LibraryWatcher {
+    fn drop(&mut self) {
+        drop(self.watcher.take()); // 先断 sender → 防抖线程退出
+        if let Some(h) = self.debouncer.take() {
+            let _ = h.join();
+        }
+    }
 }
 
 /// 监听 `library_root`，以及 `mods_dir`（若已配置且存在）。
@@ -25,9 +36,17 @@ pub fn start(
     let (tx, rx) = mpsc::channel::<()>();
     let mut watcher = notify::recommended_watcher(
         move |res: std::result::Result<notify::Event, notify::Error>| {
-            if let Ok(event) = res {
-                use notify::EventKind::*;
-                if matches!(event.kind, Create(_) | Modify(_) | Remove(_) | Any) {
+            match res {
+                Ok(event) => {
+                    use notify::EventKind::*;
+                    // Any 非通配符，用排除法表达意图
+                    if !matches!(event.kind, Access(_) | Other) {
+                        let _ = tx.send(());
+                    }
+                }
+                Err(_) => {
+                    // 通知错误（如队列溢出）可能已丢事件 → 按变动信号处理
+                    //（对账幂等，fail-safe）
                     let _ = tx.send(());
                 }
             }
@@ -52,8 +71,8 @@ pub fn start(
         }
     });
     Ok(LibraryWatcher {
-        _watcher: watcher,
-        _debouncer: debouncer,
+        watcher: Some(watcher),
+        debouncer: Some(debouncer),
     })
 }
 
