@@ -312,25 +312,25 @@
       {/if}
     </div>
 
-    <!-- 启动组合控制组 (带 Mod 启动 + 原生纯净启动) -->
+    <!-- 启动组合控制组 (模组启动 + 纯净启动 + 官方启动器) -->
     <div class="flex items-center h-8 glass radius-pill px-0.5 gap-0.5">
       <button
         class="h-7 px-3 text-xs font-semibold flex items-center gap-1.5 cursor-pointer rounded-full transition-all accent-fill accent-text hover:opacity-90 active:scale-95"
         onclick={onlaunchmodgame}
-        title="自动启动 3DMigoto Loader 并按设定延迟拉起游戏（注入 Mod）"
+        title="自动启动 3DMigoto 注入引擎并拉起游戏（模组生效）"
       >
         <svg width="10" height="10" viewBox="0 0 11 11" fill="currentColor">
           <path d="M2.5 1.5v8l7-4-7-4z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
         </svg>
-        <span>带 Mod 启动</span>
+        <span>模组启动</span>
       </button>
       <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
       <button
         class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)] active:scale-95"
         onclick={onlaunchnativegame}
-        title="直接启动游戏主程序，不注入 3DMigoto（原生纯净启动）"
+        title="直接启动游戏主程序，不注入 3DMigoto（原版纯净游戏）"
       >
-        <span>原生启动</span>
+        <span>纯净启动</span>
       </button>
       {#if onlaunchofficial}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
@@ -339,7 +339,7 @@
           onclick={onlaunchofficial}
           title="打开崩铁官方启动器 / HoYoPlay（用于游戏大版本更新与修复）"
         >
-          <span>🌐 官方启动器</span>
+          <span>官方启动器</span>
         </button>
       {/if}
       {#if onrefreshgame}
@@ -347,12 +347,12 @@
         <button
           class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)] active:scale-95"
           onclick={onrefreshgame}
-          title="向游戏发送 F10 刷新信号"
+          title="向游戏发送 F10 刷新信号（热重载 Mod）"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
           </svg>
-          刷新
+          <span>热重载</span>
         </button>
       {/if}
     </div>

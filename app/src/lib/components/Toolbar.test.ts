@@ -20,23 +20,23 @@ describe("Toolbar", () => {
   it("渲染面包屑与两个启动按钮", () => {
     render(Toolbar, { props: props() });
     expect(screen.getByLabelText("面包屑").textContent).toContain("角色");
-    expect(screen.getByText("带 Mod 启动")).toBeTruthy();
-    expect(screen.getByText("原生启动")).toBeTruthy();
+    expect(screen.getByText("模组启动")).toBeTruthy();
+    expect(screen.getByText("纯净启动")).toBeTruthy();
   });
 
   it("启动按钮回调", async () => {
     const p = props();
     render(Toolbar, { props: p });
-    await fireEvent.click(screen.getByText("带 Mod 启动"));
+    await fireEvent.click(screen.getByText("模组启动"));
     expect(p.onlaunchmodgame).toHaveBeenCalled();
-    await fireEvent.click(screen.getByText("原生启动"));
+    await fireEvent.click(screen.getByText("纯净启动"));
     expect(p.onlaunchnativegame).toHaveBeenCalled();
   });
 
   it("渲染并点击刷新按钮", async () => {
     const p = props({ onrefreshgame: vi.fn() });
     render(Toolbar, { props: p });
-    const btn = screen.getByText("刷新");
+    const btn = screen.getByText("热重载");
     expect(btn).toBeTruthy();
     await fireEvent.click(btn);
     expect(p.onrefreshgame).toHaveBeenCalled();
