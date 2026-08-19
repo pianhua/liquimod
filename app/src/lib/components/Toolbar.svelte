@@ -377,7 +377,7 @@
 {#if conflictModalOpen}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
-    class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-6"
+    class="fixed inset-0 z-50 bg-black/60 backdrop-blur-md grid place-items-center p-6"
     role="dialog"
     aria-modal="true"
     tabindex="-1"
@@ -385,7 +385,7 @@
     onkeydown={(e) => e.key === "Escape" && (conflictModalOpen = false)}
   >
     <div
-      class="glass radius-panel p-6 max-w-lg w-full flex flex-col gap-4 shadow-2xl"
+      class="glass radius-panel p-6 max-w-lg w-full flex flex-col gap-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
       role="document"
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
