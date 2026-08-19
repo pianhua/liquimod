@@ -31,9 +31,12 @@
   let syncing = $state(false);
   let checkingUpdate = $state(false);
   let syncProgress = $state<AssetSyncProgressDto | null>(null);
+  let installingMigoto = $state(false);
+  let migotoProgress = $state<import("$lib/api").MigotoDownloadProgressDto | null>(null);
 
   onMount(() => {
     let unlistenProgress: (() => void) | undefined;
+    let unlistenMigotoProgress: (() => void) | undefined;
 
     (async () => {
       try {
@@ -62,11 +65,18 @@
         unlistenProgress = await listen<AssetSyncProgressDto>("asset-sync-progress", (e) => {
           syncProgress = e.payload;
         });
+        unlistenMigotoProgress = await listen<import("$lib/api").MigotoDownloadProgressDto>(
+          "migoto-download-progress",
+          (e) => {
+            migotoProgress = e.payload;
+          }
+        );
       }
     })();
 
     return () => {
       unlistenProgress?.();
+      unlistenMigotoProgress?.();
     };
   });
 
@@ -313,6 +323,47 @@
     }
   }
 
+  async function handleInstallMigoto(downloadUrl: string) {
+    if (installingMigoto) return;
+    installingMigoto = true;
+    migotoProgress = {
+      stage: "downloading",
+      percent: 5,
+      downloaded_bytes: 0,
+      total_bytes: null,
+      message: "正在发起 3DMigoto 核心套件下载...",
+    };
+    try {
+      await api.installMigotoUpdate(downloadUrl);
+      toast("✨ 3DMigoto 核心套件已成功下载并部署！Mods 目录已自动就绪");
+      diagStatus = await api.getDiagnosticStatus().catch(() => null);
+      onchanged();
+    } catch (e) {
+      toast(`安装更新失败：${e}`);
+    } finally {
+      installingMigoto = false;
+      setTimeout(() => {
+        migotoProgress = null;
+      }, 5000);
+    }
+  }
+
+  async function handleMigrateOldMigoto() {
+    try {
+      const oldDir = await open({
+        directory: true,
+        title: "选择包含 Mods 的旧 3DMigoto / SSMI 工作区目录",
+      });
+      if (typeof oldDir === "string") {
+        const res = await api.migrateModsFromOldMigoto(oldDir);
+        toast(`✨ 迁移完成！扫描发现 ${res.total_found} 个 Mod，成功迁移导入 ${res.migrated_count} 个`);
+        onchanged();
+      }
+    } catch (e) {
+      toast(`迁移失败：${e}`);
+    }
+  }
+
   async function saveDelay() {
     try {
       await api.setInjectionDelay(delayDraft);
@@ -446,14 +497,22 @@
           <button
             class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
             onclick={handleInitMigoto}
+            title="初始化或切换到 LiquiMod 内置 3DMigoto 目录"
           >
-            📦 一键初始化 3DM
+            📦 内置 3DM
+          </button>
+          <button
+            class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
+            onclick={handleMigrateOldMigoto}
+            title="选择旧 SSMI/3DMigoto 目录，自动导入其中所有 Mod"
+          >
+            🔄 迁移旧 Mod
           </button>
           <button
             class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
             onclick={import3dMigoto}
           >
-            ✨ 识别已有目录
+            ✨ 识别目录
           </button>
         </div>
       </div>
@@ -550,11 +609,11 @@
       <div class="flex items-center justify-between gap-3">
         <div>
           <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">3DMigoto 核心与启动引擎微调</h3>
-          <p class="text-xs text-secondary mt-0.5">原生挂起注入、延迟缓冲微调与云端 SRMI 核心套件版本</p>
+          <p class="text-xs text-secondary mt-0.5">原生挂起注入、延迟缓冲微调与云端 SRMI 核心套件一键安装/更新</p>
         </div>
         <button
           class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5"
-          disabled={checkingMigoto}
+          disabled={checkingMigoto || installingMigoto}
           onclick={handleCheckMigotoUpdate}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class={checkingMigoto ? "animate-spin" : ""}>
@@ -565,17 +624,46 @@
       </div>
 
       {#if migotoRelease}
-        <div class="p-3 glass rounded-xl text-xs flex flex-col gap-1.5 border border-[var(--glass-stroke)] bg-black/5 dark:bg-white/5">
+        <div class="p-3.5 radius-card flex flex-col gap-2.5 border border-[var(--glass-stroke)] bg-black/5 dark:bg-white/5">
           <div class="flex items-center justify-between font-semibold">
-            <span class="text-[var(--accent)]">最新版本：{migotoRelease.tag_name || migotoRelease.name}</span>
-            <span class="text-secondary font-mono text-[10px]">{migotoRelease.published_at?.slice(0, 10) ?? ""}</span>
+            <span class="text-[var(--accent)] font-bold text-sm">最新版本：{migotoRelease.tag_name || migotoRelease.name}</span>
+            <span class="text-secondary font-mono text-xs">{migotoRelease.published_at?.slice(0, 10) ?? ""}</span>
           </div>
           {#if migotoRelease.asset_name}
-            <div class="text-secondary text-[11px]">包含资源：{migotoRelease.asset_name} ({migotoRelease.size_bytes ? Math.round(migotoRelease.size_bytes / 1024) + ' KB' : ''})</div>
+            <div class="text-secondary text-xs">包含资源：{migotoRelease.asset_name} ({migotoRelease.size_bytes ? Math.round(migotoRelease.size_bytes / 1024) + ' KB' : ''})</div>
           {/if}
           {#if migotoRelease.body}
-            <p class="text-secondary text-[11px] line-clamp-2 mt-0.5">{migotoRelease.body}</p>
+            <p class="text-secondary text-[11px] line-clamp-2">{migotoRelease.body}</p>
           {/if}
+
+          {#if migotoRelease.download_url}
+            <div class="pt-2 border-t border-[var(--glass-stroke)] flex items-center justify-between">
+              <span class="text-xs text-secondary">自动下载并解压覆写 ShaderFixes 与核心 DLL</span>
+              <button
+                class="accent-fill accent-text radius-pill h-8 px-4 text-xs font-bold shrink-0 cursor-pointer transition-transform hover:scale-[1.02] flex items-center gap-1.5"
+                disabled={installingMigoto}
+                onclick={() => migotoRelease?.download_url && handleInstallMigoto(migotoRelease.download_url)}
+              >
+                <span>🚀</span>
+                <span>{installingMigoto ? "正在下载安装…" : "一键下载并更新 3DMigoto"}</span>
+              </button>
+            </div>
+          {/if}
+        </div>
+      {/if}
+
+      {#if migotoProgress}
+        <div class="p-3 radius-card flex flex-col gap-1.5 border border-[var(--glass-stroke)] bg-[var(--accent-fill)]">
+          <div class="flex items-center justify-between text-xs font-semibold text-[var(--accent)]">
+            <span>{migotoProgress.message}</span>
+            <span>{Math.round(migotoProgress.percent)}%</span>
+          </div>
+          <div class="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-[var(--accent)] transition-all duration-300 rounded-full"
+              style={`width: ${migotoProgress.percent}%`}
+            ></div>
+          </div>
         </div>
       {/if}
 

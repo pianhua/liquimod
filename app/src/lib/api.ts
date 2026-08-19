@@ -497,12 +497,31 @@ export const api = {
   initMigotoWorkspace: (targetDir: string) =>
     call<string>("init_migoto_workspace", { targetDir }),
   checkMigotoUpdate: () => call<MigotoReleaseInfoDto>("check_migoto_update"),
+  installMigotoUpdate: (downloadUrl: string) =>
+    call<ConfigDto>("install_migoto_update", { downloadUrl }),
+  migrateModsFromOldMigoto: (oldDir: string) =>
+    call<MigrateResultDto>("migrate_mods_from_old_migoto", { oldDir }),
   setWorkMode: (mode: "play" | "dev") => call<ConfigDto>("set_work_mode", { mode }),
   setInjectionDelay: (delayMs: number) =>
     call<ConfigDto>("set_injection_delay", { delayMs }),
   setGithubToken: (token: string) => call<ConfigDto>("set_github_token", { token }),
   setGithubMirror: (mirror: string) => call<ConfigDto>("set_github_mirror", { mirror }),
 };
+
+export interface MigotoDownloadProgressDto {
+  stage: "downloading" | "extracting" | "completed" | "failed";
+  percent: number;
+  downloaded_bytes: number;
+  total_bytes: number | null;
+  message: string;
+}
+
+export interface MigrateResultDto {
+  total_found: number;
+  migrated_count: number;
+  failed_count: number;
+  errors: string[];
+}
 
 export interface AssetUpdateCheckResultDto {
   has_update: boolean;

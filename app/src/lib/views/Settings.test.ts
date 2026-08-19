@@ -17,6 +17,9 @@ vi.mock("$lib/api", async (importOriginal) => {
       getLocalAssetVersion: vi.fn(),
       checkGameAssetsUpdate: vi.fn(),
       syncGameAssets: vi.fn(),
+      checkMigotoUpdate: vi.fn(),
+      installMigotoUpdate: vi.fn(),
+      migrateModsFromOldMigoto: vi.fn(),
     },
     isTauri: () => false,
   };

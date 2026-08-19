@@ -176,6 +176,8 @@ pub fn run() {
             commands::auto_detect_game_exe,
             commands::init_migoto_workspace,
             commands::check_migoto_update,
+            commands::install_migoto_update,
+            commands::migrate_mods_from_old_migoto,
             commands::set_work_mode,
             commands::set_injection_delay,
             commands::set_github_token,

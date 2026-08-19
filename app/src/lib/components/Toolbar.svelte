@@ -124,7 +124,7 @@
     <PresetMenu {onapplied} />
 
     <!-- 工作模式切换胶囊 (Play / Dev) -->
-    <div class="flex items-center h-8 glass radius-pill px-1 gap-1">
+    <div class="relative flex items-center h-8 glass radius-pill px-1 gap-1">
       <button
         class="h-6 px-2 text-[11px] font-medium flex items-center gap-1 cursor-pointer rounded-full transition-all"
         class:accent-fill={workMode === "play"}
@@ -151,7 +151,10 @@
         <button
           class="w-5 h-5 rounded-full grid place-items-center text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
           title="查看 3Dmigoto 抓取快捷键"
-          onclick={() => (showDevKeyHelp = !showDevKeyHelp)}
+          onclick={(e) => {
+            e.stopPropagation();
+            showDevKeyHelp = !showDevKeyHelp;
+          }}
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <circle cx="12" cy="12" r="10"></circle>
@@ -159,6 +162,59 @@
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
         </button>
+
+        {#if showDevKeyHelp}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="absolute right-0 top-full mt-2 w-80 p-4 radius-card shadow-2xl z-50 flex flex-col gap-2.5 text-xs animate-in fade-in zoom-in-95 border border-[var(--glass-stroke)]"
+            style="background: var(--bg); color: var(--text);"
+            role="dialog"
+            tabindex="-1"
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+          >
+            <div class="flex items-center justify-between font-bold text-[var(--accent)]">
+              <span class="flex items-center gap-1.5">
+                <span>🛠️</span>
+                <span>3Dmigoto 抓取小键盘速查</span>
+              </span>
+              <button
+                class="w-5 h-5 rounded-full grid place-items-center text-secondary hover:text-[var(--text)] cursor-pointer"
+                onclick={() => (showDevKeyHelp = false)}
+              >
+                ✕
+              </button>
+            </div>
+            <p class="text-[11px] text-secondary leading-relaxed">
+              游戏内使用数字小键盘实时捕获 Hash，已启用自动复制到剪贴板。
+            </p>
+            <div class="flex flex-col gap-1.5 mt-1 font-mono text-[11px]">
+              <div class="flex items-center justify-between py-1 px-2 rounded-lg bg-black/5 dark:bg-white/5">
+                <span class="text-secondary font-sans text-xs">切换目标(顶点/索引/着色器)</span>
+                <kbd class="font-bold text-[var(--accent)]">Num /</kbd>
+              </div>
+              <div class="flex items-center justify-between py-1 px-2 rounded-lg bg-black/5 dark:bg-white/5">
+                <span class="text-secondary font-sans text-xs">上一个 / 下一个元素</span>
+                <div class="flex gap-1">
+                  <kbd class="font-bold text-[var(--accent)]">Num 1</kbd>
+                  <kbd class="font-bold text-[var(--accent)]">Num 2</kbd>
+                </div>
+              </div>
+              <div class="flex items-center justify-between py-1 px-2 rounded-lg bg-black/5 dark:bg-white/5">
+                <span class="text-secondary font-sans text-xs">标记并复制当前 Hash</span>
+                <kbd class="font-bold text-[var(--accent)]">Num *</kbd>
+              </div>
+              <div class="flex items-center justify-between py-1 px-2 rounded-lg bg-black/5 dark:bg-white/5">
+                <span class="text-secondary font-sans text-xs">隐藏当前选中的模型</span>
+                <kbd class="font-bold text-[var(--accent)]">Num 0</kbd>
+              </div>
+              <div class="flex items-center justify-between py-1 px-2 rounded-lg bg-black/5 dark:bg-white/5">
+                <span class="text-secondary font-sans text-xs">导出 HLSL 反汇编</span>
+                <kbd class="font-bold text-[var(--accent)]">Num .</kbd>
+              </div>
+            </div>
+          </div>
+        {/if}
       {/if}
     </div>
 
@@ -280,80 +336,6 @@
           onclick={() => (conflictModalOpen = false)}
         >
           知道了
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- 3DMigoto 抓取开发模式快捷键速查提示 -->
-{#if showDevKeyHelp}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-6"
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-    onclick={() => (showDevKeyHelp = false)}
-    onkeydown={(e) => e.key === "Escape" && (showDevKeyHelp = false)}
-  >
-    <div
-      class="glass radius-panel p-6 max-w-md w-full flex flex-col gap-4 shadow-2xl"
-      role="document"
-      tabindex="-1"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
-    >
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2 text-[var(--accent)] font-bold">
-          <span class="text-lg">🛠️</span>
-          <h3>3Dmigoto 抓取模式快捷键速查</h3>
-        </div>
-        <button
-          class="glass radius-pill w-7 h-7 grid place-items-center cursor-pointer text-secondary"
-          aria-label="关闭"
-          onclick={() => (showDevKeyHelp = false)}
-        >
-          ✕
-        </button>
-      </div>
-
-      <p class="text-xs text-secondary">
-        进入游戏后，使用右侧数字小键盘（NumPad）实时捕获模型与贴图 Hash，已启用自动复制到剪贴板。
-      </p>
-
-      <div class="flex flex-col gap-2 text-xs">
-        <div class="p-2.5 radius-card glass flex items-center justify-between">
-          <span class="font-medium text-secondary">切换选择目标 (顶点/索引/着色器)</span>
-          <kbd class="px-2 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num /</kbd>
-        </div>
-        <div class="p-2.5 radius-card glass flex items-center justify-between">
-          <span class="font-medium text-secondary">上一个 / 下一个元素</span>
-          <div class="flex gap-1">
-            <kbd class="px-1.5 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num 1</kbd>
-            <kbd class="px-1.5 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num 2</kbd>
-          </div>
-        </div>
-        <div class="p-2.5 radius-card glass flex items-center justify-between">
-          <span class="font-medium text-secondary">标记/复制当前 Hash 到剪贴板</span>
-          <kbd class="px-2 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num *</kbd>
-        </div>
-        <div class="p-2.5 radius-card glass flex items-center justify-between">
-          <span class="font-medium text-secondary">隐藏当前选中的模型/网格</span>
-          <kbd class="px-2 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num 0</kbd>
-        </div>
-        <div class="p-2.5 radius-card glass flex items-center justify-between">
-          <span class="font-medium text-secondary">导出当前帧 HLSL 反汇编</span>
-          <kbd class="px-2 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num .</kbd>
-        </div>
-      </div>
-
-      <div class="flex justify-end pt-2 border-t border-[var(--glass-stroke)]">
-        <button
-          class="accent-fill accent-text radius-pill h-8 px-4 text-xs font-semibold cursor-pointer"
-          onclick={() => (showDevKeyHelp = false)}
-        >
-          好的
         </button>
       </div>
     </div>

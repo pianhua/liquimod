@@ -1265,6 +1265,160 @@ pub async fn check_migoto_update(
 }
 
 #[tauri::command]
+pub async fn install_migoto_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    download_url: String,
+) -> Result<ConfigDto, String> {
+    let (target_dir, token, mirror) = {
+        let mut config = state.config.lock().unwrap();
+        let target = if let Some(mods) = &config.mods_dir {
+            mods.parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(liquimod_core::migoto_sync::default_managed_migoto_dir)
+        } else {
+            let def = liquimod_core::migoto_sync::default_managed_migoto_dir();
+            config.mods_dir = Some(def.join("Mods"));
+            def
+        };
+        let t = if config.github_token.is_empty() {
+            None
+        } else {
+            Some(config.github_token.clone())
+        };
+        let m = if config.github_mirror.is_empty() {
+            None
+        } else {
+            Some(config.github_mirror.clone())
+        };
+        (target, t, m)
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+    let app_clone = app.clone();
+    let forward_task = tokio::spawn(async move {
+        while let Some(progress) = rx.recv().await {
+            let _ = app_clone.emit("migoto-download-progress", progress);
+        }
+    });
+
+    let res = liquimod_core::migoto_sync::download_and_install_migoto(
+        &download_url,
+        &target_dir,
+        mirror.as_deref(),
+        token.as_deref(),
+        Some(tx),
+    )
+    .await;
+
+    let _ = forward_task.await;
+    res.map_err(|e| e.to_string())?;
+
+    // 确保自动绑定 mods_dir
+    let config = {
+        let mut cfg = state.config.lock().unwrap();
+        let mods_path = target_dir.join("Mods");
+        if !mods_path.exists() {
+            let _ = std::fs::create_dir_all(&mods_path);
+        }
+        cfg.mods_dir = Some(mods_path);
+        cfg.save_to(&state.config_path)
+            .map_err(|e| format!("配置保存失败：{e}"))?;
+        config_dto(&cfg)
+    };
+
+    crate::start_watcher(&app, state.inner());
+    Ok(config)
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct MigrateResultDto {
+    pub total_found: usize,
+    pub migrated_count: usize,
+    pub failed_count: usize,
+    pub errors: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn migrate_mods_from_old_migoto(
+    state: tauri::State<'_, AppState>,
+    old_dir: String,
+) -> Result<MigrateResultDto, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = PathBuf::from(old_dir);
+        let mods_path = if p.join("Mods").is_dir() {
+            p.join("Mods")
+        } else {
+            p
+        };
+
+        if !mods_path.is_dir() {
+            return Err("指定的旧目录不存在或不包含 Mods 文件夹".to_string());
+        }
+
+        let lib = library.lock().unwrap();
+        let mut total_found = 0;
+        let mut migrated_count = 0;
+        let mut failed_count = 0;
+        let mut errors = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(&mods_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    // 跳过符号链接/软连接，仅迁移真实实体目录
+                    if let Ok(meta) = entry.metadata() {
+                        if meta.file_type().is_symlink() {
+                            continue;
+                        }
+                    }
+                    let folder_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if folder_name.is_empty()
+                        || folder_name.starts_with('.')
+                        || folder_name.eq_ignore_ascii_case("disabled")
+                    {
+                        continue;
+                    }
+
+                    total_found += 1;
+
+                    // 1. 尝试推断角色
+                    let character = liquimod_core::games::infer_character(&path, Hsr::shared())
+                        .unwrap_or_else(|| "others".to_string());
+
+                    // 2. 清洗 Mod 名
+                    let mod_name = folder_name.to_string();
+
+                    // 3. 复制并收录到 Library
+                    match lib.add_folder(&path, &character, &mod_name) {
+                        Ok(_) => {
+                            migrated_count += 1;
+                        }
+                        Err(e) => {
+                            failed_count += 1;
+                            errors.push(format!("{}: {}", folder_name, e));
+                        }
+                    }
+                }
+            }
+        }
+
+        // 统一自动归类
+        let _ = sync_mod_categories(&lib, Hsr::shared());
+
+        Ok(MigrateResultDto {
+            total_found,
+            migrated_count,
+            failed_count,
+            errors,
+        })
+    })
+    .await
+    .map_err(|e| format!("迁移任务失败：{e}"))?
+}
+
+#[tauri::command]
 pub fn set_work_mode(state: tauri::State<AppState>, mode: String) -> Result<ConfigDto, String> {
     if !["play", "dev"].contains(&mode.as_str()) {
         return Err("工作模式只能是 play 或 dev".to_string());

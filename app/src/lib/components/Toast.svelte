@@ -7,7 +7,8 @@
   {#each toasts as t (t.id)}
     <div
       transition:fly={{ y: 12, duration: 200 }}
-      class="glass-floating radius-pill px-4 h-9 flex items-center text-sm font-medium text-[var(--text)]"
+      class="glass-floating radius-pill px-4 h-9 flex items-center text-sm font-medium text-[var(--text)] border border-[var(--glass-stroke)] shadow-2xl"
+      style="background: var(--glass-floating-bg); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);"
       role="status"
     >
       {t.message}
