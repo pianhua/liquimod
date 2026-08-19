@@ -90,7 +90,7 @@
             >关闭</button>
           {:else if job.stage === "needs-password"}
             <input
-              class="glass radius-pill px-3 h-8 text-sm w-32 outline-none bg-transparent text-white"
+              class="glass radius-pill px-3 h-8 text-sm w-32 outline-none bg-transparent text-[var(--text)] placeholder:text-secondary"
               placeholder="压缩包密码"
               aria-label="压缩包密码"
               type="password"

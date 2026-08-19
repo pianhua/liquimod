@@ -66,7 +66,7 @@ describe("ModCardGrid", () => {
 
   it("空态", () => {
     render(ModCardGrid, { props: props([]) });
-    expect(screen.getByText("这里还没有 Mod")).toBeTruthy();
+    expect(screen.getByText("暂无 Mod")).toBeTruthy();
   });
 
   it("启用态筛选过滤卡片", async () => {

@@ -59,9 +59,17 @@
       />
     {/each}
     {#if shown.length === 0}
-      <p class="text-secondary col-span-full text-center mt-24">
-        {mods.length === 0 ? "这里还没有 Mod" : "没有匹配的 Mod"}
-      </p>
+      <div class="col-span-full border-2 border-dashed border-[var(--glass-stroke)] radius-card flex flex-col items-center justify-center text-secondary py-16 px-6 text-center my-6">
+        <div class="w-12 h-12 rounded-full grid place-items-center text-xl font-bold mb-2" style="background: var(--glass-tint)">
+          📦
+        </div>
+        <p class="text-sm font-medium text-[var(--text)]">
+          {mods.length === 0 ? "暂无 Mod" : "无匹配项"}
+        </p>
+        <p class="text-xs text-secondary mt-1">
+          {mods.length === 0 ? "直接将压缩包（.zip / .7z）拖入窗口即可自动安装至此分类" : "请尝试调整上方筛选状态或搜索关键词"}
+        </p>
+      </div>
     {/if}
   </div>
 </div>

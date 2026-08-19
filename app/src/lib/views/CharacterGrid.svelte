@@ -82,7 +82,13 @@
       />
     {/each}
     {#if filtered.length === 0}
-      <p class="text-secondary col-span-full text-center mt-24">没有匹配的角色</p>
+      <div class="col-span-full border-2 border-dashed border-[var(--glass-stroke)] radius-card flex flex-col items-center justify-center text-secondary py-16 px-6 text-center my-6">
+        <div class="w-12 h-12 rounded-full grid place-items-center text-xl font-bold mb-2" style="background: var(--glass-tint)">
+          🔍
+        </div>
+        <p class="text-sm font-medium text-[var(--text)]">没有匹配的角色</p>
+        <p class="text-xs text-secondary mt-1">请尝试切换上方元素属性或清除搜索关键字</p>
+      </div>
     {/if}
   </div>
 </div>
