@@ -39,7 +39,15 @@
 
   let conflictModalOpen = $state(false);
   let showDevKeyHelp = $state(false);
+  let showSortMenu = $state(false);
+
+  function handleWindowClick() {
+    showSortMenu = false;
+    showDevKeyHelp = false;
+  }
 </script>
+
+<svelte:window onclick={handleWindowClick} />
 
 <header class="relative z-30 flex items-center justify-between h-14 px-6 shrink-0 gap-4" aria-label="全局控制台">
   <!-- 左侧：面包屑导航 -->
@@ -93,30 +101,114 @@
     {/if}
 
     {#if isCharGrid}
-      <div class="glass radius-pill h-8 px-2.5 flex items-center">
-        <select
-          bind:value={charSort}
+      <!-- 角色网格自定义排序下拉菜单 -->
+      <div class="relative">
+        <button
+          class="glass radius-pill h-8 px-3 text-xs font-medium flex items-center gap-1.5 cursor-pointer hover:text-[var(--text)] transition-all"
+          onclick={(e) => {
+            e.stopPropagation();
+            showSortMenu = !showSortMenu;
+          }}
           aria-label="角色排序"
-          class="bg-transparent outline-none text-xs cursor-pointer text-secondary hover:text-[var(--text)] font-medium"
+          title="选择排序方式"
         >
-          <option value="default">默认排序 (喜爱置顶)</option>
-          <option value="name">名称 (A-Z)</option>
-          <option value="mods">Mod 数量</option>
-          <option value="enabled">启用优先</option>
-          <option value="rarity">星级稀有度</option>
-        </select>
+          <span class="text-secondary">
+            {charSort === "default" ? "默认排序 (喜爱置顶)" :
+             charSort === "name" ? "名称 (A-Z)" :
+             charSort === "mods" ? "Mod 数量" :
+             charSort === "enabled" ? "启用优先" :
+             charSort === "rarity" ? "星级稀有度" : "排序"}
+          </span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-60 transition-transform" class:rotate-180={showSortMenu}>
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        {#if showSortMenu}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="absolute right-0 top-full mt-1.5 w-44 p-1.5 radius-card shadow-2xl z-[100] flex flex-col gap-1 text-xs animate-in fade-in zoom-in-95 border border-[var(--glass-stroke)]"
+            style="background: var(--panel-bg); color: var(--text); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); box-shadow: var(--glass-floating-shadow); isolation: isolate;"
+            role="menu"
+            tabindex="-1"
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+          >
+            {#each [
+              { id: "default", label: "默认排序 (喜爱置顶)" },
+              { id: "name", label: "名称 (A-Z)" },
+              { id: "mods", label: "Mod 数量" },
+              { id: "enabled", label: "启用优先" },
+              { id: "rarity", label: "星级稀有度" }
+            ] as opt}
+              <button
+                class="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer {charSort === opt.id ? 'accent-fill accent-text font-semibold' : 'text-secondary hover:text-[var(--text)] hover:bg-black/5'}"
+                onclick={() => {
+                  charSort = opt.id as any;
+                  showSortMenu = false;
+                }}
+              >
+                <span>{opt.label}</span>
+                {#if charSort === opt.id}
+                  <span class="text-xs font-bold">✓</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
     {:else if showSort}
-      <div class="glass radius-pill h-8 px-2.5 flex items-center">
-        <select
-          bind:value={sort}
+      <!-- Mod 列表自定义排序下拉菜单 -->
+      <div class="relative">
+        <button
+          class="glass radius-pill h-8 px-3 text-xs font-medium flex items-center gap-1.5 cursor-pointer hover:text-[var(--text)] transition-all"
+          onclick={(e) => {
+            e.stopPropagation();
+            showSortMenu = !showSortMenu;
+          }}
           aria-label="排序方式"
-          class="bg-transparent outline-none text-xs cursor-pointer"
+          title="选择排序方式"
         >
-          <option value="recent">最近安装</option>
-          <option value="name">名称</option>
-          <option value="enabled">启用优先</option>
-        </select>
+          <span class="text-secondary">
+            {sort === "recent" ? "最近安装" :
+             sort === "name" ? "名称 (A-Z)" :
+             sort === "enabled" ? "启用优先" : "排序"}
+          </span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-60 transition-transform" class:rotate-180={showSortMenu}>
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        {#if showSortMenu}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="absolute right-0 top-full mt-1.5 w-36 p-1.5 radius-card shadow-2xl z-[100] flex flex-col gap-1 text-xs animate-in fade-in zoom-in-95 border border-[var(--glass-stroke)]"
+            style="background: var(--panel-bg); color: var(--text); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); box-shadow: var(--glass-floating-shadow); isolation: isolate;"
+            role="menu"
+            tabindex="-1"
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+          >
+            {#each [
+              { id: "recent", label: "最近安装" },
+              { id: "name", label: "名称 (A-Z)" },
+              { id: "enabled", label: "启用优先" }
+            ] as opt}
+              <button
+                class="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer {sort === opt.id ? 'accent-fill accent-text font-semibold' : 'text-secondary hover:text-[var(--text)] hover:bg-black/5'}"
+                onclick={() => {
+                  sort = opt.id as any;
+                  showSortMenu = false;
+                }}
+              >
+                <span>{opt.label}</span>
+                {#if sort === opt.id}
+                  <span class="text-xs font-bold">✓</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
 

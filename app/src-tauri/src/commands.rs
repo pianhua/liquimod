@@ -1791,7 +1791,8 @@ fn open_in_explorer(path: &Path) -> Result<(), String> {
 
         let mut cmd = std::process::Command::new("explorer");
         if path.is_file() {
-            cmd.arg(format!("/select,{}", path.display()));
+            let win_path = path.to_string_lossy().replace('/', "\\");
+            cmd.raw_arg(format!("/select,\"{}\"", win_path));
         } else {
             cmd.arg(path);
         }

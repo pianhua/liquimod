@@ -264,6 +264,23 @@ pub fn apply_work_mode(content: &str, mode: MigotoWorkMode) -> String {
     result
 }
 
+/// 同步更新 d3dx.ini 中的 [Loader] target 字段为当前配置的游戏可执行文件绝对路径
+pub fn update_d3dx_ini_target(ini_path: &Path, target_exe: &Path) -> Result<()> {
+    if !ini_path.is_file() {
+        return Ok(());
+    }
+    let content = std::fs::read_to_string(ini_path)?;
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let win_path = target_exe.to_string_lossy().replace('/', "\\");
+    set_ini_key_value(&mut lines, "Loader", "target", &win_path);
+    let mut result = lines.join("\r\n");
+    if !result.ends_with("\r\n") && !result.is_empty() {
+        result.push_str("\r\n");
+    }
+    std::fs::write(ini_path, result)?;
+    Ok(())
+}
+
 /// 辅助函数：在 INI 行列表中定位指定 section 下的 key 并替换其值；若未找到则安全追加
 fn set_ini_key_value(
     lines: &mut Vec<String>,

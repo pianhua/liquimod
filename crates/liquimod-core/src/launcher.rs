@@ -1,6 +1,6 @@
 //! Rust 原生 3Dmigoto 与崩铁启动管理引擎（支持挂起注入、延迟控制与双工作模式切换）
 
-use crate::d3d::{update_d3dx_ini_mode, MigotoWorkMode};
+use crate::d3d::{update_d3dx_ini_mode, update_d3dx_ini_target, MigotoWorkMode};
 use crate::error::{LiquiModError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -41,10 +41,11 @@ pub fn launch_game(opts: &GameLaunchOptions) -> Result<LaunchResult> {
         )));
     }
 
-    // 1. 启动前根据模式动态同步更新 d3dx.ini
+    // 1. 启动前根据模式动态同步更新 d3dx.ini (工作模式与 target 路径)
     let ini_path = opts.migoto_dir.join("d3dx.ini");
     if ini_path.is_file() {
         let _ = update_d3dx_ini_mode(&ini_path, opts.work_mode);
+        let _ = update_d3dx_ini_target(&ini_path, &opts.game_exe);
     }
 
     // 2. 根据是否存在专门的 Loader 选择启动策略
