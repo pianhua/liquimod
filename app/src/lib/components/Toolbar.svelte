@@ -166,50 +166,50 @@
         {#if showDevKeyHelp}
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div
-            class="absolute right-0 top-full mt-2 w-80 p-4.5 radius-card shadow-2xl z-[100] flex flex-col gap-3 text-xs animate-in fade-in zoom-in-95 bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100"
-            style="isolation: isolate;"
+            class="absolute right-0 top-full mt-2 w-80 p-4.5 radius-card shadow-2xl z-[100] flex flex-col gap-3 text-xs animate-in fade-in zoom-in-95"
+            style="background: var(--panel-bg); color: var(--text); border: 1px solid var(--glass-stroke); box-shadow: var(--glass-floating-shadow); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); isolation: isolate;"
             role="dialog"
             tabindex="-1"
             onclick={(e) => e.stopPropagation()}
             onkeydown={(e) => e.stopPropagation()}
           >
-            <div class="flex items-center justify-between font-bold text-[var(--accent)]">
-              <span class="flex items-center gap-1.5 text-sm">
+            <div class="flex items-center justify-between">
+              <span class="flex items-center gap-1.5 text-sm font-bold text-[var(--accent)]">
                 <span>🛠️</span>
                 <span>3Dmigoto 抓取小键盘速查</span>
               </span>
               <button
-                class="w-6 h-6 rounded-full grid place-items-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
+                class="w-6 h-6 rounded-full grid place-items-center text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
                 onclick={() => (showDevKeyHelp = false)}
               >
                 ✕
               </button>
             </div>
-            <p class="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+            <p class="text-[11px] text-secondary leading-relaxed">
               游戏内使用数字小键盘（NumPad）实时捕获模型与贴图 Hash，已启用自动复制到剪贴板。
             </p>
             <div class="flex flex-col gap-1.5 font-mono text-[11px]">
-              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200/60 dark:border-neutral-700/60">
-                <span class="text-neutral-600 dark:text-neutral-300 font-sans text-xs">切换目标(顶点/索引/着色器)</span>
+              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-[var(--glass-stroke)]" style="background: var(--card-bg);">
+                <span class="text-secondary font-sans text-xs">切换目标(顶点/索引/着色器)</span>
                 <kbd class="font-bold text-[var(--accent)] text-xs">Num /</kbd>
               </div>
-              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200/60 dark:border-neutral-700/60">
-                <span class="text-neutral-600 dark:text-neutral-300 font-sans text-xs">上一个 / 下一个元素</span>
+              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-[var(--glass-stroke)]" style="background: var(--card-bg);">
+                <span class="text-secondary font-sans text-xs">上一个 / 下一个元素</span>
                 <div class="flex gap-1">
                   <kbd class="font-bold text-[var(--accent)] text-xs">Num 1</kbd>
                   <kbd class="font-bold text-[var(--accent)] text-xs">Num 2</kbd>
                 </div>
               </div>
-              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200/60 dark:border-neutral-700/60">
-                <span class="text-neutral-600 dark:text-neutral-300 font-sans text-xs">标记并复制当前 Hash</span>
+              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-[var(--glass-stroke)]" style="background: var(--card-bg);">
+                <span class="text-secondary font-sans text-xs">标记并复制当前 Hash</span>
                 <kbd class="font-bold text-[var(--accent)] text-xs">Num *</kbd>
               </div>
-              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200/60 dark:border-neutral-700/60">
-                <span class="text-neutral-600 dark:text-neutral-300 font-sans text-xs">隐藏当前选中的模型</span>
+              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-[var(--glass-stroke)]" style="background: var(--card-bg);">
+                <span class="text-secondary font-sans text-xs">隐藏当前选中的模型</span>
                 <kbd class="font-bold text-[var(--accent)] text-xs">Num 0</kbd>
               </div>
-              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200/60 dark:border-neutral-700/60">
-                <span class="text-neutral-600 dark:text-neutral-300 font-sans text-xs">导出 HLSL 反汇编</span>
+              <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-[var(--glass-stroke)]" style="background: var(--card-bg);">
+                <span class="text-secondary font-sans text-xs">导出 HLSL 反汇编</span>
                 <kbd class="font-bold text-[var(--accent)] text-xs">Num .</kbd>
               </div>
             </div>

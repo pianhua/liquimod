@@ -32,6 +32,7 @@
   let checkingUpdate = $state(false);
   let syncProgress = $state<AssetSyncProgressDto | null>(null);
   let installingMigoto = $state(false);
+  let detectingGame = $state(false);
   let migotoProgress = $state<import("$lib/api").MigotoDownloadProgressDto | null>(null);
 
   onMount(() => {
@@ -276,6 +277,8 @@
   });
 
   async function autoDetectGame() {
+    if (detectingGame) return;
+    detectingGame = true;
     try {
       const found = await api.autoDetectGameExe();
       if (found) {
@@ -288,6 +291,8 @@
       }
     } catch (e) {
       toast(`探测失败：${e}`);
+    } finally {
+      detectingGame = false;
     }
   }
 
@@ -521,11 +526,20 @@
         </div>
         <div class="flex items-center justify-end gap-1.5 shrink-0">
           <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/10"
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/10"
+            disabled={detectingGame}
             onclick={autoDetectGame}
             title="自动从注册表和运行日志嗅探 StarRail.exe"
           >
-            <span>🔍</span> 自动探测
+            {#if detectingGame}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin text-[var(--accent)]">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+              <span>探测中…</span>
+            {:else}
+              <span>🔍</span>
+              <span>自动探测</span>
+            {/if}
           </button>
           {#if config?.game_exe}
             <button

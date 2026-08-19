@@ -1230,9 +1230,13 @@ pub fn choose_loader_exe(state: tauri::State<AppState>, path: String) -> Result<
 }
 
 #[tauri::command]
-pub fn auto_detect_game_exe() -> Result<Option<String>, String> {
-    let found = liquimod_core::discovery::auto_detect_game_exe();
-    Ok(found.map(|p| p.display().to_string()))
+pub async fn auto_detect_game_exe() -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let found = liquimod_core::discovery::auto_detect_game_exe();
+        Ok(found.map(|p| p.display().to_string()))
+    })
+    .await
+    .map_err(|e| format!("自动探测任务异常: {e}"))?
 }
 
 #[tauri::command]
@@ -1782,8 +1786,16 @@ fn open_in_explorer(path: &Path) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer")
-            .arg(path)
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut cmd = std::process::Command::new("explorer");
+        if path.is_file() {
+            cmd.arg(format!("/select,{}", path.display()));
+        } else {
+            cmd.arg(path);
+        }
+        cmd.creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("打开资源管理器失败：{e}"))?;
     }

@@ -140,38 +140,55 @@ pub fn parse_exe_from_log_content(content: &str) -> Option<PathBuf> {
 
 #[cfg(windows)]
 fn detect_from_windows_registry() -> Option<PathBuf> {
-    // Windows 下通过 powershell 简易快速查询注册表（避免引入繁琐的 winreg crate）
-    let script = r#"
-$keys = @(
-    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\崩坏：星穹铁道",
-    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
-    "HKCU:\SOFTWARE\miHoYo\崩坏：星穹铁道",
-    "HKCU:\SOFTWARE\Cognosphere\Star Rail"
-)
-foreach ($k in $keys) {
-    if (Test-Path $k) {
-        $item = Get-ItemProperty $k -ErrorAction SilentlyContinue
-        if ($item.InstallPath) {
-            $p = Join-Path $item.InstallPath "StarRail.exe"
-            if (Test-Path $p) { Write-Output $p; break }
-            $p2 = Join-Path $item.InstallPath "Game\StarRail.exe"
-            if (Test-Path $p2) { Write-Output $p2; break }
-        }
-    }
-}
-"#;
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .ok()?;
+    let reg_keys = [
+        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\崩坏：星穹铁道",
+        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
+        r"HKCU\SOFTWARE\miHoYo\崩坏：星穹铁道",
+        r"HKCU\SOFTWARE\Cognosphere\Star Rail",
+        r"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\崩坏：星穹铁道",
+        r"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Star Rail",
+    ];
 
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !stdout.is_empty() {
-            let p = PathBuf::from(stdout.lines().next().unwrap_or(&stdout).trim());
-            if is_valid_game_exe(&p) {
-                return Some(p);
+    let val_names = ["InstallPath", "Install_Path", "Path"];
+
+    for key in &reg_keys {
+        for val in &val_names {
+            let output = std::process::Command::new("reg")
+                .args(["query", key, "/v", val])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+                .ok();
+
+            if let Some(out) = output {
+                if out.status.success() {
+                    let text = String::from_utf8_lossy(&out.stdout);
+                    for line in text.lines() {
+                        if line.contains("REG_SZ") || line.contains("REG_EXPAND_SZ") {
+                            if let Some((_, path_str)) = line.split_once("REG_") {
+                                if let Some((_, actual_val)) = path_str.split_once(' ') {
+                                    let clean_dir = actual_val.trim();
+                                    let candidate_1 = PathBuf::from(clean_dir).join("StarRail.exe");
+                                    if is_valid_game_exe(&candidate_1) {
+                                        return Some(candidate_1);
+                                    }
+                                    let candidate_2 =
+                                        PathBuf::from(clean_dir).join("Game").join("StarRail.exe");
+                                    if is_valid_game_exe(&candidate_2) {
+                                        return Some(candidate_2);
+                                    }
+                                    let candidate_3 =
+                                        PathBuf::from(clean_dir).join("Games").join("StarRail.exe");
+                                    if is_valid_game_exe(&candidate_3) {
+                                        return Some(candidate_3);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
