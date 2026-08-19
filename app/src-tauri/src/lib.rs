@@ -94,6 +94,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(state::AppState::bootstrap())
         .setup(|app| {
             // 启动恢复：完成上次崩溃遗留的启停事务（op_log）
@@ -151,6 +152,27 @@ pub fn run() {
             commands::choose_loader_exe,
             commands::launch_game,
             commands::launch_loader,
+            commands::inspect_3dmigoto_dir,
+            commands::import_3dmigoto_dir,
+            commands::get_mod_keys,
+            commands::set_mod_custom_cover,
+            commands::get_active_conflicts,
+            commands::open_mod_folder,
+            commands::open_path_in_explorer,
+            commands::trigger_refresh_game,
+            commands::get_mod_images,
+            commands::set_mod_cover_from_internal,
+            commands::reset_mod_cover,
+            commands::get_mod_cover_image,
+            commands::rescan_library,
+            commands::clean_cache,
+            commands::get_diagnostic_status,
+            commands::get_local_asset_version,
+            commands::check_game_assets_update,
+            commands::sync_game_assets,
+            commands::get_character_image_data,
+            commands::set_mod_note,
+            commands::toggle_favorite_character,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

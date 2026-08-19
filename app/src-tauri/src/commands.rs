@@ -90,6 +90,9 @@ pub struct CharacterSummary {
     pub image: Option<String>,
     pub total: usize,
     pub enabled: usize,
+    pub element: Option<String>,
+    pub rarity: Option<u8>,
+    pub is_favorite: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -103,6 +106,8 @@ pub struct ModDto {
     pub file_count: i64,
     pub path: String,
     pub category_id: Option<i64>,
+    pub note: Option<String>,
+    pub cover_image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -117,6 +122,53 @@ pub enum InstallResultDto {
     NeedsPassword,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct MigotoInspectDto {
+    pub root: String,
+    pub ini_path: String,
+    pub game_exe: Option<String>,
+    pub loader_exe: Option<String>,
+    pub mods_dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ModKeyBindingDto {
+    pub section: String,
+    pub key: String,
+    pub formatted_key: String,
+    pub back: Option<String>,
+    pub formatted_back: Option<String>,
+    pub key_type: Option<String>,
+    pub variable: Option<String>,
+    pub steps: Option<usize>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ConflictReportDto {
+    pub hash: String,
+    pub section: String,
+    pub conflicting_mods: Vec<ConflictModInfoDto>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ConflictModInfoDto {
+    pub id: i64,
+    pub character: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ModImageDto {
+    pub relative_path: String,
+    pub filename: String,
+    pub size_bytes: u64,
+    pub data_url: String,
+    pub is_cover: bool,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
 pub fn config_dto(c: &Config) -> ConfigDto {
     ConfigDto {
         library_root: c.library_root.display().to_string(),
@@ -129,34 +181,74 @@ pub fn config_dto(c: &Config) -> ConfigDto {
     }
 }
 
-/// 角色网格汇总：游戏角色按数据顺序在前（仅角色虚拟类；非角色归实体分类）。
+/// 角色网格汇总：支持指定分类（如光锥/立绘/默认皮肤等）。
 pub fn character_summaries(
     lib: &Library,
     game: &dyn Game,
+    category_id: Option<i64>,
+    favorites: &[String],
 ) -> Result<Vec<CharacterSummary>, String> {
     let mods = lib.list().map_err(|e| e.to_string())?;
+    let fav_set: std::collections::HashSet<&str> = favorites.iter().map(|s| s.as_str()).collect();
     let mut out: Vec<CharacterSummary> = Vec::new();
     for c in game.characters() {
         let group: Vec<_> = mods
             .iter()
-            .filter(|m| m.character == c.internal_name && m.category_id.is_none())
+            .filter(|m| {
+                m.character == c.internal_name
+                    && match category_id {
+                        None => m.category_id.is_none(),
+                        Some(cid) => m.category_id == Some(cid),
+                    }
+            })
             .collect();
+        let is_fav = fav_set.contains(c.internal_name.as_str());
         out.push(summary(
             c,
             group.len(),
             group.iter().filter(|m| m.enabled).count(),
+            is_fav,
         ));
     }
+
+    // 若指定了分类（如光锥/立绘等），且存在不属于已知角色的 Mod，在末尾附带虚拟「通用 / 未归属」卡片
+    if let Some(cid) = category_id {
+        let known: std::collections::HashSet<&str> = game
+            .characters()
+            .iter()
+            .map(|c| c.internal_name.as_str())
+            .collect();
+        let other_mods: Vec<_> = mods
+            .iter()
+            .filter(|m| m.category_id == Some(cid) && !known.contains(m.character.as_str()))
+            .collect();
+        if !other_mods.is_empty() {
+            out.push(CharacterSummary {
+                internal_name: "others".to_string(),
+                display_name: "未归属角色 / 通用".to_string(),
+                image: None,
+                total: other_mods.len(),
+                enabled: other_mods.iter().filter(|m| m.enabled).count(),
+                element: None,
+                rarity: None,
+                is_favorite: false,
+            });
+        }
+    }
+
     Ok(out)
 }
 
-fn summary(c: &CharacterInfo, total: usize, enabled: usize) -> CharacterSummary {
+fn summary(c: &CharacterInfo, total: usize, enabled: usize, is_favorite: bool) -> CharacterSummary {
     CharacterSummary {
         internal_name: c.internal_name.clone(),
         display_name: c.display_name.clone(),
         image: Some(c.image.clone()),
         total,
         enabled,
+        element: c.element.clone(),
+        rarity: c.rarity,
+        is_favorite,
     }
 }
 
@@ -217,8 +309,30 @@ pub fn sync_mod_categories(lib: &Library, game: &dyn Game) -> Result<usize, Stri
 }
 
 /// 阶段一：在库锁内收集角色 Mod 的基础字段与缩略图目录（纯数据，不做 IO 重的图像工作）。
-fn collect_mod_rows(lib: &Library, character: &str) -> Result<Vec<ModRow>, String> {
-    collect_rows_where(lib, |m| m.character == character && m.category_id.is_none())
+fn collect_mod_rows(
+    lib: &Library,
+    character: &str,
+    category_id: Option<i64>,
+) -> Result<Vec<ModRow>, String> {
+    if character == "others" {
+        if let Some(cid) = category_id {
+            let known: std::collections::HashSet<&str> = liquimod_core::games::hsr::Hsr::shared()
+                .characters()
+                .iter()
+                .map(|c| c.internal_name.as_str())
+                .collect();
+            return collect_rows_where(lib, move |m| {
+                m.category_id == Some(cid) && !known.contains(m.character.as_str())
+            });
+        }
+    }
+    collect_rows_where(lib, move |m| {
+        m.character == character
+            && match category_id {
+                None => m.category_id.is_none(),
+                Some(cid) => m.category_id == Some(cid),
+            }
+    })
 }
 
 fn collect_rows_where(
@@ -240,6 +354,8 @@ fn collect_rows_where(
                 size_bytes: m.size_bytes,
                 file_count: m.file_count,
                 category_id: m.category_id,
+                note: m.note.clone(),
+                cover_image: m.cover_image.clone(),
                 dir,
             }
         })
@@ -251,7 +367,7 @@ fn collect_rows_where(
 fn rows_to_dtos(root: &Path, rows: Vec<ModRow>) -> Vec<ModDto> {
     rows.into_iter()
         .map(|m| {
-            let thumb = thumb_data_url(root, &m.dir, m.id);
+            let thumb = thumb_data_url(root, &m.dir, m.id, m.cover_image.as_deref());
             ModDto {
                 id: m.id,
                 name: m.name,
@@ -262,6 +378,8 @@ fn rows_to_dtos(root: &Path, rows: Vec<ModRow>) -> Vec<ModDto> {
                 file_count: m.file_count,
                 path: m.dir.display().to_string(),
                 category_id: m.category_id,
+                note: m.note,
+                cover_image: m.cover_image,
             }
         })
         .collect()
@@ -275,6 +393,8 @@ struct ModRow {
     size_bytes: i64,
     file_count: i64,
     category_id: Option<i64>,
+    note: Option<String>,
+    cover_image: Option<String>,
     dir: PathBuf,
 }
 
@@ -282,7 +402,7 @@ struct ModRow {
 #[allow(dead_code)]
 pub fn mod_list(lib: &Library, character: &str) -> Result<Vec<ModDto>, String> {
     let root = lib.layout.root.clone();
-    Ok(rows_to_dtos(&root, collect_mod_rows(lib, character)?))
+    Ok(rows_to_dtos(&root, collect_mod_rows(lib, character, None)?))
 }
 
 pub fn save_preset_named(
@@ -317,10 +437,20 @@ pub fn apply_preset_by_id(
 }
 
 /// 缩略图 data URL；缓存未生成时现场生成，失败静默为 None（不阻断列表）。
-pub fn thumb_data_url(library_root: &Path, mod_dir: &Path, mod_id: i64) -> Option<String> {
-    let path = liquimod_core::thumbs::ensure_thumbnail(library_root, mod_dir, mod_id)
-        .ok()
-        .flatten()?;
+pub fn thumb_data_url(
+    library_root: &Path,
+    mod_dir: &Path,
+    mod_id: i64,
+    custom_cover: Option<&str>,
+) -> Option<String> {
+    let path = liquimod_core::thumbs::ensure_thumbnail(
+        library_root,
+        mod_dir,
+        mod_id,
+        custom_cover,
+    )
+    .ok()
+    .flatten()?;
     let bytes = std::fs::read(path).ok()?;
     Some(format!(
         "data:image/jpeg;base64,{}",
@@ -355,7 +485,7 @@ pub fn set_mods_dir(c: &mut Config, path: PathBuf) -> Result<ConfigDto, String> 
     Ok(config_dto(c))
 }
 
-/// 启动已配置的可执行文件；未配置或文件缺失时报人话错误。不真正等待进程退出。
+/// 启动已配置的可执行文件；未配置或文件缺失时报人话错误。通过 ShellExecute 启动并自动支持提权。
 fn launch_exe(exe: Option<&Path>, what: &str) -> Result<(), String> {
     let Some(exe) = exe else {
         return Err(format!("未配置{what}路径，请在设置中配置"));
@@ -363,10 +493,7 @@ fn launch_exe(exe: Option<&Path>, what: &str) -> Result<(), String> {
     if !exe.is_file() {
         return Err(format!("{what}不存在：{}", exe.display()));
     }
-    std::process::Command::new(exe)
-        .current_dir(exe.parent().unwrap_or_else(|| Path::new(".")))
-        .spawn()
-        .map_err(|e| format!("启动{what}失败：{e}"))?;
+    liquimod_core::refresh::launch_program(exe).map_err(|e| format!("启动{what}失败：{e}"))?;
     tracing::info!("launched {} ({})", what, exe.display());
     Ok(())
 }
@@ -559,27 +686,75 @@ pub fn choose_mods_dir(
 #[tauri::command]
 pub async fn get_characters(
     state: tauri::State<'_, AppState>,
+    category_id: Option<i64>,
 ) -> Result<Vec<CharacterSummary>, String> {
     let library = std::sync::Arc::clone(&state.library);
+    let favorites = state.config.lock().unwrap().favorite_characters.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
-        character_summaries(&lib, liquimod_core::games::hsr::Hsr::shared())
+        character_summaries(
+            &lib,
+            liquimod_core::games::hsr::Hsr::shared(),
+            category_id,
+            &favorites,
+        )
     })
     .await
     .map_err(|e| format!("读取角色失败：{e}"))?
 }
 
 #[tauri::command]
+pub async fn set_mod_note(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    note: Option<String>,
+) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        lib.db
+            .set_mod_note(id, note.as_deref())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("更新 Mod 备注失败：{e}"))?
+}
+
+#[tauri::command]
+pub fn toggle_favorite_character(
+    state: tauri::State<AppState>,
+    internal_name: String,
+) -> Result<bool, String> {
+    let mut config = state.config.lock().unwrap();
+    let is_fav = if let Some(idx) = config
+        .favorite_characters
+        .iter()
+        .position(|s| s == &internal_name)
+    {
+        config.favorite_characters.remove(idx);
+        false
+    } else {
+        config.favorite_characters.push(internal_name);
+        true
+    };
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("保存配置失败：{e}"))?;
+    Ok(is_fav)
+}
+
+#[tauri::command]
 pub async fn list_mods(
     state: tauri::State<'_, AppState>,
     character: String,
+    category_id: Option<i64>,
 ) -> Result<Vec<ModDto>, String> {
     let library = std::sync::Arc::clone(&state.library);
     tauri::async_runtime::spawn_blocking(move || {
         let (root, rows) = {
             let lib = library.lock().unwrap();
             let root = lib.layout.root.clone();
-            let rows = collect_mod_rows(&lib, &character)?;
+            let rows = collect_mod_rows(&lib, &character, category_id)?;
             (root, rows)
         }; // 释放库锁后再做缩略图生成（可能慢）
         Ok(rows_to_dtos(&root, rows))
@@ -1061,6 +1236,549 @@ pub fn launch_loader(state: tauri::State<AppState>) -> Result<(), String> {
     launch_exe(exe.as_deref(), "加载器")
 }
 
+#[tauri::command]
+pub fn inspect_3dmigoto_dir(path: String) -> Result<MigotoInspectDto, String> {
+    let p = PathBuf::from(path);
+    let info = liquimod_core::d3d::inspect_migoto_dir(&p).map_err(|e| e.to_string())?;
+    Ok(MigotoInspectDto {
+        root: info.root.display().to_string(),
+        ini_path: info.ini_path.display().to_string(),
+        game_exe: info.game_exe.map(|p| p.display().to_string()),
+        loader_exe: info.loader_exe.map(|p| p.display().to_string()),
+        mods_dir: info.mods_dir.map(|p| p.display().to_string()),
+    })
+}
+
+#[tauri::command]
+pub fn import_3dmigoto_dir(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    path: String,
+) -> Result<ConfigDto, String> {
+    let p = PathBuf::from(path);
+    let info = liquimod_core::d3d::inspect_migoto_dir(&p).map_err(|e| e.to_string())?;
+
+    let dto = {
+        let mut config = state.config.lock().unwrap();
+        if let Some(mods_dir) = info.mods_dir {
+            if !mods_dir.exists() {
+                let _ = std::fs::create_dir_all(&mods_dir);
+            }
+            config.mods_dir = Some(mods_dir);
+        }
+        if let Some(game_exe) = info.game_exe {
+            config.game_exe = Some(game_exe);
+        }
+        if let Some(loader_exe) = info.loader_exe {
+            config.loader_exe = Some(loader_exe);
+        }
+        config
+            .save_to(&state.config_path)
+            .map_err(|e| format!("配置保存失败：{e}"))?;
+        config_dto(&config)
+    };
+
+    crate::start_watcher(&app, state.inner());
+    Ok(dto)
+}
+
+#[tauri::command]
+pub fn get_mod_keys(
+    state: tauri::State<AppState>,
+    id: i64,
+) -> Result<Vec<ModKeyBindingDto>, String> {
+    let lib = state.library.lock().unwrap();
+    let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    let keys = liquimod_core::d3d::scan_mod_keys(&mod_dir);
+    Ok(keys
+        .into_iter()
+        .map(|k| ModKeyBindingDto {
+            section: k.section,
+            key: k.key,
+            formatted_key: k.formatted_key,
+            back: k.back,
+            formatted_back: k.formatted_back,
+            key_type: k.key_type,
+            variable: k.variable,
+            steps: k.steps,
+            comment: k.comment,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn set_mod_custom_cover(
+    state: tauri::State<AppState>,
+    id: i64,
+    image_path: String,
+) -> Result<Option<String>, String> {
+    let src = PathBuf::from(image_path);
+    if !src.is_file() {
+        return Err("选择的图片文件不存在".to_string());
+    }
+    let lib = state.library.lock().unwrap();
+    let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+
+    let ext = src
+        .extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_else(|| "png".to_string());
+    let dest_name = format!("custom_cover_{}.{}", uuid::Uuid::new_v4(), ext);
+    let dest = mod_dir.join(&dest_name);
+    std::fs::copy(&src, &dest).map_err(|e| format!("保存外部封面失败：{e}"))?;
+
+    lib.db
+        .set_mod_cover_image(id, Some(&dest_name))
+        .map_err(|e| e.to_string())?;
+
+    // 清除并重新生成缩略图
+    liquimod_core::thumbs::remove_thumbnail(&lib.layout.root, id);
+    let new_thumb = thumb_data_url(&lib.layout.root, &mod_dir, id, Some(&dest_name));
+    Ok(new_thumb)
+}
+
+#[tauri::command]
+pub fn set_mod_cover_from_internal(
+    state: tauri::State<AppState>,
+    id: i64,
+    relative_path: String,
+) -> Result<String, String> {
+    let lib = state.library.lock().unwrap();
+    let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    let src = mod_dir.join(&relative_path);
+    if !src.is_file() {
+        return Err("所选图片不存在".to_string());
+    }
+
+    // 绝不拷贝覆盖磁盘原文件！直接将相对路径写入 DB 持久化记录
+    lib.db
+        .set_mod_cover_image(id, Some(&relative_path))
+        .map_err(|e| e.to_string())?;
+
+    liquimod_core::thumbs::remove_thumbnail(&lib.layout.root, id);
+    let new_thumb = thumb_data_url(&lib.layout.root, &mod_dir, id, Some(&relative_path));
+    new_thumb.ok_or_else(|| "生成缩略图失败".to_string())
+}
+
+#[tauri::command]
+pub fn reset_mod_cover(
+    state: tauri::State<AppState>,
+    id: i64,
+) -> Result<Option<String>, String> {
+    let lib = state.library.lock().unwrap();
+    let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+
+    lib.db
+        .set_mod_cover_image(id, None)
+        .map_err(|e| e.to_string())?;
+
+    liquimod_core::thumbs::remove_thumbnail(&lib.layout.root, id);
+    let new_thumb = thumb_data_url(&lib.layout.root, &mod_dir, id, None);
+    Ok(new_thumb)
+}
+
+#[tauri::command]
+pub fn get_mod_cover_image(
+    state: tauri::State<AppState>,
+    id: i64,
+) -> Result<Option<String>, String> {
+    let lib = state.library.lock().unwrap();
+    let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+
+    let Some(src) = liquimod_core::thumbs::find_preview_image(&mod_dir, row.cover_image.as_deref()) else {
+        return Ok(None);
+    };
+
+    let bytes = std::fs::read(&src).map_err(|e| e.to_string())?;
+    let lower = src.to_string_lossy().to_lowercase();
+    let mime = if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
+    } else if lower.ends_with(".bmp") {
+        "image/bmp"
+    } else if lower.ends_with(".avif") {
+        "image/avif"
+    } else {
+        "image/jpeg"
+    };
+
+    use base64::Engine;
+    let b64 = base64::prelude::BASE64_STANDARD.encode(&bytes);
+    Ok(Some(format!("data:{mime};base64,{b64}")))
+}
+
+#[tauri::command]
+pub fn get_active_conflicts(
+    state: tauri::State<AppState>,
+) -> Result<Vec<ConflictReportDto>, String> {
+    let lib = state.library.lock().unwrap();
+    let conflicts = liquimod_core::d3d::detect_conflicts(&lib).map_err(|e| e.to_string())?;
+    Ok(conflicts
+        .into_iter()
+        .map(|c| ConflictReportDto {
+            hash: c.hash,
+            section: c.section,
+            conflicting_mods: c
+                .conflicting_mods
+                .into_iter()
+                .map(|m| ConflictModInfoDto {
+                    id: m.id,
+                    character: m.character,
+                    name: m.name,
+                })
+                .collect(),
+        })
+        .collect())
+}
+
+fn open_in_explorer(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("路径不存在：{}", path.display()));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("打开资源管理器失败：{e}"))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("打开文件管理器失败：{e}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_mod_folder(state: tauri::State<AppState>, id: i64) -> Result<(), String> {
+    let lib = state.library.lock().unwrap();
+    let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    let path = lib.layout.mod_dir(&row.character, &row.name);
+    open_in_explorer(&path)
+}
+
+#[tauri::command]
+pub fn open_path_in_explorer(path: String) -> Result<(), String> {
+    open_in_explorer(Path::new(&path))
+}
+
+#[tauri::command]
+pub async fn trigger_refresh_game(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let refresh = std::sync::Arc::clone(&state.refresh);
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        maybe_refresh_game(&app2, &refresh);
+    })
+    .await
+    .map_err(|e| format!("刷新任务失败：{e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_mod_images(state: tauri::State<AppState>, id: i64) -> Result<Vec<ModImageDto>, String> {
+    let lib = state.library.lock().unwrap();
+    let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    if !mod_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let active_cover = liquimod_core::thumbs::find_preview_image(&mod_dir, row.cover_image.as_deref());
+
+    let mut images = Vec::new();
+    fn scan_imgs(
+        dir: &Path,
+        base: &Path,
+        depth: usize,
+        active_cover: Option<&PathBuf>,
+        out: &mut Vec<ModImageDto>,
+    ) {
+        if depth > 6 {
+            return;
+        }
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let lower = fname.to_lowercase();
+                    if lower.ends_with(".png")
+                        || lower.ends_with(".jpg")
+                        || lower.ends_with(".jpeg")
+                        || lower.ends_with(".webp")
+                        || lower.ends_with(".bmp")
+                        || lower.ends_with(".gif")
+                        || lower.ends_with(".avif")
+                    {
+                        if let Ok(meta) = p.metadata() {
+                            let rel = p
+                                .strip_prefix(base)
+                                .map(|r| r.to_string_lossy().replace('\\', "/"))
+                                .unwrap_or_else(|_| fname.to_string());
+
+                            if let Ok(bytes) = std::fs::read(&p) {
+                                let mime = if lower.ends_with(".png") {
+                                    "image/png"
+                                } else if lower.ends_with(".webp") {
+                                    "image/webp"
+                                } else if lower.ends_with(".gif") {
+                                    "image/gif"
+                                } else if lower.ends_with(".bmp") {
+                                    "image/bmp"
+                                } else if lower.ends_with(".avif") {
+                                    "image/avif"
+                                } else {
+                                    "image/jpeg"
+                                };
+                                use base64::Engine;
+                                let b64 = base64::prelude::BASE64_STANDARD.encode(&bytes);
+
+                                let (w, h) = match image::image_dimensions(&p) {
+                                    Ok((w, h)) => (Some(w), Some(h)),
+                                    Err(_) => (None, None),
+                                };
+
+                                let is_cover = active_cover.map(|c| c == &p).unwrap_or(false);
+
+                                out.push(ModImageDto {
+                                    relative_path: rel,
+                                    filename: fname.to_string(),
+                                    size_bytes: meta.len(),
+                                    data_url: format!("data:{mime};base64,{b64}"),
+                                    is_cover,
+                                    width: w,
+                                    height: h,
+                                });
+                            }
+                        }
+                    }
+                } else if p.is_dir() && !entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false) {
+                    scan_imgs(&p, base, depth + 1, active_cover, out);
+                }
+            }
+        }
+    }
+
+    scan_imgs(&mod_dir, &mod_dir, 0, active_cover.as_ref(), &mut images);
+    images.sort_by(|a, b| {
+        match (a.is_cover, b.is_cover) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.relative_path.cmp(&b.relative_path),
+        }
+    });
+
+    Ok(images)
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct RescanResultDto {
+    pub added: usize,
+    pub removed: usize,
+}
+
+#[tauri::command]
+pub async fn rescan_library(state: tauri::State<'_, AppState>) -> Result<RescanResultDto, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    let config = std::sync::Arc::clone(&state.config);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        let mods_dir = config.lock().unwrap().mods_dir.clone();
+        let (added, removed) = crate::reconcile_and_diff(&lib, mods_dir.as_deref())
+            .map_err(|e| format!("全库重新扫描失败：{e}"))?;
+        Ok(RescanResultDto { added, removed })
+    })
+    .await
+    .map_err(|e| format!("重新扫描任务失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn clean_cache(state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        let mods = lib.list().map_err(|e| e.to_string())?;
+        let valid: std::collections::HashSet<i64> = mods.into_iter().map(|m| m.id).collect();
+        let thumb_dir = lib.layout.root.join("thumbs");
+        let mut count = 0;
+        if let Ok(entries) = std::fs::read_dir(&thumb_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Ok(id) = stem.parse::<i64>() {
+                        if !valid.contains(&id) && std::fs::remove_file(&path).is_ok() {
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(count)
+    })
+    .await
+    .map_err(|e| format!("清理缓存任务失败：{e}"))?
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct DiagnosticStatusDto {
+    pub helper_ready: bool,
+    pub game_configured: bool,
+    pub loader_configured: bool,
+    pub mods_dir_configured: bool,
+}
+
+#[tauri::command]
+pub fn get_diagnostic_status(state: tauri::State<AppState>) -> DiagnosticStatusDto {
+    let config = state.config.lock().unwrap();
+    let helper_ready = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("liquimod-refresh-helper.exe")))
+        .map(|p| p.exists())
+        .unwrap_or(false);
+
+    DiagnosticStatusDto {
+        helper_ready,
+        game_configured: config
+            .game_exe
+            .as_ref()
+            .map(|p| !p.as_os_str().is_empty())
+            .unwrap_or(false),
+        loader_configured: config
+            .loader_exe
+            .as_ref()
+            .map(|p| !p.as_os_str().is_empty())
+            .unwrap_or(false),
+        mods_dir_configured: config
+            .mods_dir
+            .as_ref()
+            .map(|p| !p.as_os_str().is_empty())
+            .unwrap_or(false),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AssetUpdateCheckResultDto {
+    pub has_update: bool,
+    pub remote_version: Option<String>,
+    pub local_version: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_local_asset_version() -> Result<Option<String>, String> {
+    let service = liquimod_core::assets_sync::AssetSyncService::new();
+    Ok(service.get_local_version().await)
+}
+
+#[tauri::command]
+pub async fn check_game_assets_update(
+    game: Option<String>,
+) -> Result<AssetUpdateCheckResultDto, String> {
+    let service = liquimod_core::assets_sync::AssetSyncService::new();
+    let local = service.get_local_version().await;
+    let filter = game.as_deref().or(Some("Honkai"));
+    match service.check_for_updates(filter).await {
+        Ok(remote_opt) => {
+            let has_update = remote_opt.is_some();
+            Ok(AssetUpdateCheckResultDto {
+                has_update,
+                remote_version: remote_opt,
+                local_version: local,
+            })
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub async fn sync_game_assets(
+    app: tauri::AppHandle,
+    game: Option<String>,
+) -> Result<liquimod_core::assets_sync::AssetSyncResult, String> {
+    let service = liquimod_core::assets_sync::AssetSyncService::new();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+
+    let app_clone = app.clone();
+    let forward_task = tokio::spawn(async move {
+        while let Some(progress) = rx.recv().await {
+            let _ = app_clone.emit("asset-sync-progress", progress);
+        }
+    });
+
+    let filter = game.as_deref().or(Some("Honkai"));
+    let result = service.sync(filter, Some(tx)).await;
+    let _ = forward_task.await;
+
+    match result {
+        Ok(res) => {
+            Hsr::shared().reload();
+            let _ = app.emit("game-assets-updated", ());
+            Ok(res)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub async fn get_character_image_data(
+    game: Option<String>,
+    filename: String,
+) -> Result<Option<String>, String> {
+    let game_name = game.as_deref().unwrap_or("Honkai");
+    let asset_root = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("LiquiMod")
+        .join("GameAssets")
+        .join(game_name);
+
+    // 尝试多个可能路径（支持大小写与子目录）
+    let candidates = [
+        asset_root.join("Images").join("Characters").join(&filename),
+        asset_root.join("images").join("Characters").join(&filename),
+        asset_root.join("Images").join("characters").join(&filename),
+        asset_root.join("images").join("characters").join(&filename),
+        asset_root.join("Images").join(&filename),
+        asset_root.join("images").join(&filename),
+        asset_root.join(&filename),
+    ];
+
+    for path in &candidates {
+        if path.is_file() {
+            if let Ok(bytes) = tokio::fs::read(path).await {
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                let mime = if filename.to_lowercase().ends_with(".webp") {
+                    "image/webp"
+                } else if filename.to_lowercase().ends_with(".gif") {
+                    "image/gif"
+                } else if filename.to_lowercase().ends_with(".jpg")
+                    || filename.to_lowercase().ends_with(".jpeg")
+                {
+                    "image/jpeg"
+                } else {
+                    "image/png"
+                };
+                return Ok(Some(format!("data:{};base64,{}", mime, b64)));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1087,7 +1805,7 @@ mod tests {
         let src = tempfile::tempdir().unwrap();
         lib.add_folder(src.path(), "Acheron", "M1").unwrap();
         lib.add_folder(src.path(), "Stranger", "M2").unwrap();
-        let out = character_summaries(&lib, Hsr::shared()).unwrap();
+        let out = character_summaries(&lib, Hsr::shared(), None, &[]).unwrap();
         let acheron = out.iter().find(|c| c.internal_name == "Acheron").unwrap();
         assert_eq!(acheron.total, 1);
         // 未知角色不再以 Others 桶混进角色网格（实体「其他」分类承接，见 sync 测试）
@@ -1167,6 +1885,7 @@ mod tests {
             character_category_name: "角色".into(),
             game_exe: None,
             loader_exe: None,
+            favorite_characters: Vec::new(),
         };
         assert!(set_mods_dir(&mut c, PathBuf::from("C:/no/such/dir")).is_err());
         assert!(c.mods_dir.is_none());
@@ -1347,7 +2066,7 @@ mod tests {
     #[test]
     fn thumb_data_url_missing_is_none() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(crate::commands::thumb_data_url(dir.path(), dir.path(), 42).is_none());
+        assert!(crate::commands::thumb_data_url(dir.path(), dir.path(), 42, None).is_none());
     }
 
     #[test]
@@ -1434,6 +2153,7 @@ mod tests {
             character_category_name: "角色".into(),
             game_exe: None,
             loader_exe: None,
+            favorite_characters: Vec::new(),
         };
         maybe_auto_enable(&lib, &c, m.id, None);
         assert!(!lib.db.get_mod(m.id).unwrap().enabled);
@@ -1481,10 +2201,18 @@ mod tests {
         let m = lib.add_folder(src.path(), "Acheron", "M1").unwrap();
         let c = lib.db.create_category("武器").unwrap();
         lib.db.set_mod_category(m.id, Some(c)).unwrap();
-        let out = character_summaries(&lib, Hsr::shared()).unwrap();
+        let out = character_summaries(&lib, Hsr::shared(), None, &[]).unwrap();
         let acheron = out.iter().find(|x| x.internal_name == "Acheron").unwrap();
         assert_eq!(acheron.total, 0);
         assert!(mod_list(&lib, "Acheron").unwrap().is_empty());
+
+        // 指定分类时应包含在统计中
+        let cat_out = character_summaries(&lib, Hsr::shared(), Some(c), &[]).unwrap();
+        let cat_acheron = cat_out
+            .iter()
+            .find(|x| x.internal_name == "Acheron")
+            .unwrap();
+        assert_eq!(cat_acheron.total, 1);
     }
 
     #[test]
@@ -1506,5 +2234,53 @@ mod tests {
         .unwrap();
         assert_eq!(uncat.len(), 1);
         assert_eq!(uncat[0].name, "M2");
+    }
+
+    #[test]
+    fn inspect_3dmigoto_detects_and_dto_aligns() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join("3DMigotoLoader.exe"), b"mock").unwrap();
+        std::fs::create_dir_all(root.join("Mods")).unwrap();
+        std::fs::write(
+            root.join("d3dx.ini"),
+            "[Loader]\ntarget = C:\\StarRail\\Game\\StarRail.exe\nloader = 3DMigotoLoader.exe\n[Include]\ninclude_recursive = Mods\n",
+        )
+        .unwrap();
+
+        let dto = inspect_3dmigoto_dir(root.display().to_string()).unwrap();
+        assert_eq!(
+            dto.game_exe,
+            Some("C:\\StarRail\\Game\\StarRail.exe".to_string())
+        );
+        assert!(dto.loader_exe.unwrap().ends_with("3DMigotoLoader.exe"));
+        assert!(dto.mods_dir.unwrap().ends_with("Mods"));
+    }
+
+    #[test]
+    fn open_in_explorer_rejects_missing_path() {
+        let missing = Path::new("C:\\non_existent_folder_xyz_12345");
+        let res = open_in_explorer(missing);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("路径不存在"));
+    }
+
+    #[test]
+    fn get_mod_images_and_set_cover_test() {
+        let (_d, lib) = temp_lib();
+        let src = tempfile::tempdir().unwrap();
+        // 创建测试图片
+        std::fs::write(src.path().join("preview.png"), b"mock_img_data").unwrap();
+        std::fs::write(src.path().join("alt_cover.jpg"), b"mock_img_data_2").unwrap();
+        lib.add_folder(src.path(), "Acheron", "CustomM1").unwrap();
+
+        let mods = lib.list().unwrap();
+        let row = mods.iter().find(|m| m.name == "CustomM1").unwrap();
+        let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+
+        // 验证物理目录存在且可被扫描
+        assert!(mod_dir.is_dir());
+        assert!(mod_dir.join("preview.png").is_file());
+        assert!(mod_dir.join("alt_cover.jpg").is_file());
     }
 }

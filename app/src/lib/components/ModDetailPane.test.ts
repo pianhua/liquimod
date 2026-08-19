@@ -1,0 +1,62 @@
+import { render, fireEvent, screen, waitFor } from "@testing-library/svelte";
+import { describe, expect, it, vi } from "vitest";
+import ModDetailPane from "./ModDetailPane.svelte";
+import type { ModDto } from "$lib/api";
+
+const mockMod: ModDto = {
+  id: 101,
+  name: "Firefly Summer Skin",
+  enabled: true,
+  installed_at: 1700000000,
+  thumb: "data:image/jpeg;base64,mockthumb",
+  size_bytes: 15 * 1024 * 1024,
+  file_count: 8,
+  path: "E:/all in/SRMI/Mods/Firefly_Summer",
+  category_id: null,
+  note: null,
+  cover_image: null,
+};
+
+function setup(propsOverrides = {}) {
+  const props = {
+    mod: mockMod,
+    categories: [{ id: 1, name: "角色", ord: 0, kind: null, mod_count: 1 }],
+    ontoggle: vi.fn(),
+    onrename: vi.fn(async () => true),
+    onuninstall: vi.fn(async () => {}),
+    onopen: vi.fn(),
+    onmove: vi.fn(),
+    ...propsOverrides,
+  };
+  render(ModDetailPane, { props });
+  return props;
+}
+
+describe("ModDetailPane", () => {
+  it("渲染 Mod 名称、大图与元数据", () => {
+    setup();
+    expect(screen.getByText("Firefly Summer Skin")).toBeTruthy();
+    expect(screen.getByText("已启用")).toBeTruthy();
+    expect(screen.getByText("15.0 MB")).toBeTruthy();
+    expect(screen.getByText("8 个文件")).toBeTruthy();
+    expect(screen.getByText("归属角色")).toBeTruthy();
+  });
+
+  it("点击大开关触发 ontoggle", async () => {
+    const p = setup();
+    const sw = screen.getByRole("switch");
+    await fireEvent.click(sw);
+    expect(p.ontoggle).toHaveBeenCalledWith(false);
+  });
+
+  it("打开目录按钮触发 onopen", async () => {
+    const p = setup();
+    await fireEvent.click(screen.getByText("打开目录"));
+    expect(p.onopen).toHaveBeenCalled();
+  });
+
+  it("空态时显示未选中提示", () => {
+    setup({ mod: null });
+    expect(screen.getByText("未选中 Mod")).toBeTruthy();
+  });
+});

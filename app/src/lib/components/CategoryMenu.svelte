@@ -23,7 +23,10 @@
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === "Escape" && open) open = false;
+    if (e.key === "Escape" && open) {
+      e.stopPropagation();
+      open = false;
+    }
   }}
 />
 
@@ -47,7 +50,7 @@
       tabindex="-1"
       onclick={() => (open = false)}
     ></button>
-    <div class="glass radius-panel absolute right-0 top-9 z-50 w-44 p-1.5 flex flex-col gap-0.5">
+    <div class="glass-floating radius-panel absolute right-0 top-9 z-50 w-44 p-1.5 flex flex-col gap-0.5">
       <button
         class="text-left text-sm px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors hover:bg-[var(--glass-stroke)] flex items-center justify-between"
         onclick={() => pick(null)}

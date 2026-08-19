@@ -2,8 +2,8 @@ import type { ModDto } from "$lib/api";
 
 export type View =
   | { kind: "home" } // 角色网格（虚拟「角色」大类）
-  | { kind: "type"; id: number; name: string } // 光锥/立绘/场景/NPC/其他 实体分类
-  | { kind: "character"; name: string; display: string }; // 某角色详情
+  | { kind: "type"; id: number; name: string } // 实体分类
+  | { kind: "character"; name: string; display: string; categoryId?: number | null; categoryName?: string }; // 某角色详情
 
 export type ModSort = "recent" | "name" | "enabled";
 export type EnabledFilter = "all" | "on" | "off";
@@ -15,7 +15,7 @@ export function viewKey(v: View): string {
     case "type":
       return `type:${v.id}`;
     case "character":
-      return `char:${v.name}`;
+      return `char:${v.name}:${v.categoryId ?? "root"}`;
   }
 }
 

@@ -12,6 +12,7 @@
     onuninstall,
     onopen,
     onmove,
+    onmenu,
   }: {
     mod: ModDto;
     categories: CategoryDto[];
@@ -21,6 +22,7 @@
     onuninstall: () => Promise<void>;
     onopen: () => void;
     onmove: (categoryId: number | null) => void;
+    onmenu?: (e: MouseEvent, mod: ModDto) => void;
   } = $props();
 
   let renaming = $state(false);
@@ -71,9 +73,9 @@
     busy = true;
     try {
       await onuninstall();
-      confirming = false;
     } finally {
       busy = false;
+      confirming = false;
     }
   }
 
@@ -94,8 +96,15 @@
   role="listitem"
   tabindex="0"
   aria-label={mod.name}
-  class="group glass radius-card overflow-hidden outline-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  class="group glass radius-card overflow-hidden outline-none transition-all duration-200 ease-out hover:scale-[1.02] hover:-translate-y-1 hover:shadow-xl focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
   onkeydown={onCardKeydown}
+  oncontextmenu={(e) => {
+    if (onmenu) {
+      e.preventDefault();
+      e.stopPropagation();
+      onmenu(e, mod);
+    }
+  }}
 >
   {#if confirming}
     <div class="aspect-video grid place-items-center px-4">

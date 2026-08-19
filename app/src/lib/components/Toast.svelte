@@ -7,7 +7,7 @@
   {#each toasts as t (t.id)}
     <div
       transition:fly={{ y: 12, duration: 200 }}
-      class="glass radius-pill px-4 h-9 flex items-center text-sm"
+      class="glass-floating radius-pill px-4 h-9 flex items-center text-sm font-medium text-[var(--text)]"
       role="status"
     >
       {t.message}

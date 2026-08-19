@@ -67,13 +67,16 @@
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === "Escape" && open) open = false;
+    if (e.key === "Escape" && open) {
+      e.stopPropagation();
+      open = false;
+    }
   }}
 />
 
 <div class="relative">
   <button
-    class="glass radius-pill h-9 px-4 text-sm flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-[1.03]"
+    class="glass radius-pill h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer transition-transform hover:scale-[1.02]"
     class:w-full={block}
     class:justify-center={block}
     aria-label="预设"
@@ -98,7 +101,7 @@
       onclick={() => (open = false)}
     ></button>
     <div
-      class="glass radius-panel absolute z-50 p-2.5 flex flex-col gap-1"
+      class="glass-floating radius-panel absolute z-50 p-2.5 flex flex-col gap-1"
       class:left-0={block}
       class:right-0={!block}
       class:w-72={!block}

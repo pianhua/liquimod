@@ -1,52 +1,88 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { filterCharacters, type CharacterSummary } from "$lib/api";
+  import {
+    api,
+    filterCharacters,
+    sortCharacters,
+    type CharacterSummary,
+    type CharacterSortOption,
+  } from "$lib/api";
   import CharacterCard from "$lib/components/CharacterCard.svelte";
-
-  // 卡片自然高度 = 轨道宽 + 44：立绘宽 = 轨道宽 − p-2 左右 16（1:1），
-  // 再加 p-2 上下 16 + gap-2 8 + 信息条 h-9 36
-  const CARD_EXTRA = 44;
 
   let {
     characters,
     query,
+    sort = "default",
     onselect,
+    onmenu,
+    ontogglefavorite,
   }: {
     characters: CharacterSummary[];
     query: string;
+    sort?: CharacterSortOption;
     onselect: (c: CharacterSummary) => void;
+    onmenu?: (e: MouseEvent, c: CharacterSummary) => void;
+    ontogglefavorite?: (c: CharacterSummary) => void;
   } = $props();
 
-  let filtered = $derived(filterCharacters(characters, query));
+  let selectedElement = $state<string>("all");
 
-  let gridEl: HTMLDivElement;
-  let rowHeight = $state(0);
+  const elements = [
+    { id: "all", label: "全部", color: "var(--text)" },
+    { id: "Physical", label: "物理", color: "#a6a6a6" },
+    { id: "Fire", label: "火", color: "#f84f36" },
+    { id: "Ice", label: "冰", color: "#47c7fd" },
+    { id: "Lightning", label: "雷", color: "#c65df8" },
+    { id: "Wind", label: "风", color: "#00d696" },
+    { id: "Quantum", label: "量子", color: "#5b5df8" },
+    { id: "Imaginary", label: "虚数", color: "#f4d258" },
+  ];
 
-  onMount(() => {
-    if (typeof ResizeObserver === "undefined") return;
-    const measure = () => {
-      const cs = getComputedStyle(gridEl);
-      // 固定轨宽布局：第一条轨道的像素宽即卡片宽
-      const first = cs.gridTemplateColumns.split(" ").filter(Boolean)[0];
-      const w = parseFloat(first);
-      if (w > 0) rowHeight = w + CARD_EXTRA;
-    };
-    const ro = new ResizeObserver(measure);
-    ro.observe(gridEl);
-    measure();
-    return () => ro.disconnect();
-  });
+  let filtered = $derived(
+    sortCharacters(filterCharacters(characters, query, selectedElement), sort)
+  );
+
+  async function handleToggleFavorite(c: CharacterSummary) {
+    try {
+      const next = await api.toggleFavoriteCharacter(c.internal_name);
+      c.is_favorite = next;
+      if (ontogglefavorite) ontogglefavorite(c);
+    } catch {}
+  }
 </script>
 
-<div
-  bind:this={gridEl}
-  class="grid grid-cols-[repeat(auto-fill,180px)] justify-center gap-5 px-6 pt-2 pb-8 overflow-y-auto flex-1 min-h-0 content-start"
-  style:grid-auto-rows={rowHeight > 0 ? `${rowHeight}px` : undefined}
->
-  {#each filtered as c (c.internal_name)}
-    <CharacterCard character={c} onclick={() => onselect(c)} />
-  {/each}
-  {#if filtered.length === 0}
-    <p class="text-secondary col-span-full text-center mt-24">没有匹配的角色</p>
-  {/if}
+<div class="flex flex-col flex-1 min-h-0">
+  <!-- 属性筛选胶囊栏 -->
+  <div class="flex items-center gap-1.5 px-6 pb-2.5 shrink-0 overflow-x-auto select-none no-scrollbar">
+    {#each elements as el}
+      <button
+        class="glass radius-pill h-7 px-3 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer {selectedElement === el.id ? 'font-semibold shadow-sm' : 'text-secondary hover:text-[var(--text)]'}"
+        style={selectedElement === el.id
+          ? `background: var(--accent-fill); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent)`
+          : ""}
+        onclick={() => (selectedElement = el.id)}
+      >
+        {#if el.id !== "all"}
+          <span class="w-2 h-2 rounded-full shrink-0" style="background: {el.color}"></span>
+        {/if}
+        {el.label}
+      </button>
+    {/each}
+  </div>
+
+  <div
+    class="grid grid-cols-[repeat(auto-fill,180px)] [grid-auto-rows:200px] justify-center gap-5 px-6 pt-1 pb-8 overflow-y-auto flex-1 min-h-0 content-start will-change-scroll"
+    style="contain: layout style"
+  >
+    {#each filtered as c (c.internal_name)}
+      <CharacterCard
+        character={c}
+        onclick={() => onselect(c)}
+        {onmenu}
+        ontogglefavorite={() => handleToggleFavorite(c)}
+      />
+    {/each}
+    {#if filtered.length === 0}
+      <p class="text-secondary col-span-full text-center mt-24">没有匹配的角色</p>
+    {/if}
+  </div>
 </div>

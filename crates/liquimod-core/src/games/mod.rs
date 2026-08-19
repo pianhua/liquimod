@@ -8,13 +8,53 @@ pub struct CharacterInfo {
     pub internal_name: String,
     pub display_name: String,
     pub image: String,
+    #[serde(default)]
+    pub keys: Vec<String>,
+    pub element: Option<String>,
+    pub rarity: Option<u8>,
 }
 
-pub trait Game {
+pub trait GameAdapter: Send + Sync {
     fn id(&self) -> &'static str;
+    fn display_name(&self) -> &'static str;
     fn characters(&self) -> &[CharacterInfo];
     /// 游戏主进程可执行文件名（小写，含 .exe）。
     fn process_names(&self) -> &'static [&'static str];
+    /// 默认目标程序特征名
+    fn default_target_hint(&self) -> &'static str;
+}
+
+pub use GameAdapter as Game;
+
+pub struct GameRegistry {
+    adapters: Vec<Box<dyn GameAdapter>>,
+}
+
+impl GameRegistry {
+    pub fn global() -> &'static GameRegistry {
+        static REGISTRY: std::sync::OnceLock<GameRegistry> = std::sync::OnceLock::new();
+        REGISTRY.get_or_init(|| Self {
+            adapters: vec![Box::new(hsr::Hsr::new())],
+        })
+    }
+
+    pub fn list(&self) -> Vec<(&'static str, &'static str)> {
+        self.adapters
+            .iter()
+            .map(|a| (a.id(), a.display_name()))
+            .collect()
+    }
+
+    pub fn get(&self, id: &str) -> Option<&(dyn GameAdapter + 'static)> {
+        self.adapters
+            .iter()
+            .find(|a| a.id() == id)
+            .map(|b| b.as_ref())
+    }
+
+    pub fn default_game(&self) -> &(dyn GameAdapter + 'static) {
+        self.adapters[0].as_ref()
+    }
 }
 
 const MAX_DEPTH: usize = 8;
@@ -22,7 +62,7 @@ const MAX_FILE_BYTES: u64 = 256 * 1024;
 const MAX_TOTAL_BYTES: usize = 4 * 1024 * 1024;
 
 /// 从解压目录内容推断角色：合并 ini/txt/json 文本与全部文件名作为语料，
-/// 统计每个角色（内部名 / 显示名 / 立绘文件名stem）的小写命中次数，取最高者。
+/// 统计每个角色（内部名 / 显示名 / 关键字 / 立绘文件名stem）的小写命中次数，取最高者。
 pub fn infer_character(dir: &Path, game: &dyn Game) -> Option<String> {
     let mut corpus = String::new();
     let mut budget = MAX_TOTAL_BYTES;
@@ -34,12 +74,18 @@ pub fn infer_character(dir: &Path, game: &dyn Game) -> Option<String> {
             .file_stem()
             .map(|s| s.to_string_lossy().to_lowercase())
             .unwrap_or_default();
-        for needle in [
+
+        let mut candidates = vec![
             c.internal_name.to_lowercase(),
             c.display_name.to_lowercase(),
             stem,
-        ] {
-            if needle.len() < 3 {
+        ];
+        for k in &c.keys {
+            candidates.push(k.to_lowercase());
+        }
+
+        for needle in candidates {
+            if needle.chars().count() < 2 {
                 continue;
             }
             score += corpus.matches(&needle).count();
@@ -151,5 +197,17 @@ mod tests {
             infer_character(tmp.path(), fixture_game()),
             Some("Blade".to_string())
         );
+    }
+
+    #[test]
+    fn game_registry_lists_and_retrieves_adapters() {
+        let reg = GameRegistry::global();
+        let list = reg.list();
+        assert!(!list.is_empty());
+        assert_eq!(list[0].0, "hsr");
+
+        let hsr = reg.get("hsr").unwrap();
+        assert_eq!(hsr.display_name(), "崩坏：星穹铁道");
+        assert!(!hsr.characters().is_empty());
     }
 }

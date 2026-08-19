@@ -1,4 +1,6 @@
 pub mod archive;
+pub mod assets_sync;
+pub mod d3d;
 pub mod db;
 pub mod deploy;
 pub mod error;

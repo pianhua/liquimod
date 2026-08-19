@@ -68,6 +68,74 @@ impl RefreshClient {
     }
 }
 
+/// 启动外部可执行文件：
+/// 1. 优先使用 ShellExecuteW("open") 启动，工作目录设在 exe 所在文件夹；
+/// 2. 若遇 SE_ERR_ACCESSDENIED=5，自动以 "runas" 动词请求 UAC 提权；
+/// 3. 若启动成功返回 Ok(())，若用户取消或文件异常返回清晰错误。
+#[cfg(windows)]
+pub fn launch_program(exe: &Path) -> Result<()> {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SHOW_WINDOW_CMD;
+
+    let dir = exe.parent().unwrap_or_else(|| Path::new("."));
+    let open_verb: Vec<u16> = "open\0".encode_utf16().collect();
+    let runas_verb: Vec<u16> = "runas\0".encode_utf16().collect();
+    let file_path: Vec<u16> = format!("{}\0", exe.display()).encode_utf16().collect();
+    let dir_path: Vec<u16> = format!("{}\0", dir.display()).encode_utf16().collect();
+
+    let r = unsafe {
+        ShellExecuteW(
+            None,
+            PCWSTR(open_verb.as_ptr()),
+            PCWSTR(file_path.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR(dir_path.as_ptr()),
+            SHOW_WINDOW_CMD(1), // SW_SHOWNORMAL
+        )
+    };
+
+    if r.0 as usize > 32 {
+        return Ok(());
+    }
+
+    if r.0 as usize == 5 {
+        let r_runas = unsafe {
+            ShellExecuteW(
+                None,
+                PCWSTR(runas_verb.as_ptr()),
+                PCWSTR(file_path.as_ptr()),
+                PCWSTR::null(),
+                PCWSTR(dir_path.as_ptr()),
+                SHOW_WINDOW_CMD(1),
+            )
+        };
+        if r_runas.0 as usize > 32 {
+            return Ok(());
+        }
+        return Err(LiquiModError::Io(std::io::Error::other(format!(
+            "程序启动被拒绝或未授权管理员权限 (code {})",
+            r_runas.0 as usize
+        ))));
+    }
+
+    Err(LiquiModError::Io(std::io::Error::other(format!(
+        "启动程序失败「{}」(code {})",
+        exe.display(),
+        r.0 as usize
+    ))))
+}
+
+#[cfg(not(windows))]
+pub fn launch_program(exe: &Path) -> Result<()> {
+    let dir = exe.parent().unwrap_or_else(|| Path::new("."));
+    std::process::Command::new(exe)
+        .current_dir(dir)
+        .spawn()
+        .map_err(|e| LiquiModError::Io(e))?;
+    Ok(())
+}
+
 /// ShellExecuteW(runas) 提权启动 helper（UAC 拒绝返回 SE_ERR_ACCESSDENIED=5）。
 #[cfg(windows)]
 fn launch_elevated(exe: &Path) -> Result<()> {

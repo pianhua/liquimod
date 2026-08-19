@@ -12,6 +12,10 @@ pub struct ModEntry {
     pub file_count: i64,
     /// 所属自定义分类；None = 角色视图（默认）
     pub category_id: Option<i64>,
+    /// Mod 备忘与备注
+    pub note: Option<String>,
+    /// 自定义封面图片相对路径；None = 自动探测
+    pub cover_image: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

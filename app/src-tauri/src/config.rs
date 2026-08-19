@@ -23,6 +23,8 @@ pub struct Config {
     pub game_exe: Option<PathBuf>,
     #[serde(default)]
     pub loader_exe: Option<PathBuf>,
+    #[serde(default)]
+    pub favorite_characters: Vec<String>,
 }
 
 impl Config {
@@ -64,6 +66,7 @@ impl Config {
                 character_category_name: default_character_category_name(),
                 game_exe: None,
                 loader_exe: None,
+                favorite_characters: Vec::new(),
             },
         }
     }
@@ -104,6 +107,7 @@ mod tests {
             character_category_name: "角色".into(),
             game_exe: None,
             loader_exe: None,
+            favorite_characters: Vec::new(),
         };
         c.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path), c);

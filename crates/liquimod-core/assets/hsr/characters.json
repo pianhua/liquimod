@@ -1,7 +1,8 @@
 [
   {
     "Keys": [
-      "trailblazer"
+      "trailblazer",
+      "开拓者"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "trailblazer.gif",
@@ -14,11 +15,12 @@
     "ModFilesName": "trailblazer",
     "InGameSkins": [],
     "InternalName": "Trailblazer",
-    "DisplayName": "Trailblazer"
+    "DisplayName": "开拓者"
   },
   {
     "Keys": [
-      "arlan"
+      "arlan",
+      "阿兰"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "arlan.png",
@@ -31,11 +33,12 @@
     "ModFilesName": "Arlan",
     "InGameSkins": [],
     "InternalName": "Arlan",
-    "DisplayName": "Arlan"
+    "DisplayName": "阿兰"
   },
   {
     "Keys": [
-      "asta"
+      "asta",
+      "艾丝妲"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "asta.png",
@@ -48,11 +51,12 @@
     "ModFilesName": "Asta",
     "InGameSkins": [],
     "InternalName": "Asta",
-    "DisplayName": "Asta"
+    "DisplayName": "艾丝妲"
   },
   {
     "Keys": [
-      "bailu"
+      "bailu",
+      "白露"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "bailu.png",
@@ -65,11 +69,12 @@
     "ModFilesName": "Bailu",
     "InGameSkins": [],
     "InternalName": "Bailu",
-    "DisplayName": "Bailu"
+    "DisplayName": "白露"
   },
   {
     "Keys": [
-      "blade"
+      "blade",
+      "刃"
     ],
     "ReleaseDate": "2023-07-19T00:00:00",
     "Image": "blade.png",
@@ -82,11 +87,12 @@
     "ModFilesName": "Blade",
     "InGameSkins": [],
     "InternalName": "Blade",
-    "DisplayName": "Blade"
+    "DisplayName": "刃"
   },
   {
     "Keys": [
-      "bronya"
+      "bronya",
+      "布洛妮娅"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "bronya.png",
@@ -99,11 +105,12 @@
     "ModFilesName": "Bronya",
     "InGameSkins": [],
     "InternalName": "Bronya",
-    "DisplayName": "Bronya"
+    "DisplayName": "布洛妮娅"
   },
   {
     "Keys": [
-      "clara"
+      "clara",
+      "克拉拉"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "clara.png",
@@ -116,11 +123,13 @@
     "ModFilesName": "Clara",
     "InGameSkins": [],
     "InternalName": "Clara",
-    "DisplayName": "Clara"
+    "DisplayName": "克拉拉"
   },
   {
     "Keys": [
-      "danheng"
+      "danheng",
+      "dan heng",
+      "丹恒"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "danheng.png",
@@ -133,11 +142,13 @@
     "ModFilesName": "Dan Heng",
     "InGameSkins": [],
     "InternalName": "Dan Heng",
-    "DisplayName": "Dan Heng"
+    "DisplayName": "丹恒"
   },
   {
     "Keys": [
-      "danheng-IL"
+      "danheng-IL",
+      "dan heng il",
+      "丹恒•饮月"
     ],
     "ReleaseDate": "2023-08-30T00:00:00",
     "Image": "DHIL.png",
@@ -150,11 +161,13 @@
     "ModFilesName": "Dan Heng IL",
     "InGameSkins": [],
     "InternalName": "Dan Heng IL",
-    "DisplayName": "Dan Heng - IL"
+    "DisplayName": "丹恒•饮月"
   },
   {
     "Keys": [
-      "danheng-PT"
+      "danheng-PT",
+      "dan heng pt",
+      "丹恒•腾荒"
     ],
     "ReleaseDate": "2025-10-15T00:00:00",
     "Image": "DHPT.png",
@@ -167,11 +180,13 @@
     "ModFilesName": "Dan Heng PT",
     "InGameSkins": [],
     "InternalName": "Dan Heng PT",
-    "DisplayName": "Dan Heng - PT"
+    "DisplayName": "丹恒•腾荒"
   },
   {
     "Keys": [
-      "fu xuan"
+      "fu xuan",
+      "fuxuan",
+      "符玄"
     ],
     "ReleaseDate": "2023-09-20T00:00:00",
     "Image": "fuxuan.png",
@@ -184,11 +199,12 @@
     "ModFilesName": "FuXuan",
     "InGameSkins": [],
     "InternalName": "FuXuan",
-    "DisplayName": "Fu Xuan"
+    "DisplayName": "符玄"
   },
   {
     "Keys": [
-      "gepard"
+      "gepard",
+      "杰帕德"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "gepard.png",
@@ -201,11 +217,12 @@
     "ModFilesName": "Gepard",
     "InGameSkins": [],
     "InternalName": "Gepard",
-    "DisplayName": "Gepard"
+    "DisplayName": "杰帕德"
   },
   {
     "Keys": [
-      "guinaifen"
+      "guinaifen",
+      "桂乃芬"
     ],
     "ReleaseDate": "2023-10-27T00:00:00",
     "Image": "guinaifen.png",
@@ -218,11 +235,12 @@
     "ModFilesName": "Guinaifen",
     "InGameSkins": [],
     "InternalName": "Guinaifen",
-    "DisplayName": "Guinaifen"
+    "DisplayName": "桂乃芬"
   },
   {
     "Keys": [
-      "herta"
+      "herta",
+      "黑塔"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "herta.png",
@@ -235,11 +253,12 @@
     "ModFilesName": "Herta",
     "InGameSkins": [],
     "InternalName": "Herta",
-    "DisplayName": "Herta"
+    "DisplayName": "黑塔"
   },
   {
     "Keys": [
-      "himeko"
+      "himeko",
+      "姬子"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "himeko.png",
@@ -252,11 +271,12 @@
     "ModFilesName": "Himeko",
     "InGameSkins": [],
     "InternalName": "Himeko",
-    "DisplayName": "Himeko"
+    "DisplayName": "姬子"
   },
   {
     "Keys": [
-      "hook"
+      "hook",
+      "虎克"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "hook.png",
@@ -269,11 +289,12 @@
     "ModFilesName": "Hook",
     "InGameSkins": [],
     "InternalName": "Hook",
-    "DisplayName": "Hook"
+    "DisplayName": "虎克"
   },
   {
     "Keys": [
-      "jingyuan"
+      "jingyuan",
+      "景元"
     ],
     "ReleaseDate": "2023-05-17T00:00:00",
     "Image": "jingyuan.png",
@@ -286,11 +307,12 @@
     "ModFilesName": "JingYuan",
     "InGameSkins": [],
     "InternalName": "JingYuan",
-    "DisplayName": "Jing Yuan"
+    "DisplayName": "景元"
   },
   {
     "Keys": [
-      "jingliu"
+      "jingliu",
+      "镜流"
     ],
     "ReleaseDate": "2023-10-11T00:00:00",
     "Image": "jingliu.png",
@@ -303,11 +325,12 @@
     "ModFilesName": "Jingliu",
     "InGameSkins": [],
     "InternalName": "Jingliu",
-    "DisplayName": "Jingliu"
+    "DisplayName": "镜流"
   },
   {
     "Keys": [
-      "kafka"
+      "kafka",
+      "卡芙卡"
     ],
     "ReleaseDate": "2023-08-09T00:00:00",
     "Image": "kafka.png",
@@ -320,11 +343,12 @@
     "ModFilesName": "Kafka",
     "InGameSkins": [],
     "InternalName": "Kafka",
-    "DisplayName": "Kafka"
+    "DisplayName": "卡芙卡"
   },
   {
     "Keys": [
-      "luka"
+      "luka",
+      "卢卡"
     ],
     "ReleaseDate": "2023-08-09T00:00:00",
     "Image": "luka.png",
@@ -337,11 +361,12 @@
     "ModFilesName": "Luka",
     "InGameSkins": [],
     "InternalName": "Luka",
-    "DisplayName": "Luka"
+    "DisplayName": "卢卡"
   },
   {
     "Keys": [
-      "luocha"
+      "luocha",
+      "罗刹"
     ],
     "ReleaseDate": "2023-06-28T00:00:00",
     "Image": "luocha.png",
@@ -354,11 +379,12 @@
     "ModFilesName": "Luocha",
     "InGameSkins": [],
     "InternalName": "Luocha",
-    "DisplayName": "Luocha"
+    "DisplayName": "罗刹"
   },
   {
     "Keys": [
-      "lynx"
+      "lynx",
+      "玲可"
     ],
     "ReleaseDate": "2023-09-20T00:00:00",
     "Image": "lynx.png",
@@ -371,11 +397,12 @@
     "ModFilesName": "Lynx",
     "InGameSkins": [],
     "InternalName": "Lynx",
-    "DisplayName": "Lynx"
+    "DisplayName": "玲可"
   },
   {
     "Keys": [
-      "march7"
+      "march7",
+      "三月七"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "march7.png",
@@ -401,11 +428,12 @@
       }
     ],
     "InternalName": "March7",
-    "DisplayName": "March 7th"
+    "DisplayName": "三月七"
   },
   {
     "Keys": [
-      "natasha"
+      "natasha",
+      "娜塔莎"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "natasha.png",
@@ -418,11 +446,12 @@
     "ModFilesName": "Natasha",
     "InGameSkins": [],
     "InternalName": "Natasha",
-    "DisplayName": "Natasha"
+    "DisplayName": "娜塔莎"
   },
   {
     "Keys": [
-      "pela"
+      "pela",
+      "佩拉"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "pela.png",
@@ -435,11 +464,12 @@
     "ModFilesName": "Pela",
     "InGameSkins": [],
     "InternalName": "Pela",
-    "DisplayName": "Pela"
+    "DisplayName": "佩拉"
   },
   {
     "Keys": [
-      "qingque"
+      "qingque",
+      "青雀"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "qingque.png",
@@ -452,11 +482,12 @@
     "ModFilesName": "Qingque",
     "InGameSkins": [],
     "InternalName": "Qingque",
-    "DisplayName": "Qingque"
+    "DisplayName": "青雀"
   },
   {
     "Keys": [
-      "sampo"
+      "sampo",
+      "桑博"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "sampo.png",
@@ -469,11 +500,12 @@
     "ModFilesName": "Sampo",
     "InGameSkins": [],
     "InternalName": "Sampo",
-    "DisplayName": "Sampo"
+    "DisplayName": "桑博"
   },
   {
     "Keys": [
-      "seele"
+      "seele",
+      "希儿"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "seele.png",
@@ -486,11 +518,12 @@
     "ModFilesName": "Seele",
     "InGameSkins": [],
     "InternalName": "Seele",
-    "DisplayName": "Seele"
+    "DisplayName": "希儿"
   },
   {
     "Keys": [
-      "serval"
+      "serval",
+      "希露瓦"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "serval.png",
@@ -503,11 +536,12 @@
     "ModFilesName": "Serval",
     "InGameSkins": [],
     "InternalName": "Serval",
-    "DisplayName": "Serval"
+    "DisplayName": "希露瓦"
   },
   {
     "Keys": [
-      "silverwolf"
+      "silverwolf",
+      "银狼"
     ],
     "ReleaseDate": "2023-06-07T00:00:00",
     "Image": "silverwolf.png",
@@ -520,11 +554,12 @@
     "ModFilesName": "SilverWolf",
     "InGameSkins": [],
     "InternalName": "SilverWolf",
-    "DisplayName": "Silver Wolf"
+    "DisplayName": "银狼"
   },
   {
     "Keys": [
-      "sushang"
+      "sushang",
+      "素裳"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "sushang.png",
@@ -537,11 +572,12 @@
     "ModFilesName": "Sushang",
     "InGameSkins": [],
     "InternalName": "Sushang",
-    "DisplayName": "Sushang"
+    "DisplayName": "素裳"
   },
   {
     "Keys": [
-      "tingyun"
+      "tingyun",
+      "停云"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "tingyun.png",
@@ -554,11 +590,12 @@
     "ModFilesName": "Tingyun",
     "InGameSkins": [],
     "InternalName": "Tingyun",
-    "DisplayName": "Tingyun"
+    "DisplayName": "停云"
   },
   {
     "Keys": [
-      "topaz"
+      "topaz",
+      "托帕&账账"
     ],
     "ReleaseDate": "2023-10-27T00:00:00",
     "Image": "topaz.png",
@@ -571,11 +608,12 @@
     "ModFilesName": "Topaz",
     "InGameSkins": [],
     "InternalName": "Topaz",
-    "DisplayName": "Topaz and Numby"
+    "DisplayName": "托帕&账账"
   },
   {
     "Keys": [
-      "welt"
+      "welt",
+      "瓦尔特"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "welt.png",
@@ -588,11 +626,12 @@
     "ModFilesName": "Welt",
     "InGameSkins": [],
     "InternalName": "Welt",
-    "DisplayName": "Welt"
+    "DisplayName": "瓦尔特"
   },
   {
     "Keys": [
-      "yanqing"
+      "yanqing",
+      "彦卿"
     ],
     "ReleaseDate": "2023-04-26T00:00:00",
     "Image": "yanqing.png",
@@ -605,11 +644,12 @@
     "ModFilesName": "Yanqing",
     "InGameSkins": [],
     "InternalName": "Yanqing",
-    "DisplayName": "Yanqing"
+    "DisplayName": "彦卿"
   },
   {
     "Keys": [
-      "yukong"
+      "yukong",
+      "驭空"
     ],
     "ReleaseDate": "2023-06-28T00:00:00",
     "Image": "yukong.png",
@@ -622,11 +662,12 @@
     "ModFilesName": "Yukong",
     "InGameSkins": [],
     "InternalName": "Yukong",
-    "DisplayName": "Yukong"
+    "DisplayName": "驭空"
   },
   {
     "Keys": [
-      "argenti"
+      "argenti",
+      "银枝"
     ],
     "ReleaseDate": "2023-12-06T00:00:00",
     "Image": "argenti.png",
@@ -639,11 +680,12 @@
     "ModFilesName": "Argenti",
     "InGameSkins": [],
     "InternalName": "Argenti",
-    "DisplayName": "Argenti"
+    "DisplayName": "银枝"
   },
   {
     "Keys": [
-      "drratio"
+      "drratio",
+      "真理医生"
     ],
     "ReleaseDate": "2024-01-17T00:00:00",
     "Image": "drratio.png",
@@ -656,11 +698,12 @@
     "ModFilesName": "DrRatio",
     "InGameSkins": [],
     "InternalName": "DrRatio",
-    "DisplayName": "Dr. Ratio"
+    "DisplayName": "真理医生"
   },
   {
     "Keys": [
-      "hanya"
+      "hanya",
+      "寒鸦"
     ],
     "ReleaseDate": "2023-12-06T00:00:00",
     "Image": "hanya.png",
@@ -673,11 +716,12 @@
     "ModFilesName": "Hanya",
     "InGameSkins": [],
     "InternalName": "Hanya",
-    "DisplayName": "Hanya"
+    "DisplayName": "寒鸦"
   },
   {
     "Keys": [
-      "huohuo"
+      "huohuo",
+      "藿藿"
     ],
     "ReleaseDate": "2023-12-06T00:00:00",
     "Image": "huohuo.png",
@@ -690,11 +734,12 @@
     "ModFilesName": "Huohuo",
     "InGameSkins": [],
     "InternalName": "Huohuo",
-    "DisplayName": "Huohuo"
+    "DisplayName": "藿藿"
   },
   {
     "Keys": [
-      "ruanmei"
+      "ruanmei",
+      "阮•梅"
     ],
     "ReleaseDate": "2023-12-27T00:00:00",
     "Image": "ruanmei.png",
@@ -707,11 +752,12 @@
     "ModFilesName": "RuanMei",
     "InGameSkins": [],
     "InternalName": "RuanMei",
-    "DisplayName": "Ruan Mei"
+    "DisplayName": "阮•梅"
   },
   {
     "Keys": [
-      "xueyi"
+      "xueyi",
+      "雪衣"
     ],
     "ReleaseDate": "2023-12-27T00:00:00",
     "Image": "xueyi.png",
@@ -724,11 +770,12 @@
     "ModFilesName": "Xueyi",
     "InGameSkins": [],
     "InternalName": "Xueyi",
-    "DisplayName": "Xueyi"
+    "DisplayName": "雪衣"
   },
   {
     "Keys": [
-      "blackswan"
+      "blackswan",
+      "黑天鹅"
     ],
     "ReleaseDate": "2024-02-06T00:00:00",
     "Image": "blackswan.png",
@@ -741,11 +788,12 @@
     "ModFilesName": "BlackSwan",
     "InGameSkins": [],
     "InternalName": "BlackSwan",
-    "DisplayName": "Black Swan"
+    "DisplayName": "黑天鹅"
   },
   {
     "Keys": [
-      "sparkle"
+      "sparkle",
+      "花火"
     ],
     "ReleaseDate": "2024-02-29T00:00:00",
     "Image": "sparkle.png",
@@ -758,11 +806,12 @@
     "ModFilesName": "Sparkle",
     "InGameSkins": [],
     "InternalName": "Sparkle",
-    "DisplayName": "Sparkle"
+    "DisplayName": "花火"
   },
   {
     "Keys": [
-      "misha"
+      "misha",
+      "米沙"
     ],
     "ReleaseDate": "2024-02-29T00:00:00",
     "Image": "misha.png",
@@ -775,11 +824,12 @@
     "ModFilesName": "Misha",
     "InGameSkins": [],
     "InternalName": "Misha",
-    "DisplayName": "Misha"
+    "DisplayName": "米沙"
   },
   {
     "Keys": [
-      "acheron"
+      "acheron",
+      "黄泉"
     ],
     "ReleaseDate": "2024-03-27T00:00:00",
     "Image": "acheron.png",
@@ -792,11 +842,12 @@
     "ModFilesName": "Acheron",
     "InGameSkins": [],
     "InternalName": "Acheron",
-    "DisplayName": "Acheron"
+    "DisplayName": "黄泉"
   },
   {
     "Keys": [
-      "aventurine"
+      "aventurine",
+      "砂金"
     ],
     "ReleaseDate": "2024-03-27T00:00:00",
     "Image": "aventurine.png",
@@ -809,11 +860,12 @@
     "ModFilesName": "Aventurine",
     "InGameSkins": [],
     "InternalName": "Aventurine",
-    "DisplayName": "Aventurine"
+    "DisplayName": "砂金"
   },
   {
     "Keys": [
-      "gallagher"
+      "gallagher",
+      "加拉赫"
     ],
     "ReleaseDate": "2024-03-27T00:00:00",
     "Image": "gallagher.png",
@@ -826,11 +878,12 @@
     "ModFilesName": "Gallagher",
     "InGameSkins": [],
     "InternalName": "Gallagher",
-    "DisplayName": "Gallagher"
+    "DisplayName": "加拉赫"
   },
   {
     "Keys": [
-      "robin"
+      "robin",
+      "知更鸟"
     ],
     "ReleaseDate": "2024-05-07T00:00:00",
     "Image": "robin.png",
@@ -843,11 +896,12 @@
     "ModFilesName": "Robin",
     "InGameSkins": [],
     "InternalName": "Robin",
-    "DisplayName": "Robin"
+    "DisplayName": "知更鸟"
   },
   {
     "Keys": [
-      "boothill"
+      "boothill",
+      "波提欧"
     ],
     "ReleaseDate": "2024-05-07T00:00:00",
     "Image": "boothill.png",
@@ -860,11 +914,12 @@
     "ModFilesName": "Boothill",
     "InGameSkins": [],
     "InternalName": "Boothill",
-    "DisplayName": "Boothill"
+    "DisplayName": "波提欧"
   },
   {
     "Keys": [
-      "firefly"
+      "firefly",
+      "流萤"
     ],
     "ReleaseDate": "2024-06-18T00:00:00",
     "Image": "firefly.png",
@@ -884,11 +939,12 @@
       }
     ],
     "InternalName": "Firefly",
-    "DisplayName": "Firefly"
+    "DisplayName": "流萤"
   },
   {
     "Keys": [
-      "jade"
+      "jade",
+      "翡翠"
     ],
     "ReleaseDate": "2024-06-18T00:00:00",
     "Image": "jade.png",
@@ -901,11 +957,12 @@
     "ModFilesName": "Jade",
     "InGameSkins": [],
     "InternalName": "Jade",
-    "DisplayName": "Jade"
+    "DisplayName": "翡翠"
   },
   {
     "Keys": [
-      "yunli"
+      "yunli",
+      "云璃"
     ],
     "ReleaseDate": "2024-07-31T00:00:00",
     "Image": "yunli.png",
@@ -918,11 +975,12 @@
     "ModFilesName": "Yunli",
     "InGameSkins": [],
     "InternalName": "Yunli",
-    "DisplayName": "Yunli"
+    "DisplayName": "云璃"
   },
   {
     "Keys": [
-      "jiaoqiu"
+      "jiaoqiu",
+      "椒丘"
     ],
     "ReleaseDate": "2024-08-21T00:00:00",
     "Image": "jiaoqiu.png",
@@ -935,11 +993,12 @@
     "ModFilesName": "Jiaoqiu",
     "InGameSkins": [],
     "InternalName": "Jiaoqiu",
-    "DisplayName": "Jiaoqiu"
+    "DisplayName": "椒丘"
   },
   {
     "Keys": [
-      "feixiao"
+      "feixiao",
+      "飞霄"
     ],
     "ReleaseDate": "2024-09-10T00:00:00",
     "Image": "feixiao.png",
@@ -952,11 +1011,13 @@
     "ModFilesName": "Feixiao",
     "InGameSkins": [],
     "InternalName": "Feixiao",
-    "DisplayName": "Feixiao"
+    "DisplayName": "飞霄"
   },
   {
     "Keys": [
-      "Lingsha"
+      "Lingsha",
+      "lingsha",
+      "灵砂"
     ],
     "ReleaseDate": "2024-10-01T00:00:00",
     "Image": "lingsha.png",
@@ -969,11 +1030,13 @@
     "ModFilesName": "Lingsha",
     "InGameSkins": [],
     "InternalName": "Lingsha",
-    "DisplayName": "Lingsha"
+    "DisplayName": "灵砂"
   },
   {
     "Keys": [
-      "Moze"
+      "Moze",
+      "moze",
+      "貊泽"
     ],
     "ReleaseDate": "2024-09-10T00:00:00",
     "Image": "moze.png",
@@ -986,12 +1049,14 @@
     "ModFilesName": "Moze",
     "InGameSkins": [],
     "InternalName": "Moze",
-    "DisplayName": "Moze"
+    "DisplayName": "貊泽"
   },
   {
     "Keys": [
       "Rappa",
-      "AK-A-3"
+      "AK-A-3",
+      "rappa",
+      "乱破"
     ],
     "ReleaseDate": "2024-10-23T00:00:00",
     "Image": "Rappa.png",
@@ -1004,11 +1069,13 @@
     "ModFilesName": "Rappa",
     "InGameSkins": [],
     "InternalName": "Rappa",
-    "DisplayName": "Rappa"
+    "DisplayName": "乱破"
   },
   {
     "Keys": [
-      "Fugue"
+      "Fugue",
+      "fugue",
+      "忘归人"
     ],
     "ReleaseDate": "2024-12-03T00:00:00",
     "Image": "tingyun5s.png",
@@ -1021,11 +1088,13 @@
     "ModFilesName": "Fugue",
     "InGameSkins": [],
     "InternalName": "Fugue",
-    "DisplayName": "Fugue"
+    "DisplayName": "忘归人"
   },
   {
     "Keys": [
-      "Sunday"
+      "Sunday",
+      "sunday",
+      "星期日"
     ],
     "ReleaseDate": "2024-12-03T00:00:00",
     "Image": "sunday.png",
@@ -1038,11 +1107,13 @@
     "ModFilesName": "Sunday",
     "InGameSkins": [],
     "InternalName": "Sunday",
-    "DisplayName": "Sunday"
+    "DisplayName": "星期日"
   },
   {
     "Keys": [
-      "The Herta"
+      "The Herta",
+      "the herta",
+      "大黑塔"
     ],
     "ReleaseDate": "2025-01-15T00:00:00",
     "Image": "herta5s.png",
@@ -1055,11 +1126,13 @@
     "ModFilesName": "The Herta",
     "InGameSkins": [],
     "InternalName": "The Herta",
-    "DisplayName": "The Herta"
+    "DisplayName": "大黑塔"
   },
   {
     "Keys": [
-      "Aglaea"
+      "Aglaea",
+      "aglaea",
+      "阿格莱雅"
     ],
     "ReleaseDate": "2025-02-05T00:00:00",
     "Image": "aglaea.png",
@@ -1072,11 +1145,13 @@
     "ModFilesName": "Aglaea",
     "InGameSkins": [],
     "InternalName": "Aglaea",
-    "DisplayName": "Aglaea"
+    "DisplayName": "阿格莱雅"
   },
   {
     "Keys": [
-      "Tribbie"
+      "Tribbie",
+      "tribbie",
+      "缇宝"
     ],
     "ReleaseDate": "2025-02-26T00:00:00",
     "Image": "tribbie.png",
@@ -1089,11 +1164,13 @@
     "ModFilesName": "Tribbie",
     "InGameSkins": [],
     "InternalName": "Tribbie",
-    "DisplayName": "Tribbie"
+    "DisplayName": "缇宝"
   },
   {
     "Keys": [
-      "Mydei"
+      "Mydei",
+      "mydei",
+      "万敌"
     ],
     "ReleaseDate": "2025-03-19T00:00:00",
     "Image": "mydei.png",
@@ -1106,11 +1183,13 @@
     "ModFilesName": "Mydei",
     "InGameSkins": [],
     "InternalName": "Mydei",
-    "DisplayName": "Mydei"
+    "DisplayName": "万敌"
   },
   {
     "Keys": [
-      "Castorice"
+      "Castorice",
+      "castorice",
+      "遐蝶"
     ],
     "ReleaseDate": "2025-04-09T00:00:00",
     "Image": "castorice.png",
@@ -1123,11 +1202,12 @@
     "ModFilesName": "Castorice",
     "InGameSkins": [],
     "InternalName": "Castorice",
-    "DisplayName": "Castorice"
+    "DisplayName": "遐蝶"
   },
   {
     "Keys": [
-      "anaxa"
+      "anaxa",
+      "那刻夏"
     ],
     "ReleaseDate": "2025-04-30T00:00:00",
     "Image": "anaxa.png",
@@ -1140,11 +1220,13 @@
     "ModFilesName": "Anaxa",
     "InGameSkins": [],
     "InternalName": "Anaxa",
-    "DisplayName": "Anaxa"
+    "DisplayName": "那刻夏"
   },
   {
     "Keys": [
-      "Hyacine"
+      "Hyacine",
+      "hyacine",
+      "风堇"
     ],
     "ReleaseDate": "2025-03-21T00:00:00",
     "Image": "hyacine.png",
@@ -1157,11 +1239,13 @@
     "ModFilesName": "Hyacine",
     "InGameSkins": [],
     "InternalName": "Hyacine",
-    "DisplayName": "Hyacine"
+    "DisplayName": "风堇"
   },
   {
     "Keys": [
-      "Cipher"
+      "Cipher",
+      "cipher",
+      "赛飞儿"
     ],
     "ReleaseDate": "2025-06-11T00:00:00",
     "Image": "cipher.png",
@@ -1174,11 +1258,13 @@
     "ModFilesName": "Cipher",
     "InGameSkins": [],
     "InternalName": "Cipher",
-    "DisplayName": "Cipher"
+    "DisplayName": "赛飞儿"
   },
   {
     "Keys": [
-      "Phainon"
+      "Phainon",
+      "phainon",
+      "白厄"
     ],
     "ReleaseDate": "2025-07-02T00:00:00",
     "Image": "phainon.png",
@@ -1191,11 +1277,12 @@
     "ModFilesName": "Phainon",
     "InGameSkins": [],
     "InternalName": "Phainon",
-    "DisplayName": "Phainon"
+    "DisplayName": "白厄"
   },
   {
     "Keys": [
-      "Saber"
+      "Saber",
+      "saber"
     ],
     "ReleaseDate": "2025-07-11T00:00:00",
     "Image": "saber.png",
@@ -1212,7 +1299,8 @@
   },
   {
     "Keys": [
-      "Archer"
+      "Archer",
+      "archer"
     ],
     "ReleaseDate": "2025-07-11T00:00:00",
     "Image": "archer.png",
@@ -1229,7 +1317,9 @@
   },
   {
     "Keys": [
-      "Cerydra"
+      "Cerydra",
+      "cerydra",
+      "刻律德菈"
     ],
     "ReleaseDate": "2025-08-02T00:00:00",
     "Image": "cerydra.png",
@@ -1242,11 +1332,13 @@
     "ModFilesName": "Cerydra",
     "InGameSkins": [],
     "InternalName": "Cerydra",
-    "DisplayName": "Cerydra"
+    "DisplayName": "刻律德菈"
   },
   {
     "Keys": [
-      "Hysilens"
+      "Hysilens",
+      "hysilens",
+      "海瑟音"
     ],
     "ReleaseDate": "2025-08-16T00:00:00",
     "Image": "hysilens.png",
@@ -1259,11 +1351,13 @@
     "ModFilesName": "Hysilens",
     "InGameSkins": [],
     "InternalName": "Hysilens",
-    "DisplayName": "Hysilens"
+    "DisplayName": "海瑟音"
   },
   {
     "Keys": [
-      "Evernight"
+      "Evernight",
+      "evernight",
+      "长夜月"
     ],
     "ReleaseDate": "2025-09-24T00:00:00",
     "Image": "evernight.png",
@@ -1276,11 +1370,13 @@
     "ModFilesName": "Evernight",
     "InGameSkins": [],
     "InternalName": "Evernight",
-    "DisplayName": "Evernight"
+    "DisplayName": "长夜月"
   },
   {
     "Keys": [
-      "Cyrene"
+      "Cyrene",
+      "cyrene",
+      "昔涟"
     ],
     "ReleaseDate": "2025-11-05T00:00:00",
     "Image": "Cyrene.png",
@@ -1293,11 +1389,13 @@
     "ModFilesName": "Cyrene",
     "InGameSkins": [],
     "InternalName": "Cyrene",
-    "DisplayName": "Cyrene"
+    "DisplayName": "昔涟"
   },
   {
     "Keys": [
-      "The Dahlia"
+      "The Dahlia",
+      "dahlia",
+      "大丽花"
     ],
     "ReleaseDate": "2025-12-17T00:00:00",
     "Image": "dahlia.png",
@@ -1310,11 +1408,13 @@
     "ModFilesName": "Dahlia",
     "InGameSkins": [],
     "InternalName": "Dahlia",
-    "DisplayName": "The Dahlia"
+    "DisplayName": "大丽花"
   },
   {
     "Keys": [
-      "Sparxie"
+      "Sparxie",
+      "sparxie",
+      "火花"
     ],
     "ReleaseDate": "2026-01-14T00:00:00",
     "Image": "sparxie.webp",
@@ -1327,11 +1427,13 @@
     "ModFilesName": "Sparxie",
     "InGameSkins": [],
     "InternalName": "Sparxie",
-    "DisplayName": "Sparxie"
+    "DisplayName": "火花"
   },
   {
     "Keys": [
-      "Yao Guang"
+      "Yao Guang",
+      "yaoguang",
+      "爻光"
     ],
     "ReleaseDate": "2026-02-01T00:00:00",
     "Image": "yaoguang.webp",
@@ -1344,11 +1446,13 @@
     "ModFilesName": "YaoGuang",
     "InGameSkins": [],
     "InternalName": "YaoGuang",
-    "DisplayName": "YaoGuang"
+    "DisplayName": "爻光"
   },
   {
     "Keys": [
-      "Ashveil"
+      "Ashveil",
+      "ashveil",
+      "不死途"
     ],
     "ReleaseDate": "2026-02-26T00:00:00",
     "Image": "ashveil.webp",
@@ -1361,6 +1465,6 @@
     "ModFilesName": "Ashveil",
     "InGameSkins": [],
     "InternalName": "Ashveil",
-    "DisplayName": "Ashveil"
+    "DisplayName": "不死途"
   }
 ]

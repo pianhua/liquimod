@@ -4,7 +4,7 @@ import ModCardGrid from "./ModCardGrid.svelte";
 import type { ModDto } from "$lib/api";
 
 function mod(id: number, name: string, enabled: boolean, installed_at: number, category_id: number | null = null): ModDto {
-  return { id, name, enabled, installed_at, thumb: null, size_bytes: 2048, file_count: 3, path: "", category_id };
+  return { id, name, enabled, installed_at, thumb: null, size_bytes: 2048, file_count: 3, path: "", category_id, note: null, cover_image: null };
 }
 
 function props(mods: ModDto[]) {

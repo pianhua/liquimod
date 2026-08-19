@@ -13,6 +13,8 @@ const mod: ModDto = {
   file_count: 42,
   path: "C:/mock/m",
   category_id: null,
+  note: null,
+  cover_image: null,
 };
 
 function setup(overrides = {}) {
@@ -115,5 +117,12 @@ describe("ModRow", () => {
     await fireEvent.click(screen.getByLabelText("卸载 Summer Skin"));
     await fireEvent.click(screen.getByText("确认卸载"));
     await waitFor(() => expect(p.onuninstall).toHaveBeenCalled());
+  });
+
+  it("点击行触发 onselect 回调", async () => {
+    const onselect = vi.fn();
+    setup({ onselect });
+    await fireEvent.click(screen.getByRole("listitem"));
+    expect(onselect).toHaveBeenCalledTimes(1);
   });
 });

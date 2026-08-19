@@ -3,11 +3,11 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-const IMAGE_EXTS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+const IMAGE_EXTS: [&str; 7] = ["png", "jpg", "jpeg", "webp", "bmp", "gif", "avif"];
 const THUMB_LONG_EDGE: u32 = 384;
 
 fn collect_images(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
-    if depth > 1 {
+    if depth > 4 {
         return;
     }
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -34,8 +34,16 @@ fn collect_images(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// 在 mod 目录内（最深 2 层）找预览图：preview stem 优先，否则字典序第一张。
-pub fn find_preview_image(mod_dir: &Path) -> Option<PathBuf> {
+/// 在 mod 目录内找预览图：若指定了 custom_cover 且文件存在直接使用，
+/// 否则 preview stem 优先，再次字典序第一张。
+pub fn find_preview_image(mod_dir: &Path, custom_cover: Option<&str>) -> Option<PathBuf> {
+    if let Some(rel) = custom_cover {
+        let custom_path = mod_dir.join(rel);
+        if custom_path.is_file() {
+            return Some(custom_path);
+        }
+    }
+
     let mut candidates: Vec<PathBuf> = Vec::new();
     collect_images(mod_dir, 0, &mut candidates);
     candidates.sort();
@@ -55,8 +63,9 @@ pub fn ensure_thumbnail(
     library_root: &Path,
     mod_dir: &Path,
     mod_id: i64,
+    custom_cover: Option<&str>,
 ) -> crate::error::Result<Option<PathBuf>> {
-    let Some(src) = find_preview_image(mod_dir) else {
+    let Some(src) = find_preview_image(mod_dir, custom_cover) else {
         return Ok(None);
     };
     let thumb_dir = library_root.join("thumbs");
@@ -133,7 +142,7 @@ mod tests {
         let mod_dir = tempfile::tempdir().unwrap();
         let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([9, 9, 9, 255]));
         img.save(mod_dir.path().join("preview.png")).unwrap();
-        let t = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 3)
+        let t = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 3, None)
             .unwrap()
             .unwrap();
         assert!(t.exists());
@@ -170,8 +179,18 @@ mod tests {
         let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 0, 0, 255]));
         img.save(dir.path().join("aaa.png")).unwrap();
         img.save(dir.path().join("Preview.PNG")).unwrap();
-        let found = find_preview_image(dir.path()).unwrap();
+        let found = find_preview_image(dir.path(), None).unwrap();
         assert_eq!(found.file_stem().unwrap().to_string_lossy(), "Preview");
+    }
+
+    #[test]
+    fn custom_cover_takes_precedence_over_preview() {
+        let dir = tempfile::tempdir().unwrap();
+        let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 0, 0, 255]));
+        img.save(dir.path().join("preview.png")).unwrap();
+        img.save(dir.path().join("my_custom.png")).unwrap();
+        let found = find_preview_image(dir.path(), Some("my_custom.png")).unwrap();
+        assert_eq!(found.file_stem().unwrap().to_string_lossy(), "my_custom");
     }
 
     #[test]
@@ -180,7 +199,7 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("textures")).unwrap();
         let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 255, 0, 255]));
         img.save(dir.path().join("textures/b.png")).unwrap();
-        let found = find_preview_image(dir.path()).unwrap();
+        let found = find_preview_image(dir.path(), None).unwrap();
         assert!(found.ends_with("b.png"));
     }
 
@@ -188,7 +207,7 @@ mod tests {
     fn no_image_returns_none() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("mod.ini"), "x").unwrap();
-        assert!(find_preview_image(dir.path()).is_none());
+        assert!(find_preview_image(dir.path(), None).is_none());
     }
 
     #[test]
@@ -197,7 +216,7 @@ mod tests {
         let mod_dir = tempfile::tempdir().unwrap();
         let img = image::RgbaImage::from_pixel(900, 300, image::Rgba([1, 2, 3, 255]));
         img.save(mod_dir.path().join("preview.png")).unwrap();
-        let t1 = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 7)
+        let t1 = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 7, None)
             .unwrap()
             .unwrap();
         assert!(t1.ends_with("7.jpg"));
@@ -206,7 +225,7 @@ mod tests {
         let mtime1 = std::fs::metadata(&t1).unwrap().modified().unwrap();
         // 缓存新鲜：直接命中
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        let t2 = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 7)
+        let t2 = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 7, None)
             .unwrap()
             .unwrap();
         let mtime2 = std::fs::metadata(&t2).unwrap().modified().unwrap();
@@ -214,7 +233,7 @@ mod tests {
         // 源更新：重生
         std::thread::sleep(std::time::Duration::from_millis(1100));
         img.save(mod_dir.path().join("preview.png")).unwrap();
-        let t3 = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 7)
+        let t3 = ensure_thumbnail(lib_dir.path(), mod_dir.path(), 7, None)
             .unwrap()
             .unwrap();
         let mtime3 = std::fs::metadata(&t3).unwrap().modified().unwrap();

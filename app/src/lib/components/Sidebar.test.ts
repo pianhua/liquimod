@@ -18,10 +18,8 @@ type SidebarProps = {
   categories: CategoryDto[];
   charCatName: string;
   charCount: number;
-  query: string;
+  collapsed?: boolean;
   onnavigate: (v: View) => void;
-  onchanged: () => void;
-  onapplied: () => void;
 };
 
 function props(over: Partial<SidebarProps> = {}) {
@@ -30,16 +28,14 @@ function props(over: Partial<SidebarProps> = {}) {
     categories: cats,
     charCatName: "角色",
     charCount: 3,
-    query: "",
+    collapsed: false,
     onnavigate: vi.fn(),
-    onchanged: vi.fn(),
-    onapplied: vi.fn(),
     ...over,
   };
 }
 
 describe("Sidebar", () => {
-  it("渲染固定六类导航（空类也显示），自定义分类不显示", () => {
+  it("渲染核心库与分类导航", () => {
     render(Sidebar, { props: props() });
     expect(screen.getByText("角色")).toBeTruthy();
     expect(screen.getByText("光锥")).toBeTruthy();
@@ -47,20 +43,14 @@ describe("Sidebar", () => {
     expect(screen.getByText("场景")).toBeTruthy();
     expect(screen.getByText("NPC")).toBeTruthy();
     expect(screen.getByText("其他")).toBeTruthy();
-    // 自定义分类「武器」不再展示为导航
-    expect(screen.queryByText("武器")).toBeNull();
-    // 旧入口已移除
-    expect(screen.queryByText("全部 Mod")).toBeNull();
-    expect(screen.queryByText("未分类")).toBeNull();
-    expect(screen.queryByText("＋ 新建分类")).toBeNull();
+    expect(screen.getByText("武器")).toBeTruthy();
   });
 
   it("显示各类计数", () => {
     render(Sidebar, { props: props() });
-    // 光锥 2、NPC 1、角色 3（charCount）
     expect(screen.getByText("2")).toBeTruthy();
     expect(screen.getByText("1")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getAllByText("3").length).toBe(2);
   });
 
   it("点击角色导航到 home", async () => {

@@ -36,6 +36,8 @@ impl Library {
     }
 
     pub fn scan(&self) -> Result<Vec<ModEntry>> {
+        use rayon::prelude::*;
+
         recover_pending_installs(&self.layout, &self.db)?;
         let mut seen: Vec<(String, String)> = Vec::new();
         let mods_root = self.layout.mods_root();
@@ -46,6 +48,21 @@ impl Library {
             )
             .into());
         }
+
+        struct ModCandidate {
+            character: String,
+            name: String,
+            path: PathBuf,
+        }
+
+        struct ModScanResult {
+            character: String,
+            name: String,
+            size: i64,
+            count: i64,
+        }
+
+        let mut candidates = Vec::new();
         for char_entry in std::fs::read_dir(&mods_root)? {
             let char_entry = char_entry?;
             let character = char_entry.file_name().to_string_lossy().into_owned();
@@ -60,12 +77,38 @@ impl Library {
                 if !ft.is_dir() || ft.is_symlink() || !is_valid_segment(&name) {
                     continue;
                 }
-                let rel = format!("mods/{}/{}", character, name);
-                let id = self.db.upsert_mod(&character, &name, &rel)?;
-                refresh_stats(&self.db, id, &mod_entry.path())?;
-                seen.push((character.clone(), name));
+                candidates.push(ModCandidate {
+                    character: character.clone(),
+                    name,
+                    path: mod_entry.path(),
+                });
             }
         }
+
+        // Rayon 多核并行计算各个 Mod 的统计数据（文件数与占用体积）
+        let results: Vec<ModScanResult> = candidates
+            .into_par_iter()
+            .map(|c| {
+                let (size, count) = dir_stats(&c.path);
+                ModScanResult {
+                    character: c.character,
+                    name: c.name,
+                    size,
+                    count,
+                }
+            })
+            .collect();
+
+        // 统一写入数据库
+        for item in &results {
+            let rel = format!("mods/{}/{}", item.character, item.name);
+            let id = self.db.upsert_mod(&item.character, &item.name, &rel)?;
+            if (item.size, item.count) != (-1, -1) {
+                self.db.update_stats(id, item.size, item.count)?;
+            }
+            seen.push((item.character.clone(), item.name.clone()));
+        }
+
         for m in self.db.list_mods()? {
             if !seen.contains(&(m.character.clone(), m.name.clone())) {
                 self.db.remove_mod(m.id)?;

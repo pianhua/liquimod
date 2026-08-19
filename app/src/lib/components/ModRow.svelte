@@ -6,19 +6,25 @@
   let {
     mod,
     categories,
+    selected = false,
     ontoggle,
     onrename,
     onuninstall,
     onopen,
     onmove,
+    onselect,
+    onmenu,
   }: {
     mod: ModDto;
     categories: CategoryDto[];
+    selected?: boolean;
     ontoggle: (next: boolean) => void;
     onrename: (name: string) => Promise<boolean>;
     onuninstall: () => Promise<void>;
     onopen: () => void;
     onmove: (categoryId: number | null) => void;
+    onselect?: () => void;
+    onmenu?: (e: MouseEvent, mod: ModDto) => void;
   } = $props();
 
   let renaming = $state(false);
@@ -69,21 +75,35 @@
     busy = true;
     try {
       await onuninstall();
-      confirming = false;
     } finally {
       busy = false;
+      confirming = false;
     }
+  }
+
+  function focusOn(node: HTMLInputElement) {
+    node.focus();
+    node.select();
   }
 
   function onRowKeydown(e: KeyboardEvent) {
     if (renaming || confirming) return;
-    if (e.key !== " " && e.key !== "Enter") return;
-    if ((e.target as HTMLElement).closest("button, input")) return;
-    e.preventDefault();
-    ontoggle(!mod.enabled);
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("button, input, [role='switch']")) return;
+    if (e.key === " ") {
+      e.preventDefault();
+      ontoggle(!mod.enabled);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      onselect?.();
+    }
   }
-  function focusOn(el: HTMLElement) {
-    el.focus();
+
+  function onRowClick(e: MouseEvent) {
+    // 若点击来自 Toggle、按钮、输入框或菜单则不重复触发选择
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("button, input, [role='switch'], [role='menu']")) return;
+    onselect?.();
   }
 </script>
 
@@ -92,8 +112,18 @@
   role="listitem"
   tabindex="0"
   aria-label={mod.name}
-  class="group glass radius-card px-5 py-4 flex items-center gap-4 outline-none transition-shadow focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  class="group glass radius-card px-4 py-3.5 flex items-center gap-3.5 outline-none transition-all cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  class:selected-row={selected}
+  onclick={onRowClick}
+  ondblclick={onopen}
   onkeydown={onRowKeydown}
+  oncontextmenu={(e) => {
+    if (onmenu) {
+      e.preventDefault();
+      e.stopPropagation();
+      onmenu(e, mod);
+    }
+  }}
 >
   {#if confirming}
     <div class="flex-1 flex items-center justify-between gap-3 min-w-0">
@@ -122,26 +152,27 @@
       <img
         src={mod.thumb}
         alt=""
-        class="w-[72px] h-[72px] rounded-[14px] object-cover shrink-0"
+        class="w-14 h-14 rounded-xl object-cover shrink-0"
         style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
         draggable="false"
         onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
       />
     {:else}
       <div
-        class="w-[72px] h-[72px] rounded-[14px] shrink-0 grid place-items-center text-xl font-semibold text-secondary"
+        class="w-14 h-14 rounded-xl shrink-0 grid place-items-center text-lg font-semibold text-secondary"
         style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)"
       >
         {mod.name.slice(0, 1)}
       </div>
     {/if}
 
-    <div class="flex-1 min-w-0">
+    <!-- 基础信息列：固定紧凑宽度，让备注前移且全列表绝对对齐 -->
+    <div class="w-44 sm:w-52 md:w-60 shrink-0 min-w-0 flex flex-col justify-center">
       {#if renaming}
         <input
           bind:value={draft}
           aria-label={`新名字 ${mod.name}`}
-          class="w-full h-8 px-3 text-sm font-medium bg-transparent outline-none rounded-full"
+          class="w-full h-8 px-3 text-[15px] font-medium bg-transparent outline-none rounded-full"
           style="box-shadow: inset 0 0 0 1.5px var(--accent)"
           onkeydown={(e) => {
             if (e.key === "Enter") commitRename();
@@ -154,10 +185,27 @@
           use:focusOn
         />
       {:else}
-        <p class="font-medium truncate">{mod.name}</p>
-        <p class="text-xs text-secondary mt-0.5">
+        <p class="font-semibold truncate text-[15px] text-[var(--text)] leading-snug" title={mod.name}>{mod.name}</p>
+        <p class="text-[13px] text-secondary mt-0.5 truncate leading-tight">
           {fmtSize(mod.size_bytes)} · {mod.file_count < 0 ? "—" : mod.file_count} 文件 · {fmtDate(mod.installed_at)}
         </p>
+      {/if}
+    </div>
+
+    <!-- 中间备注列：严格对齐的专属独立展示列，自然前靠 -->
+    <div class="flex-1 min-w-0 px-2 flex items-center">
+      {#if !renaming && mod.note}
+        <div
+          class="inline-flex items-center gap-2 max-w-lg min-w-0 py-1 px-2.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.05] text-xs text-secondary transition-colors group-hover:text-[var(--text)] group-hover:bg-black/7 dark:group-hover:bg-white/10 select-text"
+          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+          title={`备注：${mod.note}`}
+        >
+          <span class="text-[10px] font-semibold text-secondary/80 uppercase tracking-wide shrink-0 select-none">
+            备注
+          </span>
+          <span class="w-[1px] h-3 bg-black/10 dark:bg-white/10 shrink-0"></span>
+          <span class="truncate">{mod.note}</span>
+        </div>
       {/if}
     </div>
 
@@ -211,3 +259,10 @@
     />
   {/if}
 </div>
+
+<style>
+  .selected-row {
+    box-shadow: inset 0 0 0 1.5px var(--accent), 0 6px 20px var(--accent-glow) !important;
+    background: var(--glass-tint) !important;
+  }
+</style>

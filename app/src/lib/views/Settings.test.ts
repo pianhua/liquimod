@@ -14,6 +14,9 @@ vi.mock("$lib/api", async (importOriginal) => {
       removePassword: vi.fn(),
       setAutoEnable: vi.fn(),
       readLog: vi.fn(),
+      getLocalAssetVersion: vi.fn(),
+      checkGameAssetsUpdate: vi.fn(),
+      syncGameAssets: vi.fn(),
     },
     isTauri: () => false,
   };
@@ -78,5 +81,29 @@ describe("Settings", () => {
     await waitFor(() => screen.getByText(/hello log/));
     await fireEvent.click(screen.getByText("刷新"));
     expect(api.readLog).toHaveBeenCalledTimes(2);
+  });
+
+  it("点击检查更新调用 checkGameAssetsUpdate", async () => {
+    vi.mocked(api.checkGameAssetsUpdate).mockResolvedValue({
+      has_update: false,
+      remote_version: "v2026.08.19",
+      local_version: "v2026.08.19",
+    });
+    render(Settings, { props: { config: testConfig, onback: vi.fn(), onchanged: vi.fn() } });
+    await fireEvent.click(screen.getByText("检查更新"));
+    expect(api.checkGameAssetsUpdate).toHaveBeenCalled();
+  });
+
+  it("点击同步星铁数据调用 syncGameAssets", async () => {
+    vi.mocked(api.syncGameAssets).mockResolvedValue({
+      success: true,
+      message: "同步成功",
+      version: "v2026.08.19",
+      downloaded_count: 5,
+      deleted_count: 0,
+    });
+    render(Settings, { props: { config: testConfig, onback: vi.fn(), onchanged: vi.fn() } });
+    await fireEvent.click(screen.getByText("同步星铁数据"));
+    expect(api.syncGameAssets).toHaveBeenCalled();
   });
 });

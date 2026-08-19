@@ -21,6 +21,7 @@
     onuninstall,
     onopen,
     onmove,
+    onmenu,
   }: {
     mods: ModDto[];
     categories: CategoryDto[];
@@ -33,6 +34,7 @@
     onuninstall: (m: ModDto) => Promise<void>;
     onopen: (m: ModDto) => void;
     onmove: (m: ModDto, categoryId: number | null) => void;
+    onmenu?: (e: MouseEvent, m: ModDto) => void;
   } = $props();
 
   let shown = $derived(sortMods(filterMods(mods, query, enabledFilter), sort));
@@ -53,6 +55,7 @@
         onuninstall={() => onuninstall(m)}
         onopen={() => onopen(m)}
         onmove={(cid) => onmove(m, cid)}
+        {onmenu}
       />
     {/each}
     {#if shown.length === 0}

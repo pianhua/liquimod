@@ -70,6 +70,8 @@ impl Database {
             "ALTER TABLE mods ADD COLUMN file_count INTEGER NOT NULL DEFAULT -1",
             "ALTER TABLE mods ADD COLUMN category_id INTEGER REFERENCES categories(id)",
             "ALTER TABLE categories ADD COLUMN kind TEXT",
+            "ALTER TABLE mods ADD COLUMN note TEXT",
+            "ALTER TABLE mods ADD COLUMN cover_image TEXT",
         ] {
             match conn.execute_batch(sql) {
                 Ok(()) => {}
@@ -122,6 +124,28 @@ impl Database {
         Ok(())
     }
 
+    pub fn set_mod_note(&self, id: i64, note: Option<&str>) -> Result<()> {
+        let n = self.conn.execute(
+            "UPDATE mods SET note = ?2 WHERE id = ?1",
+            rusqlite::params![id, note],
+        )?;
+        if n == 0 {
+            return Err(LiquiModError::ModNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn set_mod_cover_image(&self, id: i64, cover: Option<&str>) -> Result<()> {
+        let n = self.conn.execute(
+            "UPDATE mods SET cover_image = ?2 WHERE id = ?1",
+            rusqlite::params![id, cover],
+        )?;
+        if n == 0 {
+            return Err(LiquiModError::ModNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
     pub fn name_taken(&self, character: &str, name: &str, exclude_id: i64) -> Result<bool> {
         let n: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM mods WHERE character = ?1 AND name = ?2 AND id != ?3",
@@ -142,12 +166,14 @@ impl Database {
             size_bytes: r.get(6)?,
             file_count: r.get(7)?,
             category_id: r.get(8)?,
+            note: r.get(9)?,
+            cover_image: r.get(10)?,
         })
     }
 
     pub fn list_mods(&self) -> Result<Vec<ModEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id FROM mods ORDER BY character, name",
+            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image FROM mods ORDER BY character, name",
         )?;
         let rows = stmt.query_map([], Self::row_to_entry)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -156,7 +182,7 @@ impl Database {
     pub fn get_mod(&self, id: i64) -> Result<ModEntry> {
         self.conn
             .query_row(
-                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id FROM mods WHERE id = ?1",
+                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image FROM mods WHERE id = ?1",
                 rusqlite::params![id],
                 Self::row_to_entry,
             )
@@ -507,6 +533,14 @@ mod tests {
         let got = db.get_mod(id).unwrap();
         assert_eq!(got.rel_path, "mods/Firefly/Summer");
 
+        db.set_mod_note(id, Some("测试备注内容")).unwrap();
+        let with_note = db.get_mod(id).unwrap();
+        assert_eq!(with_note.note.as_deref(), Some("测试备注内容"));
+
+        db.set_mod_note(id, None).unwrap();
+        let no_note = db.get_mod(id).unwrap();
+        assert_eq!(no_note.note, None);
+
         db.remove_mod(id).unwrap();
         assert!(db.list_mods().unwrap().is_empty());
         assert!(matches!(
@@ -625,6 +659,20 @@ mod tests {
         db.update_stats(id, 12345, 7).unwrap();
         let m = db.get_mod(id).unwrap();
         assert_eq!((m.size_bytes, m.file_count), (12345, 7));
+    }
+
+    #[test]
+    fn cover_image_roundtrip() {
+        let db = Database::open_in_memory().unwrap();
+        let id = db.upsert_mod("A", "m", "mods/A/m").unwrap();
+        assert_eq!(db.get_mod(id).unwrap().cover_image, None);
+        db.set_mod_cover_image(id, Some("images/custom.png")).unwrap();
+        assert_eq!(
+            db.get_mod(id).unwrap().cover_image.as_deref(),
+            Some("images/custom.png")
+        );
+        db.set_mod_cover_image(id, None).unwrap();
+        assert_eq!(db.get_mod(id).unwrap().cover_image, None);
     }
 
     #[test]

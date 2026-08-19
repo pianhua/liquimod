@@ -22,6 +22,14 @@
     0 16px 40px rgba(0, 0, 0, 0.14),
     0 4px 10px rgba(0, 0, 0, 0.08);
   --scroll-thumb: rgba(0, 0, 0, 0.22);
+  --glass-floating-bg: rgba(255, 255, 255, 0.92);
+  --glass-floating-stroke: rgba(255, 255, 255, 0.85);
+  --glass-floating-shadow: 0 16px 40px rgba(0, 0, 0, 0.16), 0 4px 12px rgba(0, 0, 0, 0.08);
+  --island-bg: rgba(255, 255, 255, 0.78);
+  --island-stroke: rgba(255, 255, 255, 0.6);
+  --island-highlight: rgba(255, 255, 255, 0.95);
+  --island-badge: rgba(0, 0, 0, 0.07);
+  --island-badge-text: #3a3a3c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -47,6 +55,14 @@
       0 16px 44px rgba(0, 0, 0, 0.5),
       0 4px 10px rgba(0, 0, 0, 0.32);
     --scroll-thumb: rgba(255, 255, 255, 0.32);
+    --glass-floating-bg: rgba(24, 26, 38, 0.94);
+    --glass-floating-stroke: rgba(255, 255, 255, 0.16);
+    --glass-floating-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 4px 14px rgba(0, 0, 0, 0.4);
+    --island-bg: rgba(30, 30, 34, 0.72);
+    --island-stroke: rgba(255, 255, 255, 0.12);
+    --island-highlight: rgba(255, 255, 255, 0.22);
+    --island-badge: rgba(255, 255, 255, 0.12);
+    --island-badge-text: #e5e5ea;
   }
 }
 
@@ -67,11 +83,19 @@
     inset 0 0.5px 0 var(--glass-highlight),
     0 8px 24px rgba(0, 0, 0, 0.35),
     0 2px 6px rgba(0, 0, 0, 0.28);
---shadow-lift:
-      inset 0 0.5px 0 var(--glass-highlight),
-      0 16px 44px rgba(0, 0, 0, 0.5),
-      0 4px 10px rgba(0, 0, 0, 0.32);
+  --shadow-lift:
+    inset 0 0.5px 0 var(--glass-highlight),
+    0 16px 44px rgba(0, 0, 0, 0.5),
+    0 4px 10px rgba(0, 0, 0, 0.32);
   --scroll-thumb: rgba(255, 255, 255, 0.32);
+  --glass-floating-bg: rgba(24, 26, 38, 0.94);
+  --glass-floating-stroke: rgba(255, 255, 255, 0.16);
+  --glass-floating-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 4px 14px rgba(0, 0, 0, 0.4);
+  --island-bg: rgba(30, 30, 34, 0.72);
+  --island-stroke: rgba(255, 255, 255, 0.12);
+  --island-highlight: rgba(255, 255, 255, 0.22);
+  --island-badge: rgba(255, 255, 255, 0.12);
+  --island-badge-text: #e5e5ea;
 }
 
 html,
@@ -123,6 +147,15 @@ body::before {
   -webkit-backdrop-filter: blur(28px) saturate(1.75);
   border: 0.5px solid var(--glass-stroke);
   box-shadow: var(--shadow-soft);
+}
+
+.glass-floating,
+.glass-menu {
+  background: var(--glass-floating-bg);
+  backdrop-filter: blur(32px) saturate(1.8);
+  -webkit-backdrop-filter: blur(32px) saturate(1.8);
+  border: 0.5px solid var(--glass-floating-stroke);
+  box-shadow: var(--glass-floating-shadow);
 }
 
 .radius-window { border-radius: 26px; }

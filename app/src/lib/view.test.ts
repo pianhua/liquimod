@@ -3,7 +3,7 @@ import { filterMods, sortMods, viewKey, type View } from "./view";
 import type { ModDto } from "./api";
 
 function mod(id: number, name: string, enabled: boolean, installed_at: number): ModDto {
-  return { id, name, enabled, installed_at, thumb: null, size_bytes: 0, file_count: 0, path: "", category_id: null };
+  return { id, name, enabled, installed_at, thumb: null, size_bytes: 0, file_count: 0, path: "", category_id: null, note: null, cover_image: null };
 }
 
 describe("viewKey", () => {

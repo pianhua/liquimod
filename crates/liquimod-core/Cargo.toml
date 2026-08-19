@@ -17,6 +17,12 @@ notify = "8"
 sysinfo = "0.33"
 windows = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+rayon = "1.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "fs", "io-util"] }
+futures-util = "0.3"
+dirs = "6"
 
 [dev-dependencies]
 tempfile = "3"

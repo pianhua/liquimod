@@ -34,8 +34,8 @@ describe("CharacterDetail", () => {
       onback: () => {},
       onconfigured: () => {},
     });
-    await waitFor(() => expect(screen.getByText("Summer Skin")).toBeTruthy());
-    expect(mockedInvoke).toHaveBeenCalledWith("list_mods", { character: "Acheron" });
+    await waitFor(() => expect(screen.getAllByText("Summer Skin").length).toBeGreaterThan(0));
+    expect(mockedInvoke).toHaveBeenCalledWith("list_mods", { character: "Acheron", categoryId: null });
   });
 
   it("点击开关调用 set_mod_enabled 并更新状态", async () => {
@@ -49,13 +49,32 @@ describe("CharacterDetail", () => {
       onback: () => {},
       onconfigured: () => {},
     });
-    await waitFor(() => screen.getByRole("switch"));
+    await waitFor(() => expect(screen.getAllByRole("switch").length).toBeGreaterThan(0));
     mockedInvoke.mockResolvedValue(undefined);
-    await fireEvent.click(screen.getByRole("switch"));
+    const switches = screen.getAllByRole("switch");
+    await fireEvent.click(switches[0]);
     expect(mockedInvoke).toHaveBeenCalledWith("set_mod_enabled", { id: 7, enabled: true });
     await waitFor(() =>
-      expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true"),
+      expect(screen.getAllByRole("switch")[0].getAttribute("aria-checked")).toBe("true"),
     );
+  });
+
+  it("默认自动选中第一个 Mod 并展示右侧大图与元数据", async () => {
+    mockedInvoke.mockResolvedValue([
+      { id: 11, name: "First Mod", enabled: true, installed_at: 1700000000, size_bytes: 1048576, file_count: 5, path: "C:/mods/1" },
+      { id: 12, name: "Second Mod", enabled: false, installed_at: 1700000000, size_bytes: 2048576, file_count: 8, path: "C:/mods/2" },
+    ]);
+    render(CharacterDetail, {
+      character,
+      categories: [],
+      modsDirConfigured: true,
+      onback: () => {},
+      onconfigured: () => {},
+    });
+    await waitFor(() => expect(screen.getAllByText("First Mod").length).toBeGreaterThanOrEqual(1));
+    expect(screen.getByText("占用体积")).toBeTruthy();
+    expect(screen.getByText("文件数量")).toBeTruthy();
+    expect(screen.getByText("5 个文件")).toBeTruthy();
   });
 
   it("未配置 mods_dir 时显示配置提示", async () => {
