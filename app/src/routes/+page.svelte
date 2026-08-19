@@ -114,12 +114,14 @@
     }
   }
 
-  async function navigate(v: View) {
+  async function navigate(v: View, preserveQuery = false) {
     if (!showSettings) saveScroll();
     showSettings = false;
     view = v;
     viewMods = [];
-    query = "";
+    if (!preserveQuery) {
+      query = "";
+    }
     restoreScroll();
     await refresh();
     await restoreScroll();
@@ -127,9 +129,9 @@
 
   function onBackFromCharacter(v: View) {
     if (v.kind === "character" && v.categoryId != null) {
-      navigate({ kind: "type", id: v.categoryId, name: v.categoryName ?? "分类" });
+      navigate({ kind: "type", id: v.categoryId, name: v.categoryName ?? "分类" }, true);
     } else {
-      navigate({ kind: "home" });
+      navigate({ kind: "home" }, true);
     }
   }
 
@@ -474,17 +476,14 @@
       const searchInput = document.querySelector('input[type="search"]') as HTMLInputElement | null;
       if (searchInput && document.activeElement === searchInput) {
         searchInput.blur();
-        if (query) {
-          query = "";
-        }
-        return;
-      }
-      if (query) {
-        query = "";
         return;
       }
       if (view.kind === "character") {
         onBackFromCharacter(view);
+        return;
+      }
+      if (query) {
+        query = "";
         return;
       }
     }
