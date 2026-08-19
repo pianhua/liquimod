@@ -39,6 +39,8 @@ pub struct Config {
     pub github_token: String,
     #[serde(default)]
     pub github_mirror: String,
+    #[serde(default)]
+    pub migoto_version: Option<String>,
 }
 
 impl Config {
@@ -85,6 +87,7 @@ impl Config {
                 injection_delay_ms: default_injection_delay_ms(),
                 github_token: String::new(),
                 github_mirror: String::new(),
+                migoto_version: None,
             },
         }
     }
@@ -130,6 +133,7 @@ mod tests {
             injection_delay_ms: 500,
             github_token: String::new(),
             github_mirror: String::new(),
+            migoto_version: Some("v2.4.2".into()),
         };
         c.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path), c);

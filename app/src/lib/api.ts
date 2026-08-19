@@ -13,6 +13,7 @@ export interface ConfigDto {
   injection_delay_ms: number;
   github_token: string;
   github_mirror: string;
+  migoto_version?: string | null;
 }
 
 export interface MigotoReleaseInfoDto {
@@ -497,8 +498,9 @@ export const api = {
   initMigotoWorkspace: (targetDir: string) =>
     call<string>("init_migoto_workspace", { targetDir }),
   checkMigotoUpdate: () => call<MigotoReleaseInfoDto>("check_migoto_update"),
-  installMigotoUpdate: (downloadUrl: string) =>
-    call<ConfigDto>("install_migoto_update", { downloadUrl }),
+  installMigotoUpdate: (downloadUrl: string, versionTag?: string) =>
+    call<ConfigDto>("install_migoto_update", { downloadUrl, versionTag: versionTag ?? null }),
+  switchToManagedMigoto: () => call<ConfigDto>("switch_to_managed_migoto"),
   migrateModsFromOldMigoto: (oldDir: string) =>
     call<MigrateResultDto>("migrate_mods_from_old_migoto", { oldDir }),
   setWorkMode: (mode: "play" | "dev") => call<ConfigDto>("set_work_mode", { mode }),

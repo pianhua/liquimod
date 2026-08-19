@@ -177,6 +177,7 @@ pub fn run() {
             commands::init_migoto_workspace,
             commands::check_migoto_update,
             commands::install_migoto_update,
+            commands::switch_to_managed_migoto,
             commands::migrate_mods_from_old_migoto,
             commands::set_work_mode,
             commands::set_injection_delay,

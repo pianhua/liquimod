@@ -293,19 +293,12 @@
 
   async function handleInitMigoto() {
     try {
-      const target = await open({
-        directory: true,
-        title: "选择或新建 3Dmigoto 工作区存放目录",
-      });
-      if (typeof target === "string") {
-        const ini = await api.initMigotoWorkspace(target);
-        await api.import3dMigotoDir(target);
-        toast(`✨ 3Dmigoto 工作区已初始化完成并自动加载！`);
-        diagStatus = await api.getDiagnosticStatus().catch(() => null);
-        onchanged();
-      }
+      await api.switchToManagedMigoto();
+      toast("✨ 已一键切换至 LiquiMod 内置 3DMigoto 环境！");
+      diagStatus = await api.getDiagnosticStatus().catch(() => null);
+      onchanged();
     } catch (e) {
-      toast(`初始化失败：${e}`);
+      toast(`切换失败：${e}`);
     }
   }
 
@@ -315,7 +308,11 @@
     try {
       const rel = await api.checkMigotoUpdate();
       migotoRelease = rel;
-      toast(`✨ 查找到 3DMigoto (SRMI) 最新 Release：${rel.tag_name || rel.name}`);
+      if (config?.migoto_version && rel.tag_name && config.migoto_version.trim().toLowerCase() === rel.tag_name.trim().toLowerCase()) {
+        toast(`✨ 当前已是最新版本 (${rel.tag_name})`);
+      } else {
+        toast(`✨ 查找到 3DMigoto 最新 Release：${rel.tag_name || rel.name}`);
+      }
     } catch (e) {
       toast(`检查 3DMigoto 更新失败：${e}`);
     } finally {
@@ -323,7 +320,7 @@
     }
   }
 
-  async function handleInstallMigoto(downloadUrl: string) {
+  async function handleInstallMigoto(downloadUrl: string, versionTag?: string) {
     if (installingMigoto) return;
     installingMigoto = true;
     migotoProgress = {
@@ -334,8 +331,8 @@
       message: "正在发起 3DMigoto 核心套件下载...",
     };
     try {
-      await api.installMigotoUpdate(downloadUrl);
-      toast("✨ 3DMigoto 核心套件已成功下载并部署！Mods 目录已自动就绪");
+      await api.installMigotoUpdate(downloadUrl, versionTag);
+      toast(`✨ 3DMigoto 核心套件 (${versionTag || '最新版'}) 已成功部署！`);
       diagStatus = await api.getDiagnosticStatus().catch(() => null);
       onchanged();
     } catch (e) {
@@ -493,23 +490,23 @@
           <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">游戏与 3Dmigoto 集成</h3>
           <p class="text-xs text-secondary mt-0.5">智能嗅探国服路径、一键初始化或导入已有 3Dmigoto 套件</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
           <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer transition-transform hover:scale-[1.02]"
             onclick={handleInitMigoto}
-            title="初始化或切换到 LiquiMod 内置 3DMigoto 目录"
+            title="一键切换至 LiquiMod 内置 3DMigoto 托管目录"
           >
             📦 内置 3DM
           </button>
           <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer transition-transform hover:scale-[1.02]"
             onclick={handleMigrateOldMigoto}
             title="选择旧 SSMI/3DMigoto 目录，自动导入其中所有 Mod"
           >
             🔄 迁移旧 Mod
           </button>
           <button
-            class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
+            class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer transition-transform hover:scale-[1.02]"
             onclick={import3dMigoto}
           >
             ✨ 识别目录
@@ -517,14 +514,14 @@
         </div>
       </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-3">
+      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-4">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium">游戏主程序</p>
           <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.game_exe ?? "未配置"}>{config?.game_exe ?? "未配置"}</p>
         </div>
-        <div class="flex items-center gap-1.5 shrink-0">
+        <div class="flex items-center justify-end gap-1.5 shrink-0">
           <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1"
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/10"
             onclick={autoDetectGame}
             title="自动从注册表和运行日志嗅探 StarRail.exe"
           >
@@ -532,49 +529,49 @@
           </button>
           {#if config?.game_exe}
             <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)]"
+              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10"
               title="在资源管理器中定位"
               onclick={() => config?.game_exe && api.openPathInExplorer(config.game_exe)}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
             </button>
           {/if}
-          <button class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer" onclick={() => pickExe("game")}>
+          <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/10" onclick={() => pickExe("game")}>
             选择…
           </button>
         </div>
       </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-3">
+      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-4">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium">3Dmigoto 加载器</p>
           <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.loader_exe ?? "未配置"}>{config?.loader_exe ?? "未配置"}</p>
         </div>
-        <div class="flex items-center gap-1.5 shrink-0">
+        <div class="flex items-center justify-end gap-1.5 shrink-0">
           {#if config?.loader_exe}
             <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)]"
+              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10"
               title="在资源管理器中定位"
               onclick={() => config?.loader_exe && api.openPathInExplorer(config.loader_exe)}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
             </button>
           {/if}
-          <button class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer" onclick={() => pickExe("loader")}>
+          <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/10" onclick={() => pickExe("loader")}>
             选择…
           </button>
         </div>
       </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-3">
+      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-4">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium">3Dmigoto Mods 部署目录</p>
           <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.mods_dir ?? "未配置"}>{config?.mods_dir ?? "未配置"}</p>
         </div>
-        <div class="flex items-center gap-1.5 shrink-0">
+        <div class="flex items-center justify-end gap-1.5 shrink-0">
           {#if config?.mods_dir}
             <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)]"
+              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10"
               title="在资源管理器中打开"
               onclick={() => config?.mods_dir && api.openPathInExplorer(config.mods_dir)}
             >
@@ -582,7 +579,7 @@
             </button>
           {/if}
           <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer"
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/10"
             onclick={pickModsDir}
           >
             选择…
@@ -590,17 +587,19 @@
         </div>
       </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-3">
+      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-4">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium">LiquiMod 核心仓库（Library）</p>
           <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.library_root ?? "…"}>{config?.library_root ?? "…"}</p>
         </div>
-        <button
-          class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1"
-          onclick={() => config?.library_root && api.openPathInExplorer(config.library_root)}
-        >
-          <span>📂</span> 打开仓库
-        </button>
+        <div class="flex items-center justify-end shrink-0">
+          <button
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/10"
+            onclick={() => config?.library_root && api.openPathInExplorer(config.library_root)}
+          >
+            <span>📂</span> 打开仓库
+          </button>
+        </div>
       </div>
     </section>
 
@@ -608,11 +607,16 @@
     <section class="glass radius-panel p-5 flex flex-col gap-3.5">
       <div class="flex items-center justify-between gap-3">
         <div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">3DMigoto 核心与启动引擎微调</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">3DMigoto 核心与启动引擎微调</h3>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-black/5 dark:bg-white/10 text-secondary">
+              当前核心: {config?.migoto_version ?? '内置就绪'}
+            </span>
+          </div>
           <p class="text-xs text-secondary mt-0.5">原生挂起注入、延迟缓冲微调与云端 SRMI 核心套件一键安装/更新</p>
         </div>
         <button
-          class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5"
+          class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/10"
           disabled={checkingMigoto || installingMigoto}
           onclick={handleCheckMigotoUpdate}
         >
@@ -624,28 +628,36 @@
       </div>
 
       {#if migotoRelease}
+        {@const isUpToDate = Boolean(config?.migoto_version && migotoRelease.tag_name && config.migoto_version.trim().toLowerCase() === migotoRelease.tag_name.trim().toLowerCase())}
         <div class="p-3.5 radius-card flex flex-col gap-2.5 border border-[var(--glass-stroke)] bg-black/5 dark:bg-white/5">
-          <div class="flex items-center justify-between font-semibold">
-            <span class="text-[var(--accent)] font-bold text-sm">最新版本：{migotoRelease.tag_name || migotoRelease.name}</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-sm" class:text-emerald-500={isUpToDate} class:text-[var(--accent)]={!isUpToDate}>
+                {isUpToDate ? `✅ 当前已是最新版本 (${migotoRelease.tag_name || migotoRelease.name})` : `🎉 发现新版本：${migotoRelease.tag_name || migotoRelease.name}`}
+              </span>
+            </div>
             <span class="text-secondary font-mono text-xs">{migotoRelease.published_at?.slice(0, 10) ?? ""}</span>
           </div>
           {#if migotoRelease.asset_name}
-            <div class="text-secondary text-xs">包含资源：{migotoRelease.asset_name} ({migotoRelease.size_bytes ? Math.round(migotoRelease.size_bytes / 1024) + ' KB' : ''})</div>
+            <div class="text-secondary text-xs">官方安装包：{migotoRelease.asset_name} ({migotoRelease.size_bytes ? Math.round(migotoRelease.size_bytes / 1024) + ' KB' : ''})</div>
           {/if}
           {#if migotoRelease.body}
-            <p class="text-secondary text-[11px] line-clamp-2">{migotoRelease.body}</p>
+            <p class="text-secondary text-[11px] line-clamp-2 leading-relaxed">{migotoRelease.body}</p>
           {/if}
 
           {#if migotoRelease.download_url}
             <div class="pt-2 border-t border-[var(--glass-stroke)] flex items-center justify-between">
-              <span class="text-xs text-secondary">自动下载并解压覆写 ShaderFixes 与核心 DLL</span>
+              <span class="text-xs text-secondary">自动下载并覆写 ShaderFixes 与核心 DLL，保留 Mods 软链接</span>
               <button
-                class="accent-fill accent-text radius-pill h-8 px-4 text-xs font-bold shrink-0 cursor-pointer transition-transform hover:scale-[1.02] flex items-center gap-1.5"
+                class="radius-pill h-8 px-4 text-xs font-bold shrink-0 cursor-pointer transition-transform hover:scale-[1.02] flex items-center gap-1.5"
+                class:accent-fill={!isUpToDate}
+                class:accent-text={!isUpToDate}
+                class:glass={isUpToDate}
                 disabled={installingMigoto}
-                onclick={() => migotoRelease?.download_url && handleInstallMigoto(migotoRelease.download_url)}
+                onclick={() => migotoRelease?.download_url && handleInstallMigoto(migotoRelease.download_url, migotoRelease.tag_name)}
               >
-                <span>🚀</span>
-                <span>{installingMigoto ? "正在下载安装…" : "一键下载并更新 3DMigoto"}</span>
+                <span>{isUpToDate ? '🔄' : '🚀'}</span>
+                <span>{installingMigoto ? "正在下载安装…" : (isUpToDate ? "重新部署 / 修复" : `一键更新至 ${migotoRelease.tag_name || '最新'}`)}</span>
               </button>
             </div>
           {/if}
@@ -653,14 +665,17 @@
       {/if}
 
       {#if migotoProgress}
-        <div class="p-3 radius-card flex flex-col gap-1.5 border border-[var(--glass-stroke)] bg-[var(--accent-fill)]">
+        <div class="p-3.5 radius-card flex flex-col gap-2 border border-[var(--glass-stroke)] bg-[var(--accent-fill)]">
           <div class="flex items-center justify-between text-xs font-semibold text-[var(--accent)]">
-            <span>{migotoProgress.message}</span>
-            <span>{Math.round(migotoProgress.percent)}%</span>
+            <span class="flex items-center gap-1.5">
+              <span class="animate-spin">⏳</span>
+              <span>{migotoProgress.message}</span>
+            </span>
+            <span class="font-mono">{Math.round(migotoProgress.percent)}%</span>
           </div>
-          <div class="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
+          <div class="w-full h-2 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
             <div
-              class="h-full bg-[var(--accent)] transition-all duration-300 rounded-full"
+              class="h-full bg-[var(--accent)] transition-all duration-300 rounded-full shadow-sm"
               style={`width: ${migotoProgress.percent}%`}
             ></div>
           </div>

@@ -63,6 +63,7 @@ pub struct ConfigDto {
     pub injection_delay_ms: u64,
     pub github_token: String,
     pub github_mirror: String,
+    pub migoto_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -186,6 +187,7 @@ pub fn config_dto(c: &Config) -> ConfigDto {
         injection_delay_ms: c.injection_delay_ms,
         github_token: c.github_token.clone(),
         github_mirror: c.github_mirror.clone(),
+        migoto_version: c.migoto_version.clone(),
     }
 }
 
@@ -1269,6 +1271,7 @@ pub async fn install_migoto_update(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     download_url: String,
+    version_tag: Option<String>,
 ) -> Result<ConfigDto, String> {
     let (target_dir, token, mirror) = {
         let mut config = state.config.lock().unwrap();
@@ -1314,7 +1317,7 @@ pub async fn install_migoto_update(
     let _ = forward_task.await;
     res.map_err(|e| e.to_string())?;
 
-    // 确保自动绑定 mods_dir
+    // 确保自动绑定 mods_dir 与更新版本记录
     let config = {
         let mut cfg = state.config.lock().unwrap();
         let mods_path = target_dir.join("Mods");
@@ -1322,6 +1325,16 @@ pub async fn install_migoto_update(
             let _ = std::fs::create_dir_all(&mods_path);
         }
         cfg.mods_dir = Some(mods_path);
+        if let Some(tag) = version_tag {
+            cfg.migoto_version = Some(tag);
+        }
+
+        // 检查是否存在 loader
+        let loader_candidate = target_dir.join("3DMigoto Loader.exe");
+        if loader_candidate.is_file() {
+            cfg.loader_exe = Some(loader_candidate);
+        }
+
         cfg.save_to(&state.config_path)
             .map_err(|e| format!("配置保存失败：{e}"))?;
         config_dto(&cfg)
@@ -1329,6 +1342,36 @@ pub async fn install_migoto_update(
 
     crate::start_watcher(&app, state.inner());
     Ok(config)
+}
+
+#[tauri::command]
+pub fn switch_to_managed_migoto(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<ConfigDto, String> {
+    let def_dir = liquimod_core::migoto_sync::default_managed_migoto_dir();
+    let _ = liquimod_core::migoto_sync::init_migoto_workspace(&def_dir)
+        .map_err(|e| format!("初始化内置 3Dmigoto 失败：{e}"))?;
+
+    let mut cfg = state.config.lock().unwrap();
+    let mods_dir = def_dir.join("Mods");
+    cfg.mods_dir = Some(mods_dir);
+
+    let loader_1 = def_dir.join("3DMigoto Loader.exe");
+    let loader_2 = def_dir.join("3DMigotoLoader.exe");
+    if loader_1.is_file() {
+        cfg.loader_exe = Some(loader_1);
+    } else if loader_2.is_file() {
+        cfg.loader_exe = Some(loader_2);
+    }
+
+    cfg.save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    let dto = config_dto(&cfg);
+    drop(cfg);
+
+    crate::start_watcher(&app, state.inner());
+    Ok(dto)
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -2185,6 +2228,7 @@ mod tests {
             injection_delay_ms: 500,
             github_token: String::new(),
             github_mirror: String::new(),
+            migoto_version: None,
         };
         assert!(set_mods_dir(&mut c, PathBuf::from("C:/no/such/dir")).is_err());
         assert!(c.mods_dir.is_none());
@@ -2457,6 +2501,7 @@ mod tests {
             injection_delay_ms: 500,
             github_token: String::new(),
             github_mirror: String::new(),
+            migoto_version: None,
         };
         maybe_auto_enable(&lib, &c, m.id, None);
         assert!(!lib.db.get_mod(m.id).unwrap().enabled);

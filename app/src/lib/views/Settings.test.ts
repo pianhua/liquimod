@@ -37,6 +37,7 @@ const config: import("$lib/api").ConfigDto = {
   injection_delay_ms: 500,
   github_token: "",
   github_mirror: "",
+  migoto_version: "v2.4.2",
 };
 const testConfig: import("$lib/api").ConfigDto = {
   library_root: "C:/L",
@@ -50,6 +51,7 @@ const testConfig: import("$lib/api").ConfigDto = {
   injection_delay_ms: 500,
   github_token: "",
   github_mirror: "",
+  migoto_version: "v2.4.2",
 };
 
 describe("Settings", () => {
