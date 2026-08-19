@@ -251,6 +251,15 @@
     }
   }
 
+  async function launchOfficialLauncher() {
+    try {
+      const res = await api.launchOfficialLauncher();
+      toast(`🌐 ${res.message}`);
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
   async function refreshGame() {
     try {
       await api.triggerRefreshGame();
@@ -581,6 +590,7 @@
           ontoggleworkmode={toggleWorkMode}
           onlaunchmodgame={launchGame}
           onlaunchnativegame={launchGameNative}
+          onlaunchofficial={launchOfficialLauncher}
           onrefreshgame={refreshGame}
           ontogglesettings={() => (showSettings ? closeSettings() : openSettings())}
           onapplied={refresh}

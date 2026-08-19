@@ -326,6 +326,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       }
       case "launch_game":
       case "launch_game_native":
+      case "launch_official_launcher":
         throw "未配置游戏路径，请在设置中配置";
       case "launch_loader":
         throw "未配置加载器路径，请在设置中配置";
@@ -467,6 +468,7 @@ export const api = {
   chooseLoaderExe: (path: string) => call<ConfigDto>("choose_loader_exe", { path }),
   launchGame: () => call<LaunchResultDto>("launch_game"),
   launchGameNative: () => call<LaunchResultDto>("launch_game_native"),
+  launchOfficialLauncher: () => call<LaunchResultDto>("launch_official_launcher"),
   launchLoader: () => call<void>("launch_loader"),
   inspect3dMigotoDir: (path: string) =>
     call<MigotoInfoDto>("inspect_3dmigoto_dir", { path }),

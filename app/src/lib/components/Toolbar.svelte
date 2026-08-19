@@ -16,6 +16,7 @@
     ontoggleworkmode,
     onlaunchmodgame,
     onlaunchnativegame,
+    onlaunchofficial = undefined,
     onrefreshgame = undefined,
     ontogglesettings,
     onapplied,
@@ -32,6 +33,7 @@
     ontoggleworkmode?: () => void;
     onlaunchmodgame: () => void;
     onlaunchnativegame: () => void;
+    onlaunchofficial?: () => void;
     onrefreshgame?: () => void;
     ontogglesettings: () => void;
     onapplied: () => void;
@@ -330,6 +332,16 @@
       >
         <span>原生启动</span>
       </button>
+      {#if onlaunchofficial}
+        <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
+        <button
+          class="h-7 px-2 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)] active:scale-95"
+          onclick={onlaunchofficial}
+          title="打开崩铁官方启动器 / HoYoPlay（用于游戏大版本更新与修复）"
+        >
+          <span>🌐 官方启动器</span>
+        </button>
+      {/if}
       {#if onrefreshgame}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
         <button

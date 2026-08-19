@@ -1585,6 +1585,26 @@ pub fn launch_game_native(
 }
 
 #[tauri::command]
+pub fn launch_official_launcher(
+    state: tauri::State<AppState>,
+) -> Result<liquimod_core::launcher::LaunchResult, String> {
+    let game_exe = state.config.lock().unwrap().game_exe.clone();
+
+    let launcher_path = game_exe
+        .as_deref()
+        .and_then(liquimod_core::discovery::find_launcher_from_game_exe)
+        .or_else(liquimod_core::discovery::auto_detect_official_launcher);
+
+    let Some(launcher) = launcher_path else {
+        return Err(
+            "未能在系统常见位置或游戏目录中找到官方启动器 (launcher.exe / HYP.exe)".to_string(),
+        );
+    };
+
+    liquimod_core::launcher::launch_official_launcher(&launcher).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn launch_loader(state: tauri::State<AppState>) -> Result<(), String> {
     let exe = state.config.lock().unwrap().loader_exe.clone();
     launch_exe(exe.as_deref(), "加载器")

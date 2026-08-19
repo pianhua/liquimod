@@ -26,11 +26,90 @@ pub struct LaunchResult {
     pub pid: Option<u32>,
 }
 
+/// 安全启动程序，支持普通启动与 Windows UAC 提权自动回退（彻底解决 os error 740）
+pub fn spawn_program_with_uac(
+    exe_path: &Path,
+    work_dir: &Path,
+    args: Option<&str>,
+    hide_window: bool,
+) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        // 1. 先尝试标准进程创建
+        let mut cmd = std::process::Command::new(exe_path);
+        cmd.current_dir(work_dir);
+        if hide_window {
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        if let Some(a) = args {
+            if !a.is_empty() {
+                cmd.arg(a);
+            }
+        }
+
+        match cmd.spawn() {
+            Ok(_) => Ok(()),
+            Err(e)
+                if e.raw_os_error() == Some(740)
+                    || e.kind() == std::io::ErrorKind::PermissionDenied =>
+            {
+                // 2. 捕获 740 提权请求，通过 Windows Shell 机制唤起系统 UAC 授权弹窗
+                let escaped_path = exe_path.to_string_lossy().replace('\'', "''");
+                let escaped_dir = work_dir.to_string_lossy().replace('\'', "''");
+                let mut ps_cmd = format!(
+                    "Start-Process -FilePath '{}' -WorkingDirectory '{}'",
+                    escaped_path, escaped_dir
+                );
+                if let Some(a) = args {
+                    if !a.is_empty() {
+                        ps_cmd.push_str(&format!(" -ArgumentList '{}'", a.replace('\'', "''")));
+                    }
+                }
+                let output = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .output()
+                    .map_err(|pe| {
+                        LiquiModError::Io(std::io::Error::other(format!(
+                            "提权启动程序「{}」失败: {pe}",
+                            exe_path.display()
+                        )))
+                    })?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(LiquiModError::Io(std::io::Error::other(format!(
+                        "提权启动「{}」失败: {stderr}",
+                        exe_path.display()
+                    ))));
+                }
+                Ok(())
+            }
+            Err(e) => Err(LiquiModError::Io(e)),
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let mut cmd = std::process::Command::new(exe_path);
+        cmd.current_dir(work_dir);
+        if let Some(a) = args {
+            if !a.is_empty() {
+                cmd.arg(a);
+            }
+        }
+        cmd.spawn().map_err(|e| LiquiModError::Io(e))?;
+        Ok(())
+    }
+}
+
 /// 执行带 3DMigoto Mod 注入的完整启动流程：
 /// 1. 自动同步 d3dx.ini 模式与 target 游戏路径
-/// 2. 启动 3DMigoto Loader 加载器
+/// 2. 提权/安全启动 3DMigoto Loader 加载器
 /// 3. 等待用户配置的注入缓冲延迟 (delay_ms)
-/// 4. 自动拉起游戏主程序
+/// 4. 提权/安全拉起游戏主程序
 pub fn launch_with_mod(opts: &GameLaunchOptions) -> Result<LaunchResult> {
     if !opts.game_exe.is_file() {
         return Err(LiquiModError::Io(std::io::Error::new(
@@ -48,19 +127,12 @@ pub fn launch_with_mod(opts: &GameLaunchOptions) -> Result<LaunchResult> {
         }
     }
 
-    // 2. 若存在 Loader 则先启动 Loader 进入注入准备状态
-    let mut loader_pid = None;
+    // 2. 若存在 Loader 则先启动 Loader 进入注入准备状态 (支持提权)
+    let mut loader_started = false;
     if let Some(loader) = &opts.loader_exe {
         if loader.is_file() {
-            let mut cmd = std::process::Command::new(loader);
-            cmd.current_dir(&opts.migoto_dir);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            }
-            if let Ok(child) = cmd.spawn() {
-                loader_pid = Some(child.id());
+            if spawn_program_with_uac(loader, &opts.migoto_dir, None, true).is_ok() {
+                loader_started = true;
             }
         }
     }
@@ -70,24 +142,23 @@ pub fn launch_with_mod(opts: &GameLaunchOptions) -> Result<LaunchResult> {
         std::thread::sleep(std::time::Duration::from_millis(opts.delay_ms));
     }
 
-    // 4. 自动拉起游戏主程序
+    // 4. 自动提权/安全拉起游戏主程序
     let game_dir = opts.game_exe.parent().unwrap_or_else(|| Path::new("."));
-    let mut cmd = std::process::Command::new(&opts.game_exe);
-    cmd.current_dir(game_dir);
-    let child = cmd.spawn().map_err(|e| {
-        LiquiModError::Io(std::io::Error::other(format!("启动游戏主程序失败: {}", e)))
-    })?;
+    spawn_program_with_uac(&opts.game_exe, game_dir, None, false)?;
 
-    let msg = if loader_pid.is_some() {
-        format!("✨ 3DMigoto 注入就绪 (延时 {}ms)，已成功拉起游戏 (PID: {})", opts.delay_ms, child.id())
+    let msg = if loader_started {
+        format!(
+            "✨ 3DMigoto 注入就绪 (延时 {}ms)，已拉起游戏！",
+            opts.delay_ms
+        )
     } else {
-        format!("已拉起游戏主程序 (PID: {})", child.id())
+        "已拉起游戏主程序".to_string()
     };
 
     Ok(LaunchResult {
         success: true,
         message: msg,
-        pid: Some(child.id()),
+        pid: None,
     })
 }
 
@@ -106,16 +177,30 @@ pub fn launch_native_game(game_exe: &Path) -> Result<LaunchResult> {
     }
 
     let game_dir = game_exe.parent().unwrap_or_else(|| Path::new("."));
-    let mut cmd = std::process::Command::new(game_exe);
-    cmd.current_dir(game_dir);
-
-    let child = cmd.spawn().map_err(|e| {
-        LiquiModError::Io(std::io::Error::other(format!("启动游戏主程序失败: {}", e)))
-    })?;
+    spawn_program_with_uac(game_exe, game_dir, None, false)?;
 
     Ok(LaunchResult {
         success: true,
-        message: format!("🕹️ 已启动原生纯净游戏 (PID: {})", child.id()),
-        pid: Some(child.id()),
+        message: "🕹️ 已启动原生纯净游戏".to_string(),
+        pid: None,
+    })
+}
+
+/// 启动官方启动器（如 HoYoPlay / launcher.exe）
+pub fn launch_official_launcher(launcher_exe: &Path) -> Result<LaunchResult> {
+    if !launcher_exe.is_file() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("官方启动器不存在: {}", launcher_exe.display()),
+        )));
+    }
+
+    let launcher_dir = launcher_exe.parent().unwrap_or_else(|| Path::new("."));
+    spawn_program_with_uac(launcher_exe, launcher_dir, None, false)?;
+
+    Ok(LaunchResult {
+        success: true,
+        message: "🌐 已打开官方启动器".to_string(),
+        pid: None,
     })
 }

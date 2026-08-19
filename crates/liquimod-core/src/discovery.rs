@@ -47,6 +47,63 @@ pub fn auto_detect_game_exe() -> Option<PathBuf> {
     None
 }
 
+/// 根据已知的游戏主程序路径推导并查找官方启动器 (launcher.exe / HYP.exe)
+pub fn find_launcher_from_game_exe(game_exe: &Path) -> Option<PathBuf> {
+    let game_dir = game_exe.parent()?;
+    // 常见结构 1: .../Star Rail/Game/StarRail.exe -> .../Star Rail/launcher.exe
+    if let Some(parent) = game_dir.parent() {
+        let l1 = parent.join("launcher.exe");
+        if l1.is_file() {
+            return Some(l1);
+        }
+        let l2 = parent.join("HYP.exe");
+        if l2.is_file() {
+            return Some(l2);
+        }
+        let l3 = parent.join("HoYoPlay.exe");
+        if l3.is_file() {
+            return Some(l3);
+        }
+    }
+    // 常见结构 2: 同级目录
+    let l_same = game_dir.join("launcher.exe");
+    if l_same.is_file() {
+        return Some(l_same);
+    }
+    None
+}
+
+/// 尝试全自动探测系统中的崩铁官方启动器
+pub fn auto_detect_official_launcher() -> Option<PathBuf> {
+    // 1. 若能探测到游戏本体则优先推导
+    if let Some(game_exe) = auto_detect_game_exe() {
+        if let Some(launcher) = find_launcher_from_game_exe(&game_exe) {
+            return Some(launcher);
+        }
+    }
+
+    // 2. 常见官方安装路径探测
+    let candidates = [
+        r"C:\Program Files\Star Rail\launcher.exe",
+        r"D:\Star Rail\launcher.exe",
+        r"E:\Star Rail\launcher.exe",
+        r"F:\Star Rail\launcher.exe",
+        r"C:\Program Files\HoYoPlay\launcher.exe",
+        r"D:\Program Files\HoYoPlay\launcher.exe",
+        r"C:\Program Files\HoYoPlay\HYP.exe",
+        r"D:\Program Files\HoYoPlay\HYP.exe",
+    ];
+
+    for c in candidates {
+        let p = PathBuf::from(c);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+
+    None
+}
+
 /// 检查给定路径是否为有效存在的 `StarRail.exe`
 pub fn is_valid_game_exe(path: &Path) -> bool {
     if !path.is_file() {
