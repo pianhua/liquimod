@@ -81,7 +81,7 @@
         placeholder="搜索角色或 Mod (Ctrl+K)…"
         class="flex-1 min-w-0 bg-transparent outline-none text-xs placeholder:text-[var(--text-secondary)]"
       />
-      <kbd class="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-secondary rounded bg-black/5 dark:bg-white/10">
+      <kbd class="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-secondary rounded bg-[var(--input-bg)]">
         Ctrl K
       </kbd>
     </div>
@@ -243,7 +243,7 @@
       </button>
       {#if workMode === "dev"}
         <button
-          class="w-5 h-5 rounded-full grid place-items-center text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+          class="w-5 h-5 rounded-full grid place-items-center text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] cursor-pointer"
           title="查看 3Dmigoto 抓取快捷键"
           onclick={(e) => {
             e.stopPropagation();
@@ -273,7 +273,7 @@
                 <span>3Dmigoto 抓取小键盘速查</span>
               </span>
               <button
-                class="w-6 h-6 rounded-full grid place-items-center text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                class="w-6 h-6 rounded-full grid place-items-center text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] cursor-pointer"
                 onclick={() => (showDevKeyHelp = false)}
               >
                 ✕
@@ -326,7 +326,7 @@
       </button>
       <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
       <button
-        class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)] active:scale-95"
+        class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
         onclick={onlaunchnativegame}
         title="直接启动游戏主程序，不注入 3DMigoto（原版纯净游戏）"
       >
@@ -335,7 +335,7 @@
       {#if onlaunchofficial}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
         <button
-          class="h-7 px-2 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)] active:scale-95"
+          class="h-7 px-2 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
           onclick={onlaunchofficial}
           title="打开崩铁官方启动器 / HoYoPlay（用于游戏大版本更新与修复）"
         >
@@ -345,7 +345,7 @@
       {#if onrefreshgame}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
         <button
-          class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)] active:scale-95"
+          class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
           onclick={onrefreshgame}
           title="向游戏发送 F10 刷新信号（热重载 Mod）"
         >
@@ -422,7 +422,7 @@
             </div>
             <div class="flex flex-col gap-1.5">
               {#each c.conflicting_mods as mod (mod.id)}
-                <div class="flex items-center justify-between text-xs py-1 px-2 rounded bg-black/5 dark:bg-white/5">
+                <div class="flex items-center justify-between text-xs py-1 px-2 rounded bg-[var(--input-bg)]">
                   <span class="font-medium truncate">{mod.character} · {mod.name}</span>
                 </div>
               {/each}

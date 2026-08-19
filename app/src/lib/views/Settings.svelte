@@ -526,7 +526,7 @@
         </div>
         <div class="flex items-center justify-end gap-1.5 shrink-0">
           <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/10"
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)]"
             disabled={detectingGame}
             onclick={autoDetectGame}
             title="自动从注册表和运行日志嗅探 StarRail.exe"
@@ -543,14 +543,14 @@
           </button>
           {#if config?.game_exe}
             <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10"
+              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
               title="在资源管理器中定位"
               onclick={() => config?.game_exe && api.openPathInExplorer(config.game_exe)}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
             </button>
           {/if}
-          <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/10" onclick={() => pickExe("game")}>
+          <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("game")}>
             选择…
           </button>
         </div>
@@ -564,14 +564,14 @@
         <div class="flex items-center justify-end gap-1.5 shrink-0">
           {#if config?.loader_exe}
             <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10"
+              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
               title="在资源管理器中定位"
               onclick={() => config?.loader_exe && api.openPathInExplorer(config.loader_exe)}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
             </button>
           {/if}
-          <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/10" onclick={() => pickExe("loader")}>
+          <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("loader")}>
             选择…
           </button>
         </div>
@@ -585,7 +585,7 @@
         <div class="flex items-center justify-end gap-1.5 shrink-0">
           {#if config?.mods_dir}
             <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10"
+              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
               title="在资源管理器中打开"
               onclick={() => config?.mods_dir && api.openPathInExplorer(config.mods_dir)}
             >
@@ -593,7 +593,7 @@
             </button>
           {/if}
           <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-black/5 dark:hover:bg-white/10"
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]"
             onclick={pickModsDir}
           >
             选择…
@@ -608,7 +608,7 @@
         </div>
         <div class="flex items-center justify-end shrink-0">
           <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-black/5 dark:hover:bg-white/10"
+            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-[var(--item-hover)]"
             onclick={() => config?.library_root && api.openPathInExplorer(config.library_root)}
           >
             <span>📂</span> 打开仓库
@@ -623,14 +623,14 @@
         <div>
           <div class="flex items-center gap-2">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">3DMigoto 核心与启动引擎微调</h3>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-black/5 dark:bg-white/10 text-secondary">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-[var(--input-bg)] text-secondary">
               当前核心: {config?.migoto_version ?? '内置就绪'}
             </span>
           </div>
           <p class="text-xs text-secondary mt-0.5">原生挂起注入、延迟缓冲微调与云端 SRMI 核心套件一键安装/更新</p>
         </div>
         <button
-          class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/10"
+          class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)]"
           disabled={checkingMigoto || installingMigoto}
           onclick={handleCheckMigotoUpdate}
         >
@@ -643,7 +643,7 @@
 
       {#if migotoRelease}
         {@const isUpToDate = Boolean(config?.migoto_version && migotoRelease.tag_name && config.migoto_version.trim().toLowerCase() === migotoRelease.tag_name.trim().toLowerCase())}
-        <div class="p-3.5 radius-card flex flex-col gap-2.5 border border-[var(--glass-stroke)] bg-black/5 dark:bg-white/5">
+        <div class="p-3.5 radius-card flex flex-col gap-2.5 border border-[var(--glass-stroke)] bg-[var(--input-bg)]">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="font-bold text-sm" class:text-emerald-500={isUpToDate} class:text-[var(--accent)]={!isUpToDate}>
@@ -687,7 +687,7 @@
             </span>
             <span class="font-mono">{Math.round(migotoProgress.percent)}%</span>
           </div>
-          <div class="w-full h-2 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
+          <div class="w-full h-2 bg-[var(--progress-track)] rounded-full overflow-hidden">
             <div
               class="h-full bg-[var(--accent)] transition-all duration-300 rounded-full shadow-sm"
               style={`width: ${migotoProgress.percent}%`}

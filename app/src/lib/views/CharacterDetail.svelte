@@ -410,7 +410,7 @@
 
       <div class="flex items-center glass radius-pill p-0.5">
         <button
-          class="h-7 px-2.5 text-xs text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/5 rounded-full cursor-pointer transition-colors"
+          class="h-7 px-2.5 text-xs text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-full cursor-pointer transition-colors"
           title="启用当前筛选出的所有 Mod"
           onclick={enableAll}
         >
@@ -418,7 +418,7 @@
         </button>
         <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-60"></span>
         <button
-          class="h-7 px-2.5 text-xs text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/5 rounded-full cursor-pointer transition-colors"
+          class="h-7 px-2.5 text-xs text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-full cursor-pointer transition-colors"
           title="禁用当前筛选出的所有 Mod"
           onclick={disableAll}
         >
@@ -498,7 +498,7 @@
       onmousedown={startDrag}
       title="拖拽调节详情面板宽度"
     >
-      <div class="w-[3px] h-12 rounded-full bg-black/10 dark:bg-white/10 group-hover:bg-[var(--accent)] group-hover:h-20 transition-all"></div>
+      <div class="w-[3px] h-12 rounded-full bg-[var(--splitter-bg)] group-hover:bg-[var(--accent)] group-hover:h-20 transition-all"></div>
     </div>
 
     <!-- 右侧大图与属性检查器面板 (可调宽度) -->

@@ -128,7 +128,7 @@
           class="w-full h-8 px-2.5 rounded-lg flex items-center justify-between text-xs font-semibold cursor-pointer transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed
             {item.danger
               ? 'text-[var(--danger)] hover:bg-[rgba(255,69,58,0.15)]'
-              : 'hover:bg-black/10 dark:hover:bg-white/10 text-[var(--text)]'}"
+              : 'hover:bg-[var(--item-hover)] text-[var(--text)]'}"
           disabled={item.disabled}
           onclick={(e) => handleItemClick(item, e)}
           onmouseenter={() => {
@@ -169,7 +169,7 @@
               <button
                 type="button"
                 role="menuitem"
-                class="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-xs font-semibold cursor-pointer transition-colors text-left hover:bg-black/10 dark:hover:bg-white/10 text-[var(--text)]"
+                class="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-xs font-semibold cursor-pointer transition-colors text-left hover:bg-[var(--item-hover)] text-[var(--text)]"
                 onclick={(e) => {
                   e.stopPropagation();
                   onclose();

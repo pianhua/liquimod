@@ -615,7 +615,7 @@
         bind:value={noteDraft}
         placeholder="添加自定义备忘（如作者来源、特殊按键说明、注意事项等）..."
         rows="2"
-        class="w-full bg-black/5 dark:bg-white/5 radius-card p-2.5 text-xs text-[var(--text)] placeholder:text-secondary/60 outline-none resize-none focus:ring-1 focus:ring-[var(--accent)] transition-all"
+        class="w-full bg-[var(--input-bg)] radius-card p-2.5 text-xs text-[var(--text)] placeholder:text-secondary/60 outline-none resize-none focus:ring-1 focus:ring-[var(--accent)] transition-all"
         onblur={saveNote}
         onkeydown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
@@ -724,7 +724,7 @@
       {#if keys.length > 0}
         <div class="flex flex-col gap-1.5 mt-1">
           {#each keys as k, i (`${k.section}_${k.key}_${i}`)}
-            <div class="flex items-center justify-between gap-2 text-xs py-1.5 px-2.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5" style="background: rgba(0,0,0,0.03)">
+            <div class="flex items-center justify-between gap-2 text-xs py-1.5 px-2.5 rounded-lg transition-colors hover:bg-[var(--item-hover)]" style="background: var(--input-bg)">
               <div class="flex items-center gap-1.5 min-w-0 flex-1">
                 {#if k.variable}
                   <span class="font-mono font-bold text-[var(--accent)] text-[12px] truncate" title={`控制变量：${k.variable}`}>

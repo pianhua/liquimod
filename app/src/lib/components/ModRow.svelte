@@ -196,14 +196,14 @@
     <div class="flex-1 min-w-0 px-2 flex items-center">
       {#if !renaming && mod.note}
         <div
-          class="inline-flex items-center gap-2 max-w-lg min-w-0 py-1 px-2.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.05] text-xs text-secondary transition-colors group-hover:text-[var(--text)] group-hover:bg-black/7 dark:group-hover:bg-white/10 select-text"
+          class="inline-flex items-center gap-2 max-w-lg min-w-0 py-1 px-2.5 rounded-lg bg-[var(--input-bg)] text-xs text-secondary transition-colors group-hover:text-[var(--text)] group-hover:bg-[var(--item-hover)] select-text"
           style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
           title={`备注：${mod.note}`}
         >
           <span class="text-[10px] font-semibold text-secondary/80 uppercase tracking-wide shrink-0 select-none">
             备注
           </span>
-          <span class="w-[1px] h-3 bg-black/10 dark:bg-white/10 shrink-0"></span>
+          <span class="w-[1px] h-3 bg-[var(--glass-stroke)] shrink-0"></span>
           <span class="truncate">{mod.note}</span>
         </div>
       {/if}
