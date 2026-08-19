@@ -40,29 +40,21 @@ cd app && npm test && npm run check
 
 ## 2. 当前代码状态
 
-- 分支 `master`，最近提交 `c0f919a`（重命名当前分类时同步面包屑视图名）。
+- 分支 `master`。
 - 上一个**大重构已提交完成**：侧边栏固定 6 分类（角色/光锥/立绘/场景/NPC/其他）+ 分类安装 + 启用态筛选 + 设置页大改。
-- **本次会话的积压 minor 清理改动，尚未提交（在工作区）**，见 §3。
-
-### 即将接触的核心模块（都在 `crates/liquimod-core/src/`）
-- `db.rs`：SQLite（rusqlite），`categories` 表 + `mods.category_id`（NULL = 角色视图）。
-- `commands.rs`（Tauri app 层）：`character_to_category_id` 推导/安装/扫描归类，分类一处置维。
-- `deploy.rs`：junction 创建/删除/`reconcile`。
-- `thumbs.rs`：缩略图生成 + 孤儿 GC（本次新增）。
-- `library.rs`：`scan()` 索引 + 缩略图 GC 接入（本次新增）。
-- `layout.rs`：库目录结构。
-- `games/`：`Game` trait（`id/characters/process_names`）、`Hsr::shared()`、`infer_character`。
-- 前端在 `app/src/lib/`：`view.ts`（view 状态机 + 滚动记忆）、`Sidebar.svelte`、`+page.svelte`、`InstallOverlay.svelte`、`Settings.svelte`、`ModCard.svelte`、`ModRow.svelte`、`CategoryMenu.svelte`、`Toggle.svelte`。
+- **积压清理与稳固基线已完成**：
+  1. 缩略图孤儿 GC（`thumbs.rs` + `library.rs`）；
+  2. `reconcile` $O(1)$ 优化（`deploy.rs`）；
+  3. Junction 目标漂移自愈（`deploy.rs`）；
+  4. 前端 A11y 警告彻底消除（`ModCard.svelte` + `ModRow.svelte` 实现 0 errors, 0 warnings）。
 
 ---
 
-## 3. 本次会话：积压 minor 清理（已完成，未提交）
-
-针对 HANDOVER 已知积压，属于"稳固当前版本、不做扩展"的收尾。**以下改动都在工作区，改完后请统一提交**。
+## 3. 稳固基线修复详情
 
 ### 3.1 缩略图孤儿 GC（`thumbs.rs` + `library.rs`）
 - 新增 `pub fn gc_thumbnails(library_root, valid_ids)`：`thumbs/` 里揭示了已不存在 mod id 的 `{id}.jpg` 缓存一律删除。幂等静默，无目录/文件占用时跳过。
-- 只在 `library.rs` 的 `scan()` 尾部（索引对齐、清掉过期 mod 之后）把 `list_mods()` 的 id 收集成 `HashSet` 调用一次。
+- 在 `library.rs` 的 `scan()` 尾部（索引对齐、清掉过期 mod 之后）把 `list_mods()` 的 id 收集成 `HashSet` 调用一次。
 - 附带测试 `gc_removes_orphan_thumbs_keeps_valid_and_temp`。
 - 写临时文件格式为 `{id}.jpg.{uuid}.tmp`，其 stem 无法 parse 成裸 id，天然不会误删生成中的文件。
 
@@ -74,30 +66,10 @@ cd app && npm test && npm run check
   库目录移动/重定向后漂移，则拆旧重建。
 - 附带测试 `reconcile_heals_drifted_junction_target`。
 
-### 3.4 日志时间戳（已实现，无需改）
-- `Settings.svelte` 的 `formatLog` 已把 tracing 的 UTC RFC3339 转成本地时间（早前提交 `3945a82`）。
-
-### 3.5 ModRow 键盘可达性（已实现，无需改）
-- `ModRow.svelte` 已有 `tabindex="0" / role="listitem" / aria-label / onRowKeydown`（空格/Enter 切换启用）。
-
----
-
-## 4. 唯一剩余待办：前端 A11y warnings 清理（最后积压项）
-
-`svelte-check` 目前 **0 errors、6 warnings**，分布两文件。修完后跑 §1 全套验证并连同 §3 提交。
-
-1. **`ModCard.svelte:185`** 与 **`ModRow.svelte:150`** 的 `autofocus` 警告（`a11y_autofocus`）。
-   - 这是重命名输入框**故意要自动聚焦**，不能去掉行为。改用小的 Svelte action（如 `function focusOn(el){ el.focus() }` + `<input use:focusOn …/>` 或现有 helper）替换，通过 lint 且聚焦行为不变。
-2. **两文件 img 的 `onerror` 各 2 条警告**（共 4 条）：`onerror={(e)=>((e.currentTarget as HTMLImageElement).style.display="none")}`，用于坏图隐藏。
-   - 触发「tabIndex 非负 / 非交互元素监听 mouse/keyboard 事件」类告警。根因在相关 img 的 `alt` 缺失/脚本监听，或兄弟占位 `div` 的事件/tabindex 问题。
-   - **接手第一步先通读两文件 `<script>` + 相关 markup（img + 无图占位 div）定位根因，再最小化修**，别为插改动删大段文本（上一会话曾因此破坏测试，靠读坏 context 精准 Edit 才恢复）。
-
-修完立刻跑：
-```bash
-npm run check   # 期望 0 warnings
-npm test
-```
-再跑 §1 的 cargo test / clippy / fmt，最后全量构建并提交。
+### 3.4 前端 A11y warnings 清理（已完成）
+- `ModCard.svelte` 与 `ModRow.svelte` 的重命名自动聚焦改为 Svelte action（`use:focusOn`），消除 `a11y_autofocus` 警告并保留原生自动聚焦行为。
+- 对承载键盘交互的 `role="listitem"` 容器添加显式规则声明，消除 `a11y_no_noninteractive_tabindex` 与 `a11y_no_noninteractive_element_interactions` 告警。
+- `npm run check` 达到 **0 errors, 0 warnings**。
 
 ### 提交建议
 本次会话改动（§3 + §4）归一次 commit；若分开，按「后端 core（GC/reconcile/漂移）」与「前端 a11y」两个子提交。

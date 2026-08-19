@@ -84,8 +84,12 @@
     e.preventDefault();
     ontoggle(!mod.enabled);
   }
+  function focusOn(el: HTMLElement) {
+    el.focus();
+  }
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <div
   role="listitem"
   tabindex="0"
@@ -182,7 +186,7 @@
             }
           }}
           onblur={commitRename}
-          autofocus
+          use:focusOn
         />
       {:else}
         <p class="font-medium text-sm truncate">{mod.name}</p>

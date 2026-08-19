@@ -72,6 +72,10 @@ impl Library {
                 crate::thumbs::remove_thumbnail(&self.layout.root, m.id);
             }
         }
+        // 回收孤儿缩略图：索引对齐后，清理已不存在 mod 的缓存（防 rowid 复用/残留累积）
+        let valid_ids: std::collections::HashSet<i64> =
+            self.db.list_mods()?.iter().map(|m| m.id).collect();
+        crate::thumbs::gc_thumbnails(&self.layout.root, &valid_ids);
         self.db.list_mods()
     }
 

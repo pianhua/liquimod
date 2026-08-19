@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::library::Library;
 use crate::models::ModEntry;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub struct Deployer<'a> {
@@ -90,10 +91,10 @@ impl<'a> Deployer<'a> {
     /// 安全规则：只碰指向本仓库的 junction；用户自己放的目录/文件一律不动。
     pub fn reconcile(&self) -> Result<()> {
         let entries = self.library.db.list_mods()?;
-        let mut managed_links: Vec<String> = Vec::new();
+        let mut managed_links: HashSet<String> = HashSet::new();
         for e in &entries {
             let link = self.mods_dir.join(Self::link_name(e));
-            managed_links.push(Self::link_name(e));
+            managed_links.insert(Self::link_name(e));
             let exists = junction::exists(&link).unwrap_or(false);
             if e.enabled && !exists {
                 let target = self.library.layout.root.join(&e.rel_path);
@@ -103,6 +104,21 @@ impl<'a> Deployer<'a> {
                 Self::prepare_link(&link)?;
                 junction::create(&target, &link)
                     .map_err(|err| crate::error::LiquiModError::Junction(err.to_string()))?;
+            } else if e.enabled && exists {
+                // 校验 junction 是否仍指向正确目标：库目录移动/重定向后会漂移，拆旧重建
+                let target = self.library.layout.root.join(&e.rel_path);
+                let points_correctly = junction::get_target(&link)
+                    .map(|t| t == target)
+                    .unwrap_or(false);
+                if !points_correctly {
+                    Self::remove_junction(&link)?;
+                    if target.is_dir() {
+                        Self::prepare_link(&link)?;
+                        junction::create(&target, &link).map_err(|err| {
+                            crate::error::LiquiModError::Junction(err.to_string())
+                        })?;
+                    }
+                }
             } else if !e.enabled && exists {
                 Self::remove_junction(&link)?;
             }
@@ -213,6 +229,34 @@ mod tests {
         let d = Deployer::new(&lib, &mods_dir);
         assert!(d.enable(entry.id).is_err());
         assert!(!lib.db.get_mod(entry.id).unwrap().enabled);
+    }
+
+    #[test]
+    fn reconcile_heals_drifted_junction_target() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let d = Deployer::new(&lib, &mods_dir);
+        d.enable(entry.id).unwrap();
+
+        // 模拟用户/外部把 junction 重定向到别处：
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        let elsewhere = _t.path().join("elsewhere");
+        fs::create_dir_all(&elsewhere).unwrap();
+        Deployer::remove_junction(&link).unwrap();
+        junction::create(&elsewhere, &link).unwrap();
+
+        d.reconcile().unwrap();
+
+        let target = lib
+            .layout
+            .mod_dir("Firefly", "Summer")
+            .canonicalize()
+            .unwrap();
+        assert_eq!(
+            junction::get_target(&link).unwrap().canonicalize().unwrap(),
+            target
+        );
     }
 
     #[test]

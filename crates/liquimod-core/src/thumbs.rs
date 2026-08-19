@@ -1,5 +1,6 @@
 //! Mod 预览图缩略：确定性缓存路径 thumbs/{id}.jpg，源新则重生。
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 const IMAGE_EXTS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
@@ -100,6 +101,28 @@ pub fn remove_thumbnail(library_root: &Path, mod_id: i64) {
     }
 }
 
+/// 回收孤儿缩略图：`thumbs/` 里揭示了已不存在的 mod id 的缓存一律删除。
+/// 幂等、静默——无缓存目录或文件被占用时跳过，不影响主流程。
+pub fn gc_thumbnails(library_root: &Path, valid_ids: &HashSet<i64>) {
+    let thumb_dir = library_root.join("thumbs");
+    let Ok(entries) = std::fs::read_dir(&thumb_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        // 只清理 "{id}.jpg"；生成中的 "{id}.jpg.{uuid}.tmp" 无法解析为裸 id，天然跳过
+        let Some(id) = stem.parse::<i64>().ok() else {
+            continue;
+        };
+        if !valid_ids.contains(&id) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +140,28 @@ mod tests {
         remove_thumbnail(lib_dir.path(), 3);
         assert!(!t.exists());
         remove_thumbnail(lib_dir.path(), 3); // 幂等
+    }
+
+    #[test]
+    fn gc_removes_orphan_thumbs_keeps_valid_and_temp() {
+        let lib_dir = tempfile::tempdir().unwrap();
+        let thumb_dir = lib_dir.path().join("thumbs");
+        std::fs::create_dir_all(&thumb_dir).unwrap();
+        // 已有缩略图：1.jpg（有效）、2.jpg（孤儿）、非缩略图文件不该动
+        std::fs::write(thumb_dir.join("1.jpg"), b"a").unwrap();
+        std::fs::write(thumb_dir.join("2.jpg"), b"b").unwrap();
+        std::fs::write(thumb_dir.join("3.jpg.abc.tmp"), b"c").unwrap();
+        std::fs::write(thumb_dir.join("note.txt"), b"d").unwrap();
+
+        let valid = [1i64].into_iter().collect();
+        gc_thumbnails(lib_dir.path(), &valid);
+
+        assert!(thumb_dir.join("1.jpg").exists()); // 有效保留
+        assert!(!thumb_dir.join("2.jpg").exists()); // 孤儿删除
+        assert!(thumb_dir.join("3.jpg.abc.tmp").exists()); // tmp 跳过
+        assert!(thumb_dir.join("note.txt").exists()); // 非缩略图不动
+                                                      // 无 thumbs 目录时静默
+        gc_thumbnails(&lib_dir.path().join("nope"), &valid);
     }
 
     #[test]
