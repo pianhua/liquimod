@@ -32,6 +32,7 @@
   let confirming = $state(false);
   let busy = $state(false);
   let cancelled = $state(false);
+  let imgError = $state(false);
 
   function fmtSize(b: number): string {
     if (b < 0) return "—";
@@ -148,14 +149,14 @@
       </div>
     </div>
   {:else}
-    {#if mod.thumb}
+    {#if mod.thumb && !imgError}
       <img
         src={mod.thumb}
         alt=""
         class="w-14 h-14 rounded-xl object-cover shrink-0"
         style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
         draggable="false"
-        onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+        onerror={() => (imgError = true)}
       />
     {:else}
       <div

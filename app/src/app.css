@@ -196,3 +196,14 @@ body::before {
 .accent-text { color: var(--accent); }
 .accent-fill { background: var(--accent-fill); }
 .text-secondary { color: var(--text-secondary); }
+
+/* 苹果物理按压与触感交互 */
+button,
+[role="button"] {
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.12s ease;
+}
+
+button:active:not(:disabled),
+[role="button"]:active:not(:disabled) {
+  transform: scale(0.96);
+}

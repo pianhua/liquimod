@@ -81,9 +81,20 @@
         placeholder="搜索角色或 Mod (Ctrl+K)…"
         class="flex-1 min-w-0 bg-transparent outline-none text-xs placeholder:text-[var(--text-secondary)]"
       />
-      <kbd class="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-secondary rounded bg-[var(--input-bg)]">
-        Ctrl K
-      </kbd>
+      {#if query}
+        <button
+          class="w-4 h-4 radius-pill grid place-items-center text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] cursor-pointer text-[10px] shrink-0"
+          aria-label="清空搜索"
+          title="清空 (Esc)"
+          onclick={() => (query = "")}
+        >
+          ✕
+        </button>
+      {:else}
+        <kbd class="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-secondary rounded bg-[var(--input-bg)]">
+          Ctrl K
+        </kbd>
+      {/if}
     </div>
   </div>
 
