@@ -241,10 +241,10 @@
     }
   }
 
-  async function launchLoader() {
+  async function launchGameNative() {
     try {
-      await api.launchLoader();
-      toast("已启动加载器");
+      const res = await api.launchGameNative();
+      toast(`🕹️ ${res.message}`);
     } catch (e) {
       toast(String(e));
       if (String(e).includes("未配置")) openSettings();
@@ -579,8 +579,8 @@
           {conflicts}
           workMode={config?.work_mode ?? "play"}
           ontoggleworkmode={toggleWorkMode}
-          onlaunchgame={launchGame}
-          onlaunchloader={launchLoader}
+          onlaunchmodgame={launchGame}
+          onlaunchnativegame={launchGameNative}
           onrefreshgame={refreshGame}
           ontogglesettings={() => (showSettings ? closeSettings() : openSettings())}
           onapplied={refresh}

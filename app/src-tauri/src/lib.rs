@@ -151,6 +151,7 @@ pub fn run() {
             commands::choose_game_exe,
             commands::choose_loader_exe,
             commands::launch_game,
+            commands::launch_game_native,
             commands::launch_loader,
             commands::inspect_3dmigoto_dir,
             commands::import_3dmigoto_dir,

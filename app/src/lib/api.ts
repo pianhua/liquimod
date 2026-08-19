@@ -325,6 +325,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
       }
       case "launch_game":
+      case "launch_game_native":
         throw "未配置游戏路径，请在设置中配置";
       case "launch_loader":
         throw "未配置加载器路径，请在设置中配置";
@@ -465,6 +466,7 @@ export const api = {
   chooseGameExe: (path: string) => call<ConfigDto>("choose_game_exe", { path }),
   chooseLoaderExe: (path: string) => call<ConfigDto>("choose_loader_exe", { path }),
   launchGame: () => call<LaunchResultDto>("launch_game"),
+  launchGameNative: () => call<LaunchResultDto>("launch_game_native"),
   launchLoader: () => call<void>("launch_loader"),
   inspect3dMigotoDir: (path: string) =>
     call<MigotoInfoDto>("inspect_3dmigoto_dir", { path }),

@@ -7,8 +7,8 @@ function props(over: Record<string, unknown> = {}) {
     crumbs: ["角色", "流萤"],
     sort: "recent" as const,
     showSort: true,
-    onlaunchgame: vi.fn(),
-    onlaunchloader: vi.fn(),
+    onlaunchmodgame: vi.fn(),
+    onlaunchnativegame: vi.fn(),
     onrefreshgame: vi.fn(),
     ontogglesettings: vi.fn(),
     onapplied: vi.fn(),
@@ -20,17 +20,17 @@ describe("Toolbar", () => {
   it("渲染面包屑与两个启动按钮", () => {
     render(Toolbar, { props: props() });
     expect(screen.getByLabelText("面包屑").textContent).toContain("角色");
-    expect(screen.getByText("启动游戏")).toBeTruthy();
-    expect(screen.getByText("启动加载器")).toBeTruthy();
+    expect(screen.getByText("带 Mod 启动")).toBeTruthy();
+    expect(screen.getByText("原生启动")).toBeTruthy();
   });
 
   it("启动按钮回调", async () => {
     const p = props();
     render(Toolbar, { props: p });
-    await fireEvent.click(screen.getByText("启动游戏"));
-    expect(p.onlaunchgame).toHaveBeenCalled();
-    await fireEvent.click(screen.getByText("启动加载器"));
-    expect(p.onlaunchloader).toHaveBeenCalled();
+    await fireEvent.click(screen.getByText("带 Mod 启动"));
+    expect(p.onlaunchmodgame).toHaveBeenCalled();
+    await fireEvent.click(screen.getByText("原生启动"));
+    expect(p.onlaunchnativegame).toHaveBeenCalled();
   });
 
   it("渲染并点击刷新按钮", async () => {

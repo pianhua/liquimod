@@ -700,8 +700,8 @@
       <div class="border-t border-[var(--glass-stroke)] pt-3 flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm font-medium">注入时机延迟 (Injection Delay)</p>
-            <p class="text-xs text-secondary mt-0.5">为 DirectX 初始化留出缓冲时间，默认 500ms（防反作弊冲突与误报）</p>
+            <p class="text-sm font-medium">3DM 启动后延时启动游戏的时间 (注入缓冲延迟)</p>
+            <p class="text-xs text-secondary mt-0.5">带 Mod 启动时，先启动 3DMigoto Loader，等待指定毫秒再自动拉起游戏主程序，为 DirectX 注入留出缓冲时间（默认 500ms）</p>
           </div>
           <span class="text-xs font-mono font-bold text-[var(--accent)] px-2 py-0.5 glass radius-pill">
             {delayDraft} ms

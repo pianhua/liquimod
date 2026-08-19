@@ -1570,7 +1570,18 @@ pub fn launch_game(
         delay_ms,
     };
 
-    liquimod_core::launcher::launch_game(&opts).map_err(|e| e.to_string())
+    liquimod_core::launcher::launch_with_mod(&opts).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn launch_game_native(
+    state: tauri::State<AppState>,
+) -> Result<liquimod_core::launcher::LaunchResult, String> {
+    let game_exe = state.config.lock().unwrap().game_exe.clone();
+    let Some(game_path) = game_exe else {
+        return Err("未配置游戏主程序路径，请在设置中配置或点击自动探测".to_string());
+    };
+    liquimod_core::launcher::launch_native_game(&game_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

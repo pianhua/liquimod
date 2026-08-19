@@ -14,8 +14,8 @@
     conflicts = [],
     workMode = "play",
     ontoggleworkmode,
-    onlaunchgame,
-    onlaunchloader,
+    onlaunchmodgame,
+    onlaunchnativegame,
     onrefreshgame = undefined,
     ontogglesettings,
     onapplied,
@@ -30,8 +30,8 @@
     conflicts?: ConflictReportDto[];
     workMode?: "play" | "dev";
     ontoggleworkmode?: () => void;
-    onlaunchgame: () => void;
-    onlaunchloader: () => void;
+    onlaunchmodgame: () => void;
+    onlaunchnativegame: () => void;
     onrefreshgame?: () => void;
     ontogglesettings: () => void;
     onapplied: () => void;
@@ -310,33 +310,30 @@
       {/if}
     </div>
 
-    <!-- 启动组合控制组 -->
-    <div class="flex items-center h-8 glass radius-pill px-0.5">
+    <!-- 启动组合控制组 (带 Mod 启动 + 原生纯净启动) -->
+    <div class="flex items-center h-8 glass radius-pill px-0.5 gap-0.5">
       <button
-        class="h-7 px-3 text-xs font-semibold flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10"
-        onclick={onlaunchgame}
-        title="启动游戏本体"
+        class="h-7 px-3 text-xs font-semibold flex items-center gap-1.5 cursor-pointer rounded-full transition-all accent-fill accent-text hover:opacity-90 active:scale-95"
+        onclick={onlaunchmodgame}
+        title="自动启动 3DMigoto Loader 并按设定延迟拉起游戏（注入 Mod）"
       >
         <svg width="10" height="10" viewBox="0 0 11 11" fill="currentColor">
           <path d="M2.5 1.5v8l7-4-7-4z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
         </svg>
-        启动游戏
+        <span>带 Mod 启动</span>
       </button>
       <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
       <button
-        class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)]"
-        onclick={onlaunchloader}
-        title="启动 3Dmigoto Loader"
+        class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)] active:scale-95"
+        onclick={onlaunchnativegame}
+        title="直接启动游戏主程序，不注入 3DMigoto（原生纯净启动）"
       >
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-          <path d="M6 1.5v5M3.8 3.8 6 1.5l2.2 2.3M2 7.5v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        启动加载器
+        <span>原生启动</span>
       </button>
       {#if onrefreshgame}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
         <button
-          class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)]"
+          class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text)] active:scale-95"
           onclick={onrefreshgame}
           title="向游戏发送 F10 刷新信号"
         >
