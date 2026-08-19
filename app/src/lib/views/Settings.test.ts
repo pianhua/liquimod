@@ -22,8 +22,32 @@ vi.mock("$lib/api", async (importOriginal) => {
   };
 });
 
-const config = { library_root: "C:/mock/Library", mods_dir: "D:/game/Mods", auto_enable: false, theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null };
-const testConfig = { library_root: "C:/L", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null };
+const config: import("$lib/api").ConfigDto = {
+  library_root: "C:/mock/Library",
+  mods_dir: "D:/game/Mods",
+  auto_enable: false,
+  theme: "auto",
+  character_category_name: "角色",
+  game_exe: null,
+  loader_exe: null,
+  work_mode: "play",
+  injection_delay_ms: 500,
+  github_token: "",
+  github_mirror: "",
+};
+const testConfig: import("$lib/api").ConfigDto = {
+  library_root: "C:/L",
+  mods_dir: null,
+  auto_enable: false,
+  theme: "auto",
+  character_category_name: "角色",
+  game_exe: null,
+  loader_exe: null,
+  work_mode: "play",
+  injection_delay_ms: 500,
+  github_token: "",
+  github_mirror: "",
+};
 
 describe("Settings", () => {
   beforeEach(() => {

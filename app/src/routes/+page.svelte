@@ -215,10 +215,26 @@
     }
   }
 
+  async function toggleWorkMode() {
+    const current = config?.work_mode ?? "play";
+    const next = current === "play" ? "dev" : "play";
+    try {
+      config = await api.setWorkMode(next);
+      if (next === "dev") {
+        toast("🛠️ 已切换为【抓取开发模式】：已启用 Hash 捕获与剪贴板 Dump，可在小键盘抓取");
+      } else {
+        toast("🎮 已切换为【游玩模式】：纯净流畅零开销，不产生 Dump 缓存");
+      }
+    } catch (e) {
+      toast(`切换模式失败：${e}`);
+    }
+  }
+
   async function launchGame() {
     try {
-      await api.launchGame();
-      toast("已启动游戏");
+      const res = await api.launchGame();
+      const modeLabel = config?.work_mode === "dev" ? "🛠️ 抓取开发模式" : "🎮 游玩模式";
+      toast(`✨ ${res.message} (${modeLabel})`);
     } catch (e) {
       toast(String(e));
       if (String(e).includes("未配置")) openSettings();
@@ -561,6 +577,8 @@
           {showSort}
           {showSettings}
           {conflicts}
+          workMode={config?.work_mode ?? "play"}
+          ontoggleworkmode={toggleWorkMode}
           onlaunchgame={launchGame}
           onlaunchloader={launchLoader}
           onrefreshgame={refreshGame}

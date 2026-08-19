@@ -251,6 +251,89 @@
     }
   }
 
+  let checkingMigoto = $state(false);
+  let migotoRelease = $state<import("$lib/api").MigotoReleaseInfoDto | null>(null);
+  let delayDraft = $state(500);
+  let tokenDraft = $state("");
+  let mirrorDraft = $state("");
+
+  $effect(() => {
+    if (config) {
+      delayDraft = config.injection_delay_ms ?? 500;
+      tokenDraft = config.github_token ?? "";
+      mirrorDraft = config.github_mirror ?? "";
+    }
+  });
+
+  async function autoDetectGame() {
+    try {
+      const found = await api.autoDetectGameExe();
+      if (found) {
+        await api.chooseGameExe(found);
+        toast(`✨ 成功探测到游戏路径：${found}`);
+        diagStatus = await api.getDiagnosticStatus().catch(() => null);
+        onchanged();
+      } else {
+        toast("未能在常见目录或运行日志中找到 StarRail.exe，请手动选择");
+      }
+    } catch (e) {
+      toast(`探测失败：${e}`);
+    }
+  }
+
+  async function handleInitMigoto() {
+    try {
+      const target = await open({
+        directory: true,
+        title: "选择或新建 3Dmigoto 工作区存放目录",
+      });
+      if (typeof target === "string") {
+        const ini = await api.initMigotoWorkspace(target);
+        await api.import3dMigotoDir(target);
+        toast(`✨ 3Dmigoto 工作区已初始化完成并自动加载！`);
+        diagStatus = await api.getDiagnosticStatus().catch(() => null);
+        onchanged();
+      }
+    } catch (e) {
+      toast(`初始化失败：${e}`);
+    }
+  }
+
+  async function handleCheckMigotoUpdate() {
+    if (checkingMigoto) return;
+    checkingMigoto = true;
+    try {
+      const rel = await api.checkMigotoUpdate();
+      migotoRelease = rel;
+      toast(`✨ 查找到 3DMigoto (SRMI) 最新 Release：${rel.tag_name || rel.name}`);
+    } catch (e) {
+      toast(`检查 3DMigoto 更新失败：${e}`);
+    } finally {
+      checkingMigoto = false;
+    }
+  }
+
+  async function saveDelay() {
+    try {
+      await api.setInjectionDelay(delayDraft);
+      toast("已保存注入延迟设置");
+      onchanged();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function saveGithubSettings() {
+    try {
+      await api.setGithubToken(tokenDraft);
+      await api.setGithubMirror(mirrorDraft);
+      toast("已保存云端与镜像加速设置");
+      onchanged();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
   async function addPassword() {
     const v = newPassword.trim();
     if (!v || busy) return;
@@ -357,14 +440,22 @@
       <div class="flex items-center justify-between gap-3">
         <div>
           <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">游戏与 3Dmigoto 集成</h3>
-          <p class="text-xs text-secondary mt-0.5">自动识别 d3dx.ini 或手动配置启动与部署路径</p>
+          <p class="text-xs text-secondary mt-0.5">智能嗅探国服路径、一键初始化或导入已有 3Dmigoto 套件</p>
         </div>
-        <button
-          class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
-          onclick={import3dMigoto}
-        >
-          ✨ 一键识别 3DM 目录
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
+            onclick={handleInitMigoto}
+          >
+            📦 一键初始化 3DM
+          </button>
+          <button
+            class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold shrink-0 cursor-pointer transition-transform hover:scale-[1.02]"
+            onclick={import3dMigoto}
+          >
+            ✨ 识别已有目录
+          </button>
+        </div>
       </div>
 
       <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-3">
@@ -373,6 +464,13 @@
           <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.game_exe ?? "未配置"}>{config?.game_exe ?? "未配置"}</p>
         </div>
         <div class="flex items-center gap-1.5 shrink-0">
+          <button
+            class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1"
+            onclick={autoDetectGame}
+            title="自动从注册表和运行日志嗅探 StarRail.exe"
+          >
+            <span>🔍</span> 自动探测
+          </button>
           {#if config?.game_exe}
             <button
               class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)]"
@@ -444,6 +542,96 @@
         >
           <span>📂</span> 打开仓库
         </button>
+      </div>
+    </section>
+
+    <!-- 分组 3：3DMigoto 核心套件与启动引擎微调 -->
+    <section class="glass radius-panel p-5 flex flex-col gap-3.5">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">3DMigoto 核心与启动引擎微调</h3>
+          <p class="text-xs text-secondary mt-0.5">原生挂起注入、延迟缓冲微调与云端 SRMI 核心套件版本</p>
+        </div>
+        <button
+          class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5"
+          disabled={checkingMigoto}
+          onclick={handleCheckMigotoUpdate}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class={checkingMigoto ? "animate-spin" : ""}>
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          {checkingMigoto ? "检查中…" : "检查 3DMigoto 核心更新"}
+        </button>
+      </div>
+
+      {#if migotoRelease}
+        <div class="p-3 glass rounded-xl text-xs flex flex-col gap-1.5 border border-[var(--glass-stroke)] bg-black/5 dark:bg-white/5">
+          <div class="flex items-center justify-between font-semibold">
+            <span class="text-[var(--accent)]">最新版本：{migotoRelease.tag_name || migotoRelease.name}</span>
+            <span class="text-secondary font-mono text-[10px]">{migotoRelease.published_at?.slice(0, 10) ?? ""}</span>
+          </div>
+          {#if migotoRelease.asset_name}
+            <div class="text-secondary text-[11px]">包含资源：{migotoRelease.asset_name} ({migotoRelease.size_bytes ? Math.round(migotoRelease.size_bytes / 1024) + ' KB' : ''})</div>
+          {/if}
+          {#if migotoRelease.body}
+            <p class="text-secondary text-[11px] line-clamp-2 mt-0.5">{migotoRelease.body}</p>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- 注入延迟调节 -->
+      <div class="border-t border-[var(--glass-stroke)] pt-3 flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium">注入时机延迟 (Injection Delay)</p>
+            <p class="text-xs text-secondary mt-0.5">为 DirectX 初始化留出缓冲时间，默认 500ms（防反作弊冲突与误报）</p>
+          </div>
+          <span class="text-xs font-mono font-bold text-[var(--accent)] px-2 py-0.5 glass radius-pill">
+            {delayDraft} ms
+          </span>
+        </div>
+        <div class="flex items-center gap-3">
+          <input
+            type="range"
+            min="0"
+            max="3000"
+            step="100"
+            bind:value={delayDraft}
+            onchange={saveDelay}
+            class="flex-1 accent-[var(--accent)] cursor-pointer"
+          />
+        </div>
+      </div>
+
+      <!-- 云端镜像与加速通道 -->
+      <div class="border-t border-[var(--glass-stroke)] pt-3 flex flex-col gap-2.5">
+        <div>
+          <p class="text-sm font-medium">GitHub 镜像与加速通道 (可选)</p>
+          <p class="text-xs text-secondary mt-0.5">国内环境若无法直连 GitHub，可配置镜像前缀 (如 https://ghproxy.net/)</p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input
+            bind:value={mirrorDraft}
+            placeholder="镜像加速前缀 (如 https://ghproxy.net)"
+            class="h-8 px-3 text-xs bg-transparent outline-none rounded-full"
+            style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+          />
+          <input
+            bind:value={tokenDraft}
+            type="password"
+            placeholder="GitHub Personal Access Token (防限流)"
+            class="h-8 px-3 text-xs bg-transparent outline-none rounded-full"
+            style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+          />
+        </div>
+        <div class="flex justify-end">
+          <button
+            class="accent-fill accent-text radius-pill h-7 px-3 text-xs font-semibold cursor-pointer"
+            onclick={saveGithubSettings}
+          >
+            保存加速配置
+          </button>
+        </div>
       </div>
     </section>
 

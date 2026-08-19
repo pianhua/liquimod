@@ -12,6 +12,7 @@ app/.env*
 # 本地测试工作区与调试截图固件
 /workspace_srmi
 /fixtures
+/temp_research
 /.zcode
 
 # 内部开发计划与设计草稿

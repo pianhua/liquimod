@@ -196,6 +196,157 @@ pub fn inspect_migoto_dir(target_dir: &Path) -> Result<MigotoInfo> {
     Ok(info)
 }
 
+/// 3Dmigoto 工作模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MigotoWorkMode {
+    /// 🎮 游玩模式：hunting = 0, calls = 0, show_warnings = 0 (极致流畅纯净、零GPU/CPU多余开销、无dump垃圾产生)
+    Play,
+    /// 🛠️ 抓取开发模式：hunting = 2, marking_actions = clipboard hlsl asm regex (支持小键盘按键实时抓取并复制Hash到剪贴板)
+    Dev,
+}
+
+/// 探测指定 d3dx.ini 内容当前所处的模式
+pub fn inspect_work_mode(content: &str) -> MigotoWorkMode {
+    let sections = parse_ini_sections(content);
+    if let Some(sec) = sections.get("hunting") {
+        if let Some(val) = sec.get("hunting") {
+            let v = val.trim();
+            if v == "2" || v == "1" {
+                return MigotoWorkMode::Dev;
+            }
+        }
+    }
+    MigotoWorkMode::Play
+}
+
+/// 将目标模式的键值参数精准应用/替换到 d3dx.ini 文本中，同时保留文件中原有的注释、空行和其他配置
+pub fn apply_work_mode(content: &str, mode: MigotoWorkMode) -> String {
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+
+    // 目标参数集：
+    // [Hunting]
+    //   hunting = 0 (Play) / 2 (Dev)
+    //   marking_actions = clipboard (Play) / clipboard hlsl asm regex (Dev)
+    // [Logging]
+    //   calls = 0 (Play) / 0 (Dev)
+    //   debug = 0 (Play) / 0 (Dev)
+    //   show_warnings = 0 (Play) / 0 (Dev)
+    // [Rendering] (Dev 模式下可选激活缓冲调整)
+    //   allow_buffer_resize = 1
+
+    let hunting_val = match mode {
+        MigotoWorkMode::Play => "0",
+        MigotoWorkMode::Dev => "2",
+    };
+    let marking_actions_val = match mode {
+        MigotoWorkMode::Play => "clipboard",
+        MigotoWorkMode::Dev => "clipboard hlsl asm regex",
+    };
+
+    set_ini_key_value(&mut lines, "Hunting", "hunting", hunting_val);
+    set_ini_key_value(
+        &mut lines,
+        "Hunting",
+        "marking_actions",
+        marking_actions_val,
+    );
+
+    if mode == MigotoWorkMode::Play {
+        set_ini_key_value(&mut lines, "Logging", "calls", "0");
+        set_ini_key_value(&mut lines, "Logging", "show_warnings", "0");
+    }
+
+    let mut result = lines.join("\r\n");
+    if !result.ends_with("\r\n") && !result.is_empty() {
+        result.push_str("\r\n");
+    }
+    result
+}
+
+/// 辅助函数：在 INI 行列表中定位指定 section 下的 key 并替换其值；若未找到则安全追加
+fn set_ini_key_value(
+    lines: &mut Vec<String>,
+    target_section: &str,
+    target_key: &str,
+    new_value: &str,
+) {
+    let mut current_section: Option<String> = None;
+    let mut section_start_idx: Option<usize> = None;
+    let mut key_found_idx: Option<usize> = None;
+
+    let target_sec_lower = target_section.to_lowercase();
+    let target_key_lower = target_key.to_lowercase();
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            let sec_name = trimmed[1..trimmed.len() - 1].trim().to_lowercase();
+            if sec_name == target_sec_lower {
+                section_start_idx = Some(i);
+            }
+            current_section = Some(sec_name);
+            continue;
+        }
+
+        if current_section.as_deref() == Some(&target_sec_lower) {
+            // 剥离注释检查 key
+            let mut code_part = trimmed;
+            if let Some((clean, _)) = code_part.split_once(';') {
+                code_part = clean.trim();
+            }
+            if let Some((clean, _)) = code_part.split_once('#') {
+                code_part = clean.trim();
+            }
+            if let Some((k, _)) = code_part.split_once('=') {
+                if k.trim().to_lowercase() == target_key_lower {
+                    key_found_idx = Some(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(k_idx) = key_found_idx {
+        // 保留原行的行内注释（如有）
+        let original_line = &lines[k_idx];
+        let comment_suffix = if let Some(idx) = original_line.find(';') {
+            format!(" {}", &original_line[idx..])
+        } else if let Some(idx) = original_line.find('#') {
+            format!(" {}", &original_line[idx..])
+        } else {
+            String::new()
+        };
+
+        lines[k_idx] = format!("{} = {}{}", target_key, new_value, comment_suffix);
+    } else if let Some(s_idx) = section_start_idx {
+        // section 存在但 key 不存在，插入到该 section 开头之后
+        lines.insert(s_idx + 1, format!("{} = {}", target_key, new_value));
+    } else {
+        // section 不存在，在末尾创建
+        if !lines.is_empty() && !lines.last().map(|s| s.is_empty()).unwrap_or(false) {
+            lines.push(String::new());
+        }
+        lines.push(format!("[{}]", target_section));
+        lines.push(format!("{} = {}", target_key, new_value));
+    }
+}
+
+/// 将目标模式写入指定路径的 `d3dx.ini`
+pub fn update_d3dx_ini_mode(ini_path: &Path, mode: MigotoWorkMode) -> Result<()> {
+    if !ini_path.is_file() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("d3dx.ini 文件不存在：{}", ini_path.display()),
+        )));
+    }
+
+    let original = std::fs::read_to_string(ini_path)?;
+    let updated = apply_work_mode(&original, mode);
+    std::fs::write(ini_path, updated)?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModKeyBinding {
     /// INI 中的 section 原始名称（如 KeySwapHead）
@@ -767,5 +918,35 @@ $weapon = 0,1
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].hash, "9de39691");
         assert_eq!(conflicts[0].conflicting_mods.len(), 2);
+    }
+
+    #[test]
+    fn inspects_and_applies_work_modes() {
+        let sample_ini = r#"; 3Dmigoto d3dx.ini template
+[Loader]
+target = StarRail.exe
+
+[Hunting]
+hunting = 0 ; 默认关闭
+marking_actions = clipboard
+
+[Logging]
+calls = 0
+show_warnings = 0
+"#;
+        // 初始状态为 Play 模式
+        assert_eq!(inspect_work_mode(sample_ini), MigotoWorkMode::Play);
+
+        // 切换为 Dev 模式
+        let dev_ini = apply_work_mode(sample_ini, MigotoWorkMode::Dev);
+        assert_eq!(inspect_work_mode(&dev_ini), MigotoWorkMode::Dev);
+        assert!(dev_ini.contains("hunting = 2"));
+        assert!(dev_ini.contains("marking_actions = clipboard hlsl asm regex"));
+
+        // 切换回 Play 模式
+        let play_ini = apply_work_mode(&dev_ini, MigotoWorkMode::Play);
+        assert_eq!(inspect_work_mode(&play_ini), MigotoWorkMode::Play);
+        assert!(play_ini.contains("hunting = 0"));
+        assert!(play_ini.contains("marking_actions = clipboard"));
     }
 }

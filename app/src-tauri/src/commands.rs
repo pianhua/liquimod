@@ -59,6 +59,10 @@ pub struct ConfigDto {
     pub character_category_name: String,
     pub game_exe: Option<String>,
     pub loader_exe: Option<String>,
+    pub work_mode: String,
+    pub injection_delay_ms: u64,
+    pub github_token: String,
+    pub github_mirror: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -178,6 +182,10 @@ pub fn config_dto(c: &Config) -> ConfigDto {
         character_category_name: c.character_category_name.clone(),
         game_exe: c.game_exe.as_ref().map(|p| p.display().to_string()),
         loader_exe: c.loader_exe.as_ref().map(|p| p.display().to_string()),
+        work_mode: c.work_mode.clone(),
+        injection_delay_ms: c.injection_delay_ms,
+        github_token: c.github_token.clone(),
+        github_mirror: c.github_mirror.clone(),
     }
 }
 
@@ -443,14 +451,9 @@ pub fn thumb_data_url(
     mod_id: i64,
     custom_cover: Option<&str>,
 ) -> Option<String> {
-    let path = liquimod_core::thumbs::ensure_thumbnail(
-        library_root,
-        mod_dir,
-        mod_id,
-        custom_cover,
-    )
-    .ok()
-    .flatten()?;
+    let path = liquimod_core::thumbs::ensure_thumbnail(library_root, mod_dir, mod_id, custom_cover)
+        .ok()
+        .flatten()?;
     let bytes = std::fs::read(path).ok()?;
     Some(format!(
         "data:image/jpeg;base64,{}",
@@ -1225,9 +1228,148 @@ pub fn choose_loader_exe(state: tauri::State<AppState>, path: String) -> Result<
 }
 
 #[tauri::command]
-pub fn launch_game(state: tauri::State<AppState>) -> Result<(), String> {
-    let exe = state.config.lock().unwrap().game_exe.clone();
-    launch_exe(exe.as_deref(), "游戏")
+pub fn auto_detect_game_exe() -> Result<Option<String>, String> {
+    let found = liquimod_core::discovery::auto_detect_game_exe();
+    Ok(found.map(|p| p.display().to_string()))
+}
+
+#[tauri::command]
+pub fn init_migoto_workspace(target_dir: String) -> Result<String, String> {
+    let p = PathBuf::from(target_dir);
+    let ini = liquimod_core::migoto_sync::init_migoto_workspace(&p).map_err(|e| e.to_string())?;
+    Ok(ini.display().to_string())
+}
+
+#[tauri::command]
+pub async fn check_migoto_update(
+    state: tauri::State<'_, AppState>,
+) -> Result<liquimod_core::migoto_sync::MigotoReleaseInfo, String> {
+    let (token, mirror) = {
+        let config = state.config.lock().unwrap();
+        let t = if config.github_token.is_empty() {
+            None
+        } else {
+            Some(config.github_token.clone())
+        };
+        let m = if config.github_mirror.is_empty() {
+            None
+        } else {
+            Some(config.github_mirror.clone())
+        };
+        (t, m)
+    };
+
+    liquimod_core::migoto_sync::check_latest_srmi_release(token.as_deref(), mirror.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_work_mode(state: tauri::State<AppState>, mode: String) -> Result<ConfigDto, String> {
+    if !["play", "dev"].contains(&mode.as_str()) {
+        return Err("工作模式只能是 play 或 dev".to_string());
+    }
+    let mut config = state.config.lock().unwrap();
+    config.work_mode = mode.clone();
+
+    // 若已配置 3Dmigoto 目录，顺带实时更新 d3dx.ini
+    if let Some(mods_dir) = &config.mods_dir {
+        if let Some(parent) = mods_dir.parent() {
+            let ini = parent.join("d3dx.ini");
+            if ini.is_file() {
+                let m = match mode.as_str() {
+                    "dev" => liquimod_core::d3d::MigotoWorkMode::Dev,
+                    _ => liquimod_core::d3d::MigotoWorkMode::Play,
+                };
+                let _ = liquimod_core::d3d::update_d3dx_ini_mode(&ini, m);
+            }
+        }
+    }
+
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn set_injection_delay(
+    state: tauri::State<AppState>,
+    delay_ms: u64,
+) -> Result<ConfigDto, String> {
+    let mut config = state.config.lock().unwrap();
+    config.injection_delay_ms = delay_ms.min(10000);
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn set_github_token(state: tauri::State<AppState>, token: String) -> Result<ConfigDto, String> {
+    let mut config = state.config.lock().unwrap();
+    config.github_token = token.trim().to_string();
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn set_github_mirror(
+    state: tauri::State<AppState>,
+    mirror: String,
+) -> Result<ConfigDto, String> {
+    let mut config = state.config.lock().unwrap();
+    config.github_mirror = mirror.trim().to_string();
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn launch_game(
+    state: tauri::State<AppState>,
+) -> Result<liquimod_core::launcher::LaunchResult, String> {
+    let (game_exe, mods_dir, loader_exe, work_mode_str, delay_ms) = {
+        let c = state.config.lock().unwrap();
+        (
+            c.game_exe.clone(),
+            c.mods_dir.clone(),
+            c.loader_exe.clone(),
+            c.work_mode.clone(),
+            c.injection_delay_ms,
+        )
+    };
+
+    let Some(game_path) = game_exe else {
+        return Err("未配置游戏主程序路径，请在设置中配置或点击自动探测".to_string());
+    };
+
+    let migoto_dir = mods_dir
+        .and_then(|m| m.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| {
+            game_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf()
+        });
+
+    let work_mode = match work_mode_str.as_str() {
+        "dev" => liquimod_core::d3d::MigotoWorkMode::Dev,
+        _ => liquimod_core::d3d::MigotoWorkMode::Play,
+    };
+
+    let opts = liquimod_core::launcher::GameLaunchOptions {
+        game_exe: game_path,
+        migoto_dir,
+        loader_exe,
+        work_mode,
+        delay_ms,
+    };
+
+    liquimod_core::launcher::launch_game(&opts).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1364,10 +1506,7 @@ pub fn set_mod_cover_from_internal(
 }
 
 #[tauri::command]
-pub fn reset_mod_cover(
-    state: tauri::State<AppState>,
-    id: i64,
-) -> Result<Option<String>, String> {
+pub fn reset_mod_cover(state: tauri::State<AppState>, id: i64) -> Result<Option<String>, String> {
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
     let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
@@ -1390,7 +1529,8 @@ pub fn get_mod_cover_image(
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
     let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
 
-    let Some(src) = liquimod_core::thumbs::find_preview_image(&mod_dir, row.cover_image.as_deref()) else {
+    let Some(src) = liquimod_core::thumbs::find_preview_image(&mod_dir, row.cover_image.as_deref())
+    else {
         return Ok(None);
     };
 
@@ -1497,7 +1637,8 @@ pub fn get_mod_images(state: tauri::State<AppState>, id: i64) -> Result<Vec<ModI
         return Ok(Vec::new());
     }
 
-    let active_cover = liquimod_core::thumbs::find_preview_image(&mod_dir, row.cover_image.as_deref());
+    let active_cover =
+        liquimod_core::thumbs::find_preview_image(&mod_dir, row.cover_image.as_deref());
 
     let mut images = Vec::new();
     fn scan_imgs(
@@ -1566,7 +1707,9 @@ pub fn get_mod_images(state: tauri::State<AppState>, id: i64) -> Result<Vec<ModI
                             }
                         }
                     }
-                } else if p.is_dir() && !entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false) {
+                } else if p.is_dir()
+                    && !entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false)
+                {
                     scan_imgs(&p, base, depth + 1, active_cover, out);
                 }
             }
@@ -1574,12 +1717,10 @@ pub fn get_mod_images(state: tauri::State<AppState>, id: i64) -> Result<Vec<ModI
     }
 
     scan_imgs(&mod_dir, &mod_dir, 0, active_cover.as_ref(), &mut images);
-    images.sort_by(|a, b| {
-        match (a.is_cover, b.is_cover) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.relative_path.cmp(&b.relative_path),
-        }
+    images.sort_by(|a, b| match (a.is_cover, b.is_cover) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.relative_path.cmp(&b.relative_path),
     });
 
     Ok(images)
@@ -1886,6 +2027,10 @@ mod tests {
             game_exe: None,
             loader_exe: None,
             favorite_characters: Vec::new(),
+            work_mode: "play".into(),
+            injection_delay_ms: 500,
+            github_token: String::new(),
+            github_mirror: String::new(),
         };
         assert!(set_mods_dir(&mut c, PathBuf::from("C:/no/such/dir")).is_err());
         assert!(c.mods_dir.is_none());
@@ -2154,6 +2299,10 @@ mod tests {
             game_exe: None,
             loader_exe: None,
             favorite_characters: Vec::new(),
+            work_mode: "play".into(),
+            injection_delay_ms: 500,
+            github_token: String::new(),
+            github_mirror: String::new(),
         };
         maybe_auto_enable(&lib, &c, m.id, None);
         assert!(!lib.db.get_mod(m.id).unwrap().enabled);

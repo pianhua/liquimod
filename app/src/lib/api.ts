@@ -9,6 +9,26 @@ export interface ConfigDto {
   game_exe: string | null;
   loader_exe: string | null;
   favorite_characters?: string[];
+  work_mode: "play" | "dev";
+  injection_delay_ms: number;
+  github_token: string;
+  github_mirror: string;
+}
+
+export interface MigotoReleaseInfoDto {
+  tag_name: string;
+  name: string;
+  body: string;
+  published_at: string | null;
+  download_url: string | null;
+  asset_name: string | null;
+  size_bytes: number | null;
+}
+
+export interface LaunchResultDto {
+  success: boolean;
+  message: string;
+  pid: number | null;
 }
 
 export interface MigotoInfoDto {
@@ -443,7 +463,7 @@ export const api = {
   readLog: () => call<string>("read_log"),
   chooseGameExe: (path: string) => call<ConfigDto>("choose_game_exe", { path }),
   chooseLoaderExe: (path: string) => call<ConfigDto>("choose_loader_exe", { path }),
-  launchGame: () => call<void>("launch_game"),
+  launchGame: () => call<LaunchResultDto>("launch_game"),
   launchLoader: () => call<void>("launch_loader"),
   inspect3dMigotoDir: (path: string) =>
     call<MigotoInfoDto>("inspect_3dmigoto_dir", { path }),
@@ -473,6 +493,15 @@ export const api = {
     call<void>("set_mod_note", { id, note }),
   toggleFavoriteCharacter: (internalName: string) =>
     call<boolean>("toggle_favorite_character", { internalName }),
+  autoDetectGameExe: () => call<string | null>("auto_detect_game_exe"),
+  initMigotoWorkspace: (targetDir: string) =>
+    call<string>("init_migoto_workspace", { targetDir }),
+  checkMigotoUpdate: () => call<MigotoReleaseInfoDto>("check_migoto_update"),
+  setWorkMode: (mode: "play" | "dev") => call<ConfigDto>("set_work_mode", { mode }),
+  setInjectionDelay: (delayMs: number) =>
+    call<ConfigDto>("set_injection_delay", { delayMs }),
+  setGithubToken: (token: string) => call<ConfigDto>("set_github_token", { token }),
+  setGithubMirror: (mirror: string) => call<ConfigDto>("set_github_mirror", { mirror }),
 };
 
 export interface AssetUpdateCheckResultDto {

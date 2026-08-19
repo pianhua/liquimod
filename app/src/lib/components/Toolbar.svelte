@@ -12,6 +12,8 @@
     showSort,
     showSettings = false,
     conflicts = [],
+    workMode = "play",
+    ontoggleworkmode,
     onlaunchgame,
     onlaunchloader,
     onrefreshgame = undefined,
@@ -26,6 +28,8 @@
     showSort: boolean;
     showSettings?: boolean;
     conflicts?: ConflictReportDto[];
+    workMode?: "play" | "dev";
+    ontoggleworkmode?: () => void;
     onlaunchgame: () => void;
     onlaunchloader: () => void;
     onrefreshgame?: () => void;
@@ -34,6 +38,7 @@
   } = $props();
 
   let conflictModalOpen = $state(false);
+  let showDevKeyHelp = $state(false);
 </script>
 
 <header class="relative z-30 flex items-center justify-between h-14 px-6 shrink-0 gap-4" aria-label="全局控制台">
@@ -117,6 +122,45 @@
 
     <!-- 预设管理入口 -->
     <PresetMenu {onapplied} />
+
+    <!-- 工作模式切换胶囊 (Play / Dev) -->
+    <div class="flex items-center h-8 glass radius-pill px-1 gap-1">
+      <button
+        class="h-6 px-2 text-[11px] font-medium flex items-center gap-1 cursor-pointer rounded-full transition-all"
+        class:accent-fill={workMode === "play"}
+        class:accent-text={workMode === "play"}
+        class:text-secondary={workMode !== "play"}
+        onclick={() => ontoggleworkmode?.()}
+        title={workMode === "play" ? "当前为游玩模式：极致流畅无Dump开销。点击切换" : "点击切换为游玩模式"}
+      >
+        <span>🎮</span>
+        <span>游玩</span>
+      </button>
+      <button
+        class="h-6 px-2 text-[11px] font-medium flex items-center gap-1 cursor-pointer rounded-full transition-all"
+        class:accent-fill={workMode === "dev"}
+        class:accent-text={workMode === "dev"}
+        class:text-secondary={workMode !== "dev"}
+        onclick={() => ontoggleworkmode?.()}
+        title={workMode === "dev" ? "当前为抓取模式：开启着色器/Hash捕获。点击切换" : "点击切换为抓取模式"}
+      >
+        <span>🛠️</span>
+        <span>抓取</span>
+      </button>
+      {#if workMode === "dev"}
+        <button
+          class="w-5 h-5 rounded-full grid place-items-center text-secondary hover:text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+          title="查看 3Dmigoto 抓取快捷键"
+          onclick={() => (showDevKeyHelp = !showDevKeyHelp)}
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </button>
+      {/if}
+    </div>
 
     <!-- 启动组合控制组 -->
     <div class="flex items-center h-8 glass radius-pill px-0.5">
@@ -236,6 +280,80 @@
           onclick={() => (conflictModalOpen = false)}
         >
           知道了
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- 3DMigoto 抓取开发模式快捷键速查提示 -->
+{#if showDevKeyHelp}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
+    class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-6"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    onclick={() => (showDevKeyHelp = false)}
+    onkeydown={(e) => e.key === "Escape" && (showDevKeyHelp = false)}
+  >
+    <div
+      class="glass radius-panel p-6 max-w-md w-full flex flex-col gap-4 shadow-2xl"
+      role="document"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+    >
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2 text-[var(--accent)] font-bold">
+          <span class="text-lg">🛠️</span>
+          <h3>3Dmigoto 抓取模式快捷键速查</h3>
+        </div>
+        <button
+          class="glass radius-pill w-7 h-7 grid place-items-center cursor-pointer text-secondary"
+          aria-label="关闭"
+          onclick={() => (showDevKeyHelp = false)}
+        >
+          ✕
+        </button>
+      </div>
+
+      <p class="text-xs text-secondary">
+        进入游戏后，使用右侧数字小键盘（NumPad）实时捕获模型与贴图 Hash，已启用自动复制到剪贴板。
+      </p>
+
+      <div class="flex flex-col gap-2 text-xs">
+        <div class="p-2.5 radius-card glass flex items-center justify-between">
+          <span class="font-medium text-secondary">切换选择目标 (顶点/索引/着色器)</span>
+          <kbd class="px-2 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num /</kbd>
+        </div>
+        <div class="p-2.5 radius-card glass flex items-center justify-between">
+          <span class="font-medium text-secondary">上一个 / 下一个元素</span>
+          <div class="flex gap-1">
+            <kbd class="px-1.5 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num 1</kbd>
+            <kbd class="px-1.5 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num 2</kbd>
+          </div>
+        </div>
+        <div class="p-2.5 radius-card glass flex items-center justify-between">
+          <span class="font-medium text-secondary">标记/复制当前 Hash 到剪贴板</span>
+          <kbd class="px-2 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num *</kbd>
+        </div>
+        <div class="p-2.5 radius-card glass flex items-center justify-between">
+          <span class="font-medium text-secondary">隐藏当前选中的模型/网格</span>
+          <kbd class="px-2 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num 0</kbd>
+        </div>
+        <div class="p-2.5 radius-card glass flex items-center justify-between">
+          <span class="font-medium text-secondary">导出当前帧 HLSL 反汇编</span>
+          <kbd class="px-2 py-1 glass radius-pill font-mono font-bold text-[var(--accent)]">Num .</kbd>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-2 border-t border-[var(--glass-stroke)]">
+        <button
+          class="accent-fill accent-text radius-pill h-8 px-4 text-xs font-semibold cursor-pointer"
+          onclick={() => (showDevKeyHelp = false)}
+        >
+          好的
         </button>
       </div>
     </div>

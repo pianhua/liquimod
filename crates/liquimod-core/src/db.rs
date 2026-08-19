@@ -666,7 +666,8 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let id = db.upsert_mod("A", "m", "mods/A/m").unwrap();
         assert_eq!(db.get_mod(id).unwrap().cover_image, None);
-        db.set_mod_cover_image(id, Some("images/custom.png")).unwrap();
+        db.set_mod_cover_image(id, Some("images/custom.png"))
+            .unwrap();
         assert_eq!(
             db.get_mod(id).unwrap().cover_image.as_deref(),
             Some("images/custom.png")

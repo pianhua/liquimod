@@ -8,6 +8,12 @@ fn default_theme() -> String {
 fn default_character_category_name() -> String {
     "角色".into()
 }
+fn default_work_mode() -> String {
+    "play".into()
+}
+fn default_injection_delay_ms() -> u64 {
+    500
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
@@ -25,6 +31,14 @@ pub struct Config {
     pub loader_exe: Option<PathBuf>,
     #[serde(default)]
     pub favorite_characters: Vec<String>,
+    #[serde(default = "default_work_mode")]
+    pub work_mode: String,
+    #[serde(default = "default_injection_delay_ms")]
+    pub injection_delay_ms: u64,
+    #[serde(default)]
+    pub github_token: String,
+    #[serde(default)]
+    pub github_mirror: String,
 }
 
 impl Config {
@@ -67,6 +81,10 @@ impl Config {
                 game_exe: None,
                 loader_exe: None,
                 favorite_characters: Vec::new(),
+                work_mode: default_work_mode(),
+                injection_delay_ms: default_injection_delay_ms(),
+                github_token: String::new(),
+                github_mirror: String::new(),
             },
         }
     }
@@ -108,6 +126,10 @@ mod tests {
             game_exe: None,
             loader_exe: None,
             favorite_characters: Vec::new(),
+            work_mode: "play".into(),
+            injection_delay_ms: 500,
+            github_token: String::new(),
+            github_mirror: String::new(),
         };
         c.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path), c);
