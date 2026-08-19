@@ -24,6 +24,7 @@
     categoryId = null,
     categoryName = undefined,
     modsDirConfigured,
+    query = "",
     onback,
     onconfigured,
   }: {
@@ -32,6 +33,7 @@
     categoryId?: number | null;
     categoryName?: string;
     modsDirConfigured: boolean;
+    query?: string;
     onback: () => void;
     onconfigured: () => void;
   } = $props();
@@ -63,7 +65,7 @@
   let detailWidth = $state(440);
   let isDragging = $state(false);
 
-  let shown = $derived(filterMods(mods, "", enabledFilter));
+  let shown = $derived(filterMods(mods, query, enabledFilter));
   let selectedMod = $derived(
     shown.find((m) => m.id === selectedModId) ?? (shown.length > 0 ? shown[0] : null)
   );

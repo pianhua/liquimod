@@ -88,4 +88,21 @@ describe("CharacterDetail", () => {
     });
     expect(screen.getByText("选择目录")).toBeTruthy();
   });
+
+  it("支持 query 属性过滤 Mod 列表", async () => {
+    mockedInvoke.mockResolvedValue([
+      { id: 11, name: "Summer Bikini", enabled: true, installed_at: 1700000000 },
+      { id: 12, name: "Winter Coat", enabled: false, installed_at: 1700000000 },
+    ]);
+    render(CharacterDetail, {
+      character,
+      categories: [],
+      modsDirConfigured: true,
+      query: "Winter",
+      onback: () => {},
+      onconfigured: () => {},
+    });
+    await waitFor(() => expect(screen.getAllByText("Winter Coat").length).toBeGreaterThanOrEqual(1));
+    expect(screen.queryByText("Summer Bikini")).toBeNull();
+  });
 });

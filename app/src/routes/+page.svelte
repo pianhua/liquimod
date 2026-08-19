@@ -114,14 +114,23 @@
     }
   }
 
-  async function navigate(v: View, preserveQuery = false) {
+  const viewSearchMemory = new Map<string, string>();
+
+  $effect(() => {
+    // 持续记录当前视图的搜索词
+    const k = viewKey(view);
+    viewSearchMemory.set(k, query);
+  });
+
+  async function navigate(v: View) {
     if (!showSettings) saveScroll();
     showSettings = false;
+    // 保存当前视图搜索词
+    viewSearchMemory.set(viewKey(view), query);
     view = v;
     viewMods = [];
-    if (!preserveQuery) {
-      query = "";
-    }
+    // 恢复目标视图之前所保存的搜索词
+    query = viewSearchMemory.get(viewKey(v)) ?? "";
     restoreScroll();
     await refresh();
     await restoreScroll();
@@ -129,9 +138,9 @@
 
   function onBackFromCharacter(v: View) {
     if (v.kind === "character" && v.categoryId != null) {
-      navigate({ kind: "type", id: v.categoryId, name: v.categoryName ?? "分类" }, true);
+      navigate({ kind: "type", id: v.categoryId, name: v.categoryName ?? "分类" });
     } else {
-      navigate({ kind: "home" }, true);
+      navigate({ kind: "home" });
     }
   }
 
@@ -614,6 +623,7 @@
             categoryId={view.categoryId}
             categoryName={view.categoryName}
             modsDirConfigured={config?.mods_dir != null}
+            {query}
             onback={() => onBackFromCharacter(view)}
             onconfigured={refresh}
           />
