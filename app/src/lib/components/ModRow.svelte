@@ -11,8 +11,9 @@
     selected = false,
     checked = false,
     isMultiSelectMode = false,
-    isDraggingThis = false,
-    isDragOverTarget = false,
+    isDragging = false,
+    dragOffsetY = 0,
+    slotShiftY = 0,
     ontoggle,
     ontogglefavorite,
     onrename,
@@ -22,18 +23,16 @@
     onselect,
     oncheck,
     onmenu,
-    ondragstart,
-    ondragover,
-    ondrop,
-    ondragend,
+    onstartdrag,
   }: {
     mod: ModDto;
     categories: CategoryDto[];
     selected?: boolean;
     checked?: boolean;
     isMultiSelectMode?: boolean;
-    isDraggingThis?: boolean;
-    isDragOverTarget?: boolean;
+    isDragging?: boolean;
+    dragOffsetY?: number;
+    slotShiftY?: number;
     ontoggle: (next: boolean) => void;
     ontogglefavorite?: () => void;
     onrename: (name: string) => Promise<boolean>;
@@ -43,10 +42,7 @@
     onselect?: (e: MouseEvent) => void;
     oncheck?: (checked: boolean) => void;
     onmenu?: (e: MouseEvent, mod: ModDto) => void;
-    ondragstart?: (e: DragEvent) => void;
-    ondragover?: (e: DragEvent) => void;
-    ondrop?: (e: DragEvent) => void;
-    ondragend?: (e: DragEvent) => void;
+    onstartdrag?: (e: PointerEvent, mod: ModDto) => void;
   } = $props();
 
   let renaming = $state(false);
@@ -135,19 +131,18 @@
   role="listitem"
   tabindex="0"
   aria-label={mod.name}
-  draggable="true"
-  class="group glass radius-card px-3.5 py-3 flex items-center gap-2.5 outline-none transition-all cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
-  class:selected-row={selected && !checked}
-  class:checked-row={checked}
-  class:opacity-40={isDraggingThis}
-  class:drag-over-row={isDragOverTarget}
+  class="group glass radius-card px-3.5 py-3 flex items-center gap-2.5 outline-none transition-colors cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  class:selected-row={selected && !checked && !isDragging}
+  class:checked-row={checked && !isDragging}
+  class:dragging-active={isDragging}
+  style={isDragging
+    ? `transform: translateY(${dragOffsetY}px) scale(1.02); z-index: 50; position: relative; box-shadow: 0 16px 36px rgba(0,0,0,0.35), inset 0 0 0 1.5px var(--accent); background: var(--glass-floating-bg); pointer-events: none;`
+    : slotShiftY
+    ? `transform: translateY(${slotShiftY}px); transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);`
+    : "transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);"}
   onclick={onRowClick}
   ondblclick={onopen}
   onkeydown={onRowKeydown}
-  {ondragstart}
-  {ondragover}
-  {ondrop}
-  {ondragend}
   oncontextmenu={(e) => {
     if (onmenu) {
       e.preventDefault();
@@ -179,11 +174,16 @@
       </div>
     </div>
   {:else}
-    <!-- 拖拽手柄图标 (Apple 精密矢量 6 点手柄) -->
+    <!-- 拖拽手柄 (Pointer 物理抓手) -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="w-4 h-6 flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing text-secondary/40 hover:text-[var(--text)] transition-opacity opacity-0 group-hover:opacity-100"
-      title="拖拽排序"
+      class="w-5 h-7 flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing text-secondary/50 hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-md transition-all touch-none select-none"
+      title="按住拖拽排序"
       aria-label="拖拽手柄"
+      onpointerdown={(e) => {
+        e.stopPropagation();
+        onstartdrag?.(e, mod);
+      }}
     >
       <IconGrip size={14} />
     </div>
@@ -340,10 +340,5 @@
   .checked-row {
     box-shadow: inset 0 0 0 1.5px var(--accent) !important;
     background: var(--accent-fill) !important;
-  }
-  .drag-over-row {
-    border-color: var(--accent) !important;
-    box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 16px var(--accent-glow) !important;
-    transform: translateY(-2px);
   }
 </style>

@@ -954,7 +954,7 @@
       <!-- 关于信息 -->
       <div class="border-t border-[var(--glass-stroke)] pt-3.5 text-xs text-secondary flex items-center justify-between">
         <span>LiquiMod · 星轨流光 —— 崩坏：星穹铁道 现代化 Mod 管理器</span>
-        <span class="font-mono text-[var(--accent)] font-medium">v0.2.5 (Rust + Tauri 2 + Svelte 5)</span>
+        <span class="font-mono text-[var(--accent)] font-medium">v0.2.6 (Rust + Tauri 2 + Svelte 5)</span>
       </div>
     </section>
   </div>

@@ -487,8 +487,13 @@
     };
   }
 
-  let draggedModId = $state<number | null>(null);
-  let dragOverModId = $state<number | null>(null);
+  let draggingModId = $state<number | null>(null);
+  let dragOffsetY = $state(0);
+  let targetIndex = $state<number | null>(null);
+  let startIndex = 0;
+  let startY = 0;
+  let rowHeights: number[] = [];
+  let listContainerEl: HTMLElement | null = $state(null);
 
   async function toggleFavoriteMod(mod: ModDto) {
     try {
@@ -500,58 +505,91 @@
     }
   }
 
-  function handleDragStart(mod: ModDto, e: DragEvent) {
-    draggedModId = mod.id;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", String(mod.id));
-    }
-  }
-
-  function handleDragOver(mod: ModDto, e: DragEvent) {
+  function handleStartPointerDrag(e: PointerEvent, mod: ModDto) {
+    if (e.button !== 0) return;
     e.preventDefault();
-    if (draggedModId !== mod.id) {
-      dragOverModId = mod.id;
+
+    const idx = shown.findIndex((m) => m.id === mod.id);
+    if (idx === -1) return;
+
+    draggingModId = mod.id;
+    startIndex = idx;
+    targetIndex = idx;
+    startY = e.clientY;
+    dragOffsetY = 0;
+
+    if (listContainerEl) {
+      const rows = Array.from(listContainerEl.querySelectorAll<HTMLElement>('div[role="listitem"]'));
+      rowHeights = rows.map((r) => r.offsetHeight + 10);
     }
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = "move";
+
+    function onPointerMove(ev: PointerEvent) {
+      if (draggingModId == null) return;
+      dragOffsetY = ev.clientY - startY;
+
+      const approxRowH = rowHeights[startIndex] || 68;
+      const shiftSteps = Math.round(dragOffsetY / approxRowH);
+      targetIndex = Math.max(0, Math.min(shown.length - 1, startIndex + shiftSteps));
     }
+
+    async function onPointerUp(_ev: PointerEvent) {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+
+      const finalModId = draggingModId;
+      const finalTarget = targetIndex;
+      const initialIndex = startIndex;
+
+      draggingModId = null;
+      dragOffsetY = 0;
+      targetIndex = null;
+
+      if (finalModId == null || finalTarget == null || finalTarget === initialIndex) {
+        return;
+      }
+
+      // 重排当前 shown 数组
+      const currentShown = [...shown];
+      const [moved] = currentShown.splice(initialIndex, 1);
+      currentShown.splice(finalTarget, 0, moved);
+
+      // 更新所有 mods 的 sort_order
+      const nextMods = [...mods];
+      currentShown.forEach((m, i) => {
+        m.sort_order = i;
+        const exist = nextMods.find((x) => x.id === m.id);
+        if (exist) exist.sort_order = i;
+      });
+
+      mods = nextMods;
+      sort = "custom";
+
+      try {
+        await api.reorderMods(currentShown.map((m) => m.id));
+        toast("已更新 Mod 自定义排序");
+      } catch (err) {
+        toast(String(err));
+      }
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
   }
 
-  async function handleDrop(targetMod: ModDto, e: DragEvent) {
-    e.preventDefault();
-    const sourceId = draggedModId ?? Number(e.dataTransfer?.getData("text/plain"));
-    draggedModId = null;
-    dragOverModId = null;
-    if (!sourceId || sourceId === targetMod.id) return;
+  function getItemSlotShift(idx: number): number {
+    if (draggingModId == null || targetIndex == null || startIndex === targetIndex) return 0;
+    if (idx === startIndex) return 0;
 
-    const fromIdx = mods.findIndex((m) => m.id === sourceId);
-    const toIdx = mods.findIndex((m) => m.id === targetMod.id);
-    if (fromIdx === -1 || toIdx === -1) return;
-
-    // 重新排序 mods 数组
-    const nextMods = [...mods];
-    const [moved] = nextMods.splice(fromIdx, 1);
-    nextMods.splice(toIdx, 0, moved);
-
-    // 刷新各项目的 sort_order
-    nextMods.forEach((m, idx) => {
-      m.sort_order = idx;
-    });
-    mods = nextMods;
-    sort = "custom";
-
-    try {
-      await api.reorderMods(nextMods.map((m) => m.id));
-      toast("已更新 Mod 自定义排序");
-    } catch (err) {
-      toast(String(err));
+    const rowHeight = rowHeights[startIndex] || 68;
+    if (startIndex < targetIndex && idx > startIndex && idx <= targetIndex) {
+      return -rowHeight;
     }
-  }
-
-  function handleDragEnd() {
-    draggedModId = null;
-    dragOverModId = null;
+    if (startIndex > targetIndex && idx >= targetIndex && idx < startIndex) {
+      return rowHeight;
+    }
+    return 0;
   }
 
   function onListKeydown(e: KeyboardEvent) {
@@ -826,21 +864,24 @@
 
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
       <div
+        bind:this={listContainerEl}
         role="region"
         aria-label="Mod 列表"
-        class="flex flex-col gap-2.5 overflow-y-auto flex-1 min-h-0 pr-1 outline-none pb-12"
+        class="flex flex-col gap-2.5 overflow-y-auto flex-1 min-h-0 pr-1 outline-none pb-12 select-none"
         tabindex="0"
         onkeydown={onListKeydown}
       >
-        {#each shown as mod (mod.id)}
+        {#each shown as mod, idx (mod.id)}
           <ModRow
             {mod}
             {categories}
             selected={selectedMod?.id === mod.id}
             checked={checkedModIds.has(mod.id)}
             isMultiSelectMode={checkedModIds.size > 0}
-            isDraggingThis={draggedModId === mod.id}
-            isDragOverTarget={dragOverModId === mod.id && draggedModId !== mod.id}
+            isDragging={draggingModId === mod.id}
+            dragOffsetY={draggingModId === mod.id ? dragOffsetY : 0}
+            slotShiftY={getItemSlotShift(idx)}
+            onstartdrag={handleStartPointerDrag}
             ontoggle={(next) => toggle(mod, next)}
             ontogglefavorite={() => toggleFavoriteMod(mod)}
             onrename={(name) => renameMod(mod, name)}
@@ -850,10 +891,6 @@
             onselect={(e) => handleRowSelect(e, mod)}
             oncheck={(checked) => handleRowCheck(mod, checked)}
             onmenu={handleModContextMenu}
-            ondragstart={(e) => handleDragStart(mod, e)}
-            ondragover={(e) => handleDragOver(mod, e)}
-            ondrop={(e) => handleDrop(mod, e)}
-            ondragend={handleDragEnd}
           />
         {/each}
         {#if shown.length === 0}
