@@ -38,6 +38,8 @@
   let error = $state("");
   let dragHover = $state(false);
   let conflicts = $state<import("$lib/api").ConflictReportDto[]>([]);
+  let variableConflicts = $state<import("$lib/api").VariableConflictDto[]>([]);
+  let gameRunning = $state(false);
 
   let charCatName = $derived(config?.character_category_name ?? "角色");
   let homeCharModTotal = $derived(homeCharacters.reduce((n, c) => n + c.total, 0));
@@ -107,6 +109,9 @@
       const cfg = await api.getConfig();
       if (seq !== refreshSeq) return;
       config = cfg;
+      const gameStatus = await api.getGameStatus().catch(() => ({ running: false }));
+      if (seq !== refreshSeq) return;
+      gameRunning = gameStatus.running;
       applyTheme(config.theme);
 
       const cats = await api.listCategories();
@@ -126,6 +131,7 @@
       if (seq !== refreshSeq) return;
 
       conflicts = await api.getActiveConflicts().catch(() => []);
+      variableConflicts = await api.getActiveVariableConflicts().catch(() => []);
     } catch (e) {
       if (seq === refreshSeq) {
         error = String(e);
@@ -544,6 +550,7 @@
     let unlistenChanged: (() => void) | undefined;
     let unlistenToast: (() => void) | undefined;
     let unlistenAssetsUpdated: (() => void) | undefined;
+    let unlistenGameStatus: (() => void) | undefined;
     listen<{ added: number; removed: number }>("library-changed", (e) => {
       if (cancelled) return;
       const { added, removed } = e.payload;
@@ -564,6 +571,15 @@
         else unlistenToast = u;
       })
       .catch(() => {});
+    listen<import("$lib/api").GameStatusDto>("game-status-changed", (e) => {
+      if (cancelled) return;
+      gameRunning = e.payload.running;
+    })
+      .then((u) => {
+        if (cancelled) u();
+        else unlistenGameStatus = u;
+      })
+      .catch(() => {});
     listen("game-assets-updated", () => {
       if (cancelled) return;
       refresh();
@@ -580,6 +596,7 @@
       unlistenChanged?.();
       unlistenToast?.();
       unlistenAssetsUpdated?.();
+      unlistenGameStatus?.();
     };
   });
 </script>
@@ -612,6 +629,8 @@
           {showSort}
           {showSettings}
           {conflicts}
+          {variableConflicts}
+          {gameRunning}
           workMode={config?.work_mode ?? "play"}
           ontoggleworkmode={toggleWorkMode}
           onlaunchmodgame={launchGame}

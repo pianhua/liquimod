@@ -1,6 +1,6 @@
 [package]
 name = "liquimod-core"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -15,7 +15,7 @@ unrar = "0.5.8"
 uuid = { version = "1.24.1", features = ["v4"] }
 notify = "8"
 sysinfo = "0.33"
-windows = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+windows = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Storage_FileSystem"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 rayon = "1.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }

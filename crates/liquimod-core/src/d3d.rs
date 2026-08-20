@@ -749,6 +749,176 @@ pub fn detect_conflicts(lib: &crate::library::Library) -> crate::error::Result<V
     Ok(conflicts)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariableConflict {
+    pub variable: String,
+    pub conflicting_mods: Vec<ConflictModInfo>,
+}
+
+fn collect_ini_files_recursive(root: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        if ft.is_symlink() {
+            continue;
+        }
+        if ft.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if !name.starts_with('.') && !name.starts_with("disabled") {
+                collect_ini_files_recursive(&path, out);
+            }
+        } else if ft.is_file() {
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if name.ends_with(".ini") && !name.starts_with('.') && !name.starts_with("disabled") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+fn dollar_tokens(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$'
+            && i + 1 < bytes.len()
+            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
+        {
+            let start = i;
+            i += 2;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            out.push(text[start..i].to_string());
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// 提取 [Constants] 中声明/使用的全局变量名，用于静态冲突诊断。
+pub fn scan_ini_variables(mod_dir: &Path) -> Vec<String> {
+    let mut files = Vec::new();
+    collect_ini_files_recursive(mod_dir, &mut files);
+    let mut vars = std::collections::BTreeSet::new();
+    for path in files {
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let mut in_constants = false;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                in_constants = trimmed[1..trimmed.len() - 1]
+                    .trim()
+                    .eq_ignore_ascii_case("Constants");
+            } else if in_constants && !trimmed.starts_with(';') && !trimmed.starts_with('#') {
+                for token in dollar_tokens(trimmed) {
+                    vars.insert(token);
+                }
+            }
+        }
+    }
+    vars.into_iter().collect()
+}
+
+pub fn has_ini_variables(mod_dir: &Path) -> bool {
+    !scan_ini_variables(mod_dir).is_empty()
+}
+
+fn namespaced_variable(mod_id: i64, original: &str) -> String {
+    let clean = original.trim_start_matches('$');
+    let hash = xxhash_rust::xxh3::xxh3_64(original.as_bytes());
+    format!("$lm_{}_{}_{:x}", mod_id, clean, hash & 0xffff)
+}
+
+fn replace_variable_tokens(text: &str, replacements: &HashMap<String, String>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$'
+            && i + 1 < bytes.len()
+            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
+        {
+            let start = i;
+            i += 2;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let token = &text[start..i];
+            if let Some(replacement) = replacements.get(token) {
+                out.push_str(replacement);
+            } else {
+                out.push_str(token);
+            }
+        } else {
+            let next = i + text[i..].chars().next().unwrap().len_utf8();
+            out.push_str(&text[i..next]);
+            i = next;
+        }
+    }
+    out
+}
+
+/// 对运行副本中的 INI 变量做 Mod ID 隔离，不修改仓库原始文件。
+pub fn isolate_ini_variables(runtime_dir: &Path, mod_id: i64) -> Result<bool> {
+    let vars = scan_ini_variables(runtime_dir);
+    if vars.is_empty() {
+        return Ok(false);
+    }
+    let replacements: HashMap<String, String> = vars
+        .iter()
+        .map(|v| (v.clone(), namespaced_variable(mod_id, v)))
+        .collect();
+    let mut files = Vec::new();
+    collect_ini_files_recursive(runtime_dir, &mut files);
+    for path in files {
+        let content = std::fs::read_to_string(&path)?;
+        let updated = replace_variable_tokens(&content, &replacements);
+        if updated != content {
+            std::fs::write(path, updated)?;
+        }
+    }
+    Ok(true)
+}
+
+pub fn detect_variable_conflicts(
+    lib: &crate::library::Library,
+) -> crate::error::Result<Vec<VariableConflict>> {
+    let mut by_variable: HashMap<String, Vec<ConflictModInfo>> = HashMap::new();
+    for m in lib.db.list_mods()?.into_iter().filter(|m| m.enabled) {
+        let path = lib.layout.mod_dir(&m.character, &m.name);
+        let info = ConflictModInfo {
+            id: m.id,
+            character: m.character,
+            name: m.name,
+        };
+        for variable in scan_ini_variables(&path) {
+            let mods = by_variable.entry(variable).or_default();
+            if !mods.iter().any(|item| item.id == info.id) {
+                mods.push(info.clone());
+            }
+        }
+    }
+    let mut out = by_variable
+        .into_iter()
+        .filter(|(_, mods)| mods.len() > 1)
+        .map(|(variable, conflicting_mods)| VariableConflict {
+            variable,
+            conflicting_mods,
+        })
+        .collect::<Vec<_>>();
+    out.sort_by(|a, b| a.variable.cmp(&b.variable));
+    Ok(out)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -950,6 +1120,47 @@ $weapon = 0,1
         let conflicts = detect_conflicts(&lib).unwrap();
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].hash, "9de39691");
+        assert_eq!(conflicts[0].conflicting_mods.len(), 2);
+    }
+
+    #[test]
+    fn isolates_constants_variables_in_runtime_copy_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let runtime = temp.path().join("runtime");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&runtime).unwrap();
+        let ini = "[Constants]\n$active = 0\n[KeySwap]\ncondition = $active == 1\n";
+        std::fs::write(source.join("mod.ini"), ini).unwrap();
+        std::fs::copy(source.join("mod.ini"), runtime.join("mod.ini")).unwrap();
+
+        assert!(isolate_ini_variables(&runtime, 42).unwrap());
+        let original = std::fs::read_to_string(source.join("mod.ini")).unwrap();
+        let rewritten = std::fs::read_to_string(runtime.join("mod.ini")).unwrap();
+        assert_eq!(original, ini);
+        assert!(rewritten.contains("$lm_42_active_"));
+        assert!(!rewritten.contains("$active"));
+    }
+
+    #[test]
+    fn detects_variable_conflicts_between_enabled_mods() {
+        let temp = tempfile::tempdir().unwrap();
+        let lib = crate::library::Library::init(temp.path()).unwrap();
+        for (name, id) in [("ModA", 1), ("ModB", 2)] {
+            let dir = lib.layout.mod_dir("Acheron", name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("mod.ini"), "[Constants]\n$swap = 0,1\n").unwrap();
+            let actual = lib
+                .db
+                .upsert_mod("Acheron", name, &format!("mods/Acheron/{name}"))
+                .unwrap();
+            assert_eq!(actual, id);
+            lib.db.set_enabled(actual, true).unwrap();
+        }
+
+        let conflicts = detect_variable_conflicts(&lib).unwrap();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].variable, "$swap");
         assert_eq!(conflicts[0].conflicting_mods.len(), 2);
     }
 

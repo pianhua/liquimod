@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ModSort } from "$lib/view";
-  import type { ConflictReportDto, CharacterSortOption } from "$lib/api";
+  import type { ConflictReportDto, VariableConflictDto, CharacterSortOption } from "$lib/api";
   import PresetMenu from "./PresetMenu.svelte";
   import CustomSelect from "./CustomSelect.svelte";
   import IconGamepad from "./icons/IconGamepad.svelte";
@@ -22,6 +22,8 @@
     showSort,
     showSettings = false,
     conflicts = [],
+    variableConflicts = [],
+    gameRunning = false,
     workMode = "play",
     ontoggleworkmode,
     onlaunchmodgame,
@@ -39,6 +41,8 @@
     showSort: boolean;
     showSettings?: boolean;
     conflicts?: ConflictReportDto[];
+    variableConflicts?: VariableConflictDto[];
+    gameRunning?: boolean;
     workMode?: "play" | "dev";
     ontoggleworkmode?: () => void;
     onlaunchmodgame: () => void;
@@ -53,6 +57,7 @@
   let showDevKeyHelp = $state(false);
   let showSortMenu = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
+  let conflictCount = $derived(conflicts.length + variableConflicts.length);
 
   function handleWindowClick() {
     showSortMenu = false;
@@ -138,18 +143,29 @@
   <!-- 右侧：全局核心操作组 -->
   <div class="flex items-center gap-2 shrink-0">
     <!-- 冲突预警 Badge -->
-    {#if conflicts && conflicts.length > 0}
+    {#if conflictCount > 0}
       <button
         class="radius-pill h-8 px-3 text-xs font-semibold flex items-center gap-1.5 cursor-pointer backdrop-blur-md transition-transform hover:scale-105"
         style="background: rgba(239, 68, 68, 0.16); color: #ef4444; box-shadow: inset 0 0 0 0.5px rgba(239, 68, 68, 0.4)"
-        title={`发现 ${conflicts.length} 处 Mod Hash 冲突！点击查看`}
+        title={`发现 ${conflictCount} 处 Mod 冲突！点击查看`}
         onclick={() => (conflictModalOpen = true)}
       >
         <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
-        <span>{conflicts.length} 处冲突</span>
+        <span>{conflictCount} 处冲突</span>
       </button>
     {/if}
 
+    {#if gameRunning}
+      <div
+        class="h-8 px-2.5 radius-pill flex items-center gap-1.5 text-xs font-semibold shrink-0"
+        style="background: var(--accent-fill); color: var(--accent); box-shadow: inset 0 0 0 0.5px var(--accent);"
+        title="游戏正在运行，Mod 物理变更已锁定"
+        aria-label="游戏运行中"
+      >
+        <span class="w-1.5 h-1.5 radius-pill animate-pulse" style="background: var(--accent);"></span>
+        <span>游戏运行中</span>
+      </div>
+    {/if}
     {#if isCharGrid}
       <!-- 角色网格自定义排序下拉菜单 -->
       <CustomSelect
@@ -369,7 +385,7 @@
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <h3>Mod 覆盖冲突诊断 ({conflicts.length})</h3>
+          <h3>Mod 覆盖冲突诊断 ({conflictCount})</h3>
         </div>
         <button
           class="glass radius-pill w-7 h-7 grid place-items-center cursor-pointer text-secondary"
@@ -381,7 +397,7 @@
       </div>
 
       <p class="text-xs text-secondary">
-        以下已启用的 Mod 修改了游戏中相同的模型或贴图 Hash，同时启用可能导致游戏内闪烁或模型撕裂。
+        以下已启用的 Mod 存在资源 Hash 覆盖或 INI 全局变量重名，可能导致游戏内闪烁、模型撕裂或按键状态互相污染。
       </p>
 
       <div class="flex flex-col gap-3 max-h-80 overflow-y-auto pr-1">
@@ -390,6 +406,21 @@
             <div class="flex items-center justify-between text-xs">
               <span class="font-mono font-bold text-red-500">Hash: {c.hash}</span>
               <span class="text-secondary text-[11px] font-mono">{c.section}</span>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              {#each c.conflicting_mods as mod (mod.id)}
+                <div class="flex items-center justify-between text-xs py-1 px-2 rounded bg-[var(--input-bg)]">
+                  <span class="font-medium truncate">{mod.character} · {mod.name}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/each}
+        {#each variableConflicts as c (c.variable)}
+          <div class="p-3 radius-card flex flex-col gap-2" style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25)">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-mono font-bold text-amber-500">变量重名: {c.variable}</span>
+              <span class="text-secondary text-[11px]">INI Constants</span>
             </div>
             <div class="flex flex-col gap-1.5">
               {#each c.conflicting_mods as mod (mod.id)}

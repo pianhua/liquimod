@@ -219,6 +219,60 @@
     }
   }
 
+  async function handleRepairDeployment() {
+    if (busy) return;
+    busy = true;
+    try {
+      await api.repairDeployment();
+      diagStatus = await api.getDiagnosticStatus().catch(() => null);
+      toast("Mod 部署已重新对账");
+      onchanged();
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function openWebView2Download() {
+    try {
+      await api.openWebView2Download();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function copyDefenderCommand() {
+    if (!diagStatus?.defender_command) return;
+    try {
+      await navigator.clipboard.writeText(diagStatus.defender_command);
+      toast("Defender 排除命令已复制");
+    } catch {
+      toast("复制失败，请手动选择命令");
+    }
+  }
+
+  function checkTone(state: string): string {
+    if (state === "pass") return "text-emerald-500";
+    if (state === "fail") return "text-red-500";
+    if (state === "warn") return "text-amber-500";
+    return "text-secondary";
+  }
+
+  function checkDot(state: string): string {
+    if (state === "pass") return "bg-emerald-500";
+    if (state === "fail") return "bg-red-500";
+    if (state === "warn") return "bg-amber-500";
+    return "bg-zinc-400";
+  }
+
+  function checkLabel(state: string): string {
+    if (state === "pass") return "通过";
+    if (state === "fail") return "需要处理";
+    if (state === "warn") return "注意";
+    return "未确认";
+  }
+
   async function handleCheckAssetUpdate() {
     if (checkingUpdate || syncing) return;
     checkingUpdate = true;
@@ -857,6 +911,58 @@
         </div>
       </div>
 
+      {#if diagStatus}
+        <div class="flex flex-col gap-2">
+          {#each diagStatus.checks as check (check.id)}
+            <div
+              class="radius-card p-3 flex flex-col gap-1.5"
+              style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)"
+            >
+              <div class="flex items-center justify-between gap-3 text-xs">
+                <span class="flex min-w-0 items-center gap-2 font-medium">
+                  <span class="w-2 h-2 shrink-0 rounded-full {checkDot(check.state)}"></span>
+                  <span class="truncate">{check.label}</span>
+                </span>
+                <span class="shrink-0 font-semibold {checkTone(check.state)}">{checkLabel(check.state)}</span>
+              </div>
+              <p class="text-[11px] text-secondary break-words">{check.detail}</p>
+              {#if check.remediation}
+                <p class="text-[11px] text-secondary/80 break-words">{check.remediation}</p>
+              {/if}
+              {#if check.id === "webview2" && check.state === "fail"}
+                <button
+                  class="self-start glass radius-pill h-7 px-2.5 text-[11px] font-medium cursor-pointer"
+                  onclick={openWebView2Download}
+                >
+                  打开 WebView2 下载页
+                </button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+
+        {#if diagStatus.filesystem || diagStatus.deploy_strategy}
+          <div class="radius-card p-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)">
+            {#if diagStatus.filesystem}
+              <span class="text-secondary">文件系统：<strong class="text-[var(--text)]">{diagStatus.filesystem}</strong></span>
+            {/if}
+            {#if diagStatus.deploy_strategy}
+              <span class="text-secondary">部署模式：<strong class="text-[var(--accent)]">{diagStatus.deploy_strategy}</strong></span>
+            {/if}
+          </div>
+        {/if}
+
+        {#if diagStatus.defender_command}
+          <div class="radius-card p-3 flex flex-col gap-2" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-xs font-medium">Defender 排除项命令</span>
+              <button class="glass radius-pill h-7 px-2.5 text-[11px] font-medium cursor-pointer" onclick={copyDefenderCommand}>复制命令</button>
+            </div>
+            <code class="text-[10px] text-secondary break-all select-text">{diagStatus.defender_command}</code>
+          </div>
+        {/if}
+      {/if}
+
       <!-- 维护动作按钮组 -->
       <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex items-center gap-2">
         <button
@@ -878,6 +984,16 @@
             <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
           </svg>
           <span>清理封面缓存</span>
+        </button>
+        <button
+          class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
+          disabled={busy || !diagStatus?.mods_dir_configured}
+          onclick={handleRepairDeployment}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.2 2.2-2.8-.6-.6-2.8 2.6-1.8Z"/>
+          </svg>
+          <span>修复 Mod 部署</span>
         </button>
       </div>
 
@@ -954,7 +1070,7 @@
       <!-- 关于信息 -->
       <div class="border-t border-[var(--glass-stroke)] pt-3.5 text-xs text-secondary flex items-center justify-between">
         <span>LiquiMod · 星轨流光 —— 崩坏：星穹铁道 现代化 Mod 管理器</span>
-        <span class="font-mono text-[var(--accent)] font-medium">v0.2.9 (Rust + Tauri 2 + Svelte 5)</span>
+        <span class="font-mono text-[var(--accent)] font-medium">v0.3.0 (Rust + Tauri 2 + Svelte 5)</span>
       </div>
     </section>
   </div>

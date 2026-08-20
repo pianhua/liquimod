@@ -22,6 +22,7 @@
     onuninstall,
     onopen,
     onmove,
+    onvariantchange,
   }: {
     mod: ModDto | null;
     categories: CategoryDto[];
@@ -31,6 +32,7 @@
     onuninstall: () => Promise<void>;
     onopen: () => void;
     onmove: (categoryId: number | null) => void;
+    onvariantchange?: (variant: string | null) => Promise<void>;
   } = $props();
 
   let renaming = $state(false);
@@ -55,6 +57,20 @@
 
   let noteDraft = $state("");
   let savingNote = $state(false);
+
+  async function selectVariant(value: string | null) {
+    if (!mod || busy || value === (mod.active_variant ?? null)) return;
+    busy = true;
+    try {
+      await onvariantchange?.(value);
+      mod.active_variant = value;
+      toast(`已切换变体：${value || "默认资源"}`);
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      busy = false;
+    }
+  }
 
   // 当 mod 切换时自动重置面板内部状态并拉取热键绑定与内置图集
   $effect(() => {
@@ -584,6 +600,33 @@
       </div>
     </div>
 
+    {#if mod.variants && mod.variants.length > 0}
+      <div class="flex flex-col gap-2 p-3 radius-card shrink-0" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-semibold text-secondary">外观部件与变体</span>
+          <span class="text-[10px] text-secondary">{mod.variants.length} 个选项</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5" role="radiogroup" aria-label="选择 Mod 变体">
+          {#each mod.variants as variant}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={(mod.active_variant ?? mod.variants[0]?.name) === variant.name}
+              disabled={busy || mod.enabled}
+              class="radius-pill px-3 py-1.5 text-xs font-medium cursor-pointer transition-all disabled:cursor-not-allowed disabled:opacity-60"
+              style={(mod.active_variant ?? mod.variants[0]?.name) === variant.name
+                ? "background: var(--accent-fill); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent)"
+                : "background: var(--glass-tint); color: var(--text-secondary); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"}
+              title={mod.enabled ? "请先禁用 Mod 后切换变体" : `切换到 ${variant.name}`}
+              onclick={() => selectVariant(variant.name)}
+            >{variant.name}</button>
+          {/each}
+        </div>
+        {#if mod.enabled}
+          <span class="text-[10px] text-secondary">已启用时暂不可切换，请先禁用后修改。</span>
+        {/if}
+      </div>
+    {/if}
     <!-- 3. 元数据信息网格（2x2 统计卡片） -->
     <div class="grid grid-cols-2 gap-2.5 shrink-0">
       <div class="p-3 radius-card flex flex-col gap-0.5" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)">

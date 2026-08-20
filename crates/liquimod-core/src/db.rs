@@ -35,6 +35,7 @@ impl Database {
                rel_path TEXT NOT NULL,
                enabled INTEGER NOT NULL DEFAULT 0,
                installed_at INTEGER NOT NULL,
+               active_variant TEXT,
                UNIQUE(character, name)
              );
              CREATE TABLE IF NOT EXISTS op_log (
@@ -74,6 +75,7 @@ impl Database {
             "ALTER TABLE mods ADD COLUMN cover_image TEXT",
             "ALTER TABLE mods ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE mods ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE mods ADD COLUMN active_variant TEXT",
         ] {
             match conn.execute_batch(sql) {
                 Ok(()) => {}
@@ -100,6 +102,17 @@ impl Database {
             |r| r.get(0),
         )?;
         Ok(id)
+    }
+
+    pub fn set_active_variant(&self, id: i64, variant: Option<&str>) -> Result<()> {
+        let n = self.conn.execute(
+            "UPDATE mods SET active_variant = ?2 WHERE id = ?1",
+            rusqlite::params![id, variant],
+        )?;
+        if n == 0 {
+            return Err(LiquiModError::ModNotFound(id.to_string()));
+        }
+        Ok(())
     }
 
     pub fn set_enabled(&self, id: i64, enabled: bool) -> Result<()> {
@@ -180,12 +193,13 @@ impl Database {
             cover_image: r.get(10)?,
             is_favorite: r.get::<_, i64>(11)? != 0,
             sort_order: r.get(12)?,
+            active_variant: r.get(13)?,
         })
     }
 
     pub fn list_mods(&self) -> Result<Vec<ModEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order FROM mods ORDER BY is_favorite DESC, sort_order ASC, character, name",
+            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order, active_variant FROM mods ORDER BY is_favorite DESC, sort_order ASC, character, name",
         )?;
         let rows = stmt.query_map([], Self::row_to_entry)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -194,7 +208,7 @@ impl Database {
     pub fn get_mod(&self, id: i64) -> Result<ModEntry> {
         self.conn
             .query_row(
-                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order FROM mods WHERE id = ?1",
+                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order, active_variant FROM mods WHERE id = ?1",
                 rusqlite::params![id],
                 Self::row_to_entry,
             )

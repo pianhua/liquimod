@@ -4,12 +4,23 @@ mod state;
 
 use state::AppState;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 /// 对账并求增量（纯函数，便于单测）：返回 (added, removed) 为 (character, name) 集合差集大小。
 pub fn reconcile_and_diff(
     lib: &liquimod_core::library::Library,
     mods_dir: Option<&std::path::Path>,
+) -> Result<(usize, usize), String> {
+    reconcile_and_diff_with_deploy(lib, mods_dir, true)
+}
+
+/// 扫描库并可选地对齐物理部署。游戏运行期间只允许更新索引，避免外部文件监控
+/// 绕过命令层防呆而重建 Junction 或复制部署目录。
+pub fn reconcile_and_diff_with_deploy(
+    lib: &liquimod_core::library::Library,
+    mods_dir: Option<&std::path::Path>,
+    deploy: bool,
 ) -> Result<(usize, usize), String> {
     use std::collections::HashSet;
     let key = |m: &liquimod_core::models::ModEntry| (m.character.clone(), m.name.clone());
@@ -23,10 +34,12 @@ pub fn reconcile_and_diff(
     // 扫描后统一归类（仅对未分类 Mod 赋初始分类）
     commands::sync_mod_categories(lib, liquimod_core::games::hsr::Hsr::shared())
         .map_err(|e| format!("分类对齐失败：{e}"))?;
-    if let Some(dir) = mods_dir {
-        liquimod_core::deploy::Deployer::new(lib, dir)
-            .reconcile()
-            .map_err(|e| format!("部署状态对齐失败：{e}"))?;
+    if deploy {
+        if let Some(dir) = mods_dir {
+            liquimod_core::deploy::Deployer::new(lib, dir)
+                .reconcile()
+                .map_err(|e| format!("部署状态对齐失败：{e}"))?;
+        }
     }
     let after: HashSet<_> = lib
         .list()
@@ -48,11 +61,13 @@ pub fn start_watcher(app: &tauri::AppHandle, state: &AppState) {
         (cfg.library_root.clone(), cfg.mods_dir.clone())
     };
     let library = Arc::clone(&state.library);
+    let game_running = Arc::clone(&state.game_running);
     let app2 = app.clone();
     let mods_dir2 = mods_dir.clone();
     let watcher = liquimod_core::watch::start(root, mods_dir, move || {
         let lib = library.lock().unwrap();
-        match reconcile_and_diff(&lib, mods_dir2.as_deref()) {
+        let deploy = !game_running.load(std::sync::atomic::Ordering::Relaxed);
+        match reconcile_and_diff_with_deploy(&lib, mods_dir2.as_deref(), deploy) {
             Ok((added, removed)) => {
                 drop(lib);
                 tracing::info!("reconcile: +{added} / -{removed}");
@@ -79,6 +94,62 @@ pub fn start_watcher(app: &tauri::AppHandle, state: &AppState) {
     }
 }
 
+/// 启动或重启游戏进程看门狗，只在状态变化时广播事件。
+pub fn start_game_watchdog(app: &tauri::AppHandle, state: &AppState) {
+    let process_names = {
+        let config = state.config.lock().unwrap();
+        commands::configured_game_process_names(&config)
+    };
+    let running = Arc::clone(&state.game_running);
+    let library = Arc::clone(&state.library);
+    let config = Arc::clone(&state.config);
+    let app2 = app.clone();
+    let watchdog = liquimod_core::refresh::GameWatchdog::start(
+        process_names,
+        Duration::from_secs(2),
+        move |is_running| {
+            running.store(is_running, std::sync::atomic::Ordering::Relaxed);
+            let _ = app2.emit(
+                "game-status-changed",
+                commands::GameStatusDto {
+                    running: is_running,
+                },
+            );
+            if !is_running {
+                let library = Arc::clone(&library);
+                let config = Arc::clone(&config);
+                let app3 = app2.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let mods_dir = config.lock().unwrap().mods_dir.clone();
+                    let lib = library.lock().unwrap();
+                    if let Some(dir) = mods_dir.as_deref() {
+                        if let Err(error) =
+                            liquimod_core::deploy::Deployer::new(&lib, dir).recover()
+                        {
+                            let _ = app3
+                                .emit("liquimod-toast", format!("游戏退出后事务恢复失败：{error}"));
+                        }
+                    }
+                    match reconcile_and_diff(&lib, mods_dir.as_deref()) {
+                        Ok((added, removed)) if added > 0 || removed > 0 => {
+                            let _ = app3.emit(
+                                "library-changed",
+                                serde_json::json!({ "added": added, "removed": removed }),
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            let _ = app3
+                                .emit("liquimod-toast", format!("游戏退出后部署对账失败：{error}"));
+                        }
+                    }
+                });
+            }
+        },
+    );
+    let old = state.game_watchdog.lock().unwrap().replace(watchdog);
+    drop(old);
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let log_dir = config::Config::log_dir();
@@ -102,24 +173,42 @@ pub fn run() {
         .setup(|app| {
             // 启动恢复：完成上次崩溃遗留的启停事务（op_log）
             let state = app.state::<AppState>();
-            let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-            if let Some(dir) = mods_dir {
-                let lib = state.library.lock().unwrap();
-                if let Err(e) = liquimod_core::deploy::Deployer::new(&lib, &dir).recover() {
-                    tracing::warn!("startup recover failed: {e}");
+            let (mods_dir, process_names) = {
+                let config = state.config.lock().unwrap();
+                (
+                    config.mods_dir.clone(),
+                    commands::configured_game_process_names(&config),
+                )
+            };
+            let running = {
+                let names: Vec<&str> = process_names.iter().map(String::as_str).collect();
+                liquimod_core::refresh::is_game_running(&names)
+            };
+            state
+                .game_running
+                .store(running, std::sync::atomic::Ordering::Relaxed);
+            if let Some(dir) = mods_dir.as_deref() {
+                if running {
+                    tracing::warn!("game is running; deferred startup deployment recovery");
+                } else {
+                    let lib = state.library.lock().unwrap();
+                    if let Err(e) = liquimod_core::deploy::Deployer::new(&lib, dir).recover() {
+                        tracing::warn!("startup recover failed: {e}");
+                    }
                 }
             }
             // 启动对账：索引库目录、统计大小/文件数、对齐 junction（含应用关闭期间的外部变动）
             {
                 let lib = state.library.lock().unwrap();
-                let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-                match reconcile_and_diff(&lib, mods_dir.as_deref()) {
+                let deploy = !running;
+                match reconcile_and_diff_with_deploy(&lib, mods_dir.as_deref(), deploy) {
                     Ok((added, removed)) => tracing::info!("startup scan: +{added} / -{removed}"),
                     Err(e) => tracing::warn!("startup scan failed: {e}"),
                 }
             }
             let app_handle = app.handle().clone();
             start_watcher(&app_handle, app.state::<AppState>().inner());
+            start_game_watchdog(&app_handle, app.state::<AppState>().inner());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -128,6 +217,7 @@ pub fn run() {
             commands::get_characters,
             commands::list_mods,
             commands::set_mod_enabled,
+            commands::set_mod_variant,
             commands::install_mod,
             commands::uninstall_mod,
             commands::rename_mod,
@@ -153,6 +243,7 @@ pub fn run() {
             commands::set_theme,
             commands::set_character_category_name,
             commands::choose_game_exe,
+            commands::get_game_status,
             commands::choose_loader_exe,
             commands::launch_game,
             commands::launch_game_native,
@@ -163,6 +254,7 @@ pub fn run() {
             commands::get_mod_keys,
             commands::set_mod_custom_cover,
             commands::get_active_conflicts,
+            commands::get_active_variable_conflicts,
             commands::open_mod_folder,
             commands::open_path_in_explorer,
             commands::trigger_refresh_game,
@@ -173,6 +265,8 @@ pub fn run() {
             commands::rescan_library,
             commands::clean_cache,
             commands::get_diagnostic_status,
+            commands::repair_deployment,
+            commands::open_webview2_download,
             commands::get_local_asset_version,
             commands::check_game_assets_update,
             commands::sync_game_assets,
