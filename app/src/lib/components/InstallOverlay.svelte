@@ -63,26 +63,30 @@
 </script>
 
 {#if jobs.length > 0}
-  <div class="install-overlay fixed bottom-6 inset-x-0 z-50 flex justify-center pointer-events-none" aria-live="polite">
-    <div class="glass radius-panel pointer-events-auto w-[440px] max-w-[90vw] px-5 py-4 flex flex-col gap-3 max-h-[70vh] overflow-y-auto"
-      style="box-shadow: var(--shadow-lift)">
+  <div class="install-overlay fixed bottom-6 inset-x-0 z-50 flex justify-center pointer-events-none px-4 animate-slide-up" aria-live="polite">
+    <div
+      class="glass-floating radius-panel pointer-events-auto w-[480px] max-w-[94vw] p-5 flex flex-col gap-3.5 max-h-[75vh] overflow-y-auto shadow-2xl border border-[var(--glass-floating-stroke)] select-none"
+      style="box-shadow: var(--glass-floating-shadow);"
+    >
       {#each jobs as job (job.id)}
         <div class="flex items-center gap-3 min-h-9">
           {#if job.stage === "installing"}
             <span class="spinner shrink-0"></span>
           {/if}
-          <span class="text-sm font-medium truncate flex-1 min-w-0">{job.fileName}</span>
+          <span class="text-sm font-semibold truncate flex-1 min-w-0 tracking-tight text-[var(--text)]">{job.fileName}</span>
 
           {#if job.stage === "pick-category"}
-            <span class="text-sm text-secondary shrink-0">选择分类…</span>
+            <span class="text-xs text-secondary shrink-0 font-medium">选择分类…</span>
             <button
-              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              type="button"
+              class="glass radius-pill px-3 h-7 text-xs font-medium cursor-pointer shrink-0 hover:bg-[var(--item-hover)] transition-colors"
               onclick={() => dismissInstall(job)}
             >关闭</button>
           {:else if job.stage === "installing"}
-            <span class="text-sm text-secondary shrink-0">正在安装…</span>
+            <span class="text-xs text-secondary shrink-0 font-medium">正在安装…</span>
             <button
-              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              type="button"
+              class="glass radius-pill px-3 h-7 text-xs font-medium cursor-pointer shrink-0 hover:bg-[var(--item-hover)] transition-colors"
               onclick={() => {
                 delete passwords[job.id];
                 dismissInstall(job);
@@ -90,7 +94,7 @@
             >关闭</button>
           {:else if job.stage === "needs-password"}
             <input
-              class="glass radius-pill px-3 h-8 text-sm w-32 outline-none bg-transparent text-[var(--text)] placeholder:text-secondary"
+              class="radius-pill px-3 h-8 text-xs w-36 outline-none bg-[var(--input-bg)] text-[var(--text)] placeholder:text-secondary border border-[var(--glass-stroke)] focus:border-[var(--accent)] transition-colors"
               placeholder="压缩包密码"
               aria-label="压缩包密码"
               type="password"
@@ -104,7 +108,8 @@
               }}
             />
             <button
-              class="accent-fill accent-text radius-pill px-3.5 h-8 text-sm font-medium cursor-pointer shrink-0"
+              type="button"
+              class="accent-fill accent-text radius-pill px-3.5 h-8 text-xs font-semibold cursor-pointer shrink-0 active:scale-95 transition-transform"
               onclick={() => {
                 const pw = passwords[job.id] ?? "";
                 submitInstallPassword(job, pw, onInstalled);
@@ -112,33 +117,38 @@
               }}
             >确认</button>
             <button
-              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              type="button"
+              class="glass radius-pill px-3 h-7 text-xs font-medium cursor-pointer shrink-0 hover:bg-[var(--item-hover)] transition-colors"
               onclick={() => {
                 delete passwords[job.id];
                 dismissInstall(job);
               }}
             >关闭</button>
           {:else if job.stage === "done"}
-            <span class="text-sm shrink-0">已安装到 {displayName(job.character ?? "")}</span>
+            <span class="text-xs text-emerald-500 font-medium shrink-0">已安装到 {displayName(job.character ?? "")}</span>
             <button
-              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              type="button"
+              class="glass radius-pill px-3 h-7 text-xs font-medium cursor-pointer shrink-0 hover:bg-[var(--item-hover)] transition-colors"
               onclick={() => undoInstall(job, onInstalled)}
             >撤销</button>
             <button
-              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              type="button"
+              class="glass radius-pill px-3 h-7 text-xs font-medium cursor-pointer shrink-0 hover:bg-[var(--item-hover)] transition-colors"
               onclick={() => {
                 delete passwords[job.id];
                 dismissInstall(job);
               }}
             >关闭</button>
           {:else if job.stage === "error"}
-            <span class="text-sm shrink-0" style="color: var(--danger)">{job.message}</span>
+            <span class="text-xs shrink-0 font-medium" style="color: var(--danger)">{job.message}</span>
             <button
-              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              type="button"
+              class="glass radius-pill px-3 h-7 text-xs font-medium cursor-pointer shrink-0 hover:bg-[var(--item-hover)] transition-colors"
               onclick={() => retryInstall(job, onInstalled)}
             >重试</button>
             <button
-              class="glass radius-pill px-3 h-7 text-xs cursor-pointer shrink-0"
+              type="button"
+              class="glass radius-pill px-3 h-7 text-xs font-medium cursor-pointer shrink-0 hover:bg-[var(--item-hover)] transition-colors"
               onclick={() => {
                 delete passwords[job.id];
                 dismissInstall(job);
@@ -148,38 +158,36 @@
         </div>
 
         {#if job.stage === "pick-category"}
-          <div class="flex flex-col gap-2 pl-1 -my-0.5">
+          <div class="flex flex-col gap-2.5 p-3 rounded-2xl bg-[var(--input-bg)] border border-[var(--glass-stroke)]">
             <div class="flex flex-wrap gap-1.5">
               <button
-                class="glass radius-pill px-3 h-7 text-xs cursor-pointer transition-colors"
-                class:accent-fill={scopeOf(job) === "character"}
-                class:accent-text={scopeOf(job) === "character"}
+                type="button"
+                class="radius-pill px-3 h-7 text-xs font-medium cursor-pointer transition-all border {scopeOf(job) === 'character' ? 'accent-fill accent-text border-[var(--accent)] font-semibold shadow-sm' : 'bg-[var(--surface)] text-[var(--text)] border-[var(--glass-stroke)] hover:bg-[var(--item-hover)]'}"
                 onclick={() => setScope(job, "character")}
               >角色</button>
               {#each fixedTypes as t (t.id)}
                 <button
-                  class="glass radius-pill px-3 h-7 text-xs cursor-pointer transition-colors"
-                  class:accent-fill={scopeOf(job) === t.kind}
-                  class:accent-text={scopeOf(job) === t.kind}
+                  type="button"
+                  class="radius-pill px-3 h-7 text-xs font-medium cursor-pointer transition-all border {scopeOf(job) === t.kind ? 'accent-fill accent-text border-[var(--accent)] font-semibold shadow-sm' : 'bg-[var(--surface)] text-[var(--text)] border-[var(--glass-stroke)] hover:bg-[var(--item-hover)]'}"
                   onclick={() => setScope(job, t.kind)}
                 >{t.name}</button>
               {/each}
             </div>
             {#if scopeOf(job) === "character"}
-              <div class="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+              <div class="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto pr-1 pt-1 border-t border-[var(--glass-stroke)]">
                 {#each characters as c (c.internal_name)}
                   <button
-                    class="glass radius-pill px-2.5 h-6 text-[11px] cursor-pointer transition-colors"
-                    class:accent-fill={charPicked(job) === c.internal_name}
-                    class:accent-text={charPicked(job) === c.internal_name}
+                    type="button"
+                    class="radius-pill px-2.5 h-6 text-[11px] font-medium cursor-pointer transition-all border {charPicked(job) === c.internal_name ? 'accent-fill accent-text border-[var(--accent)] font-semibold shadow-sm' : 'bg-[var(--surface)] text-[var(--text)] border-[var(--glass-stroke)] hover:bg-[var(--item-hover)]'}"
                     onclick={() => setChar(job, c.internal_name)}
                   >{c.display_name}</button>
                 {/each}
               </div>
             {/if}
-            <div class="flex justify-end gap-1.5 mt-0.5">
+            <div class="flex justify-end gap-1.5 pt-1">
               <button
-                class="accent-fill accent-text radius-pill px-3.5 h-8 text-sm font-medium cursor-pointer disabled:opacity-40"
+                type="button"
+                class="accent-fill accent-text radius-pill px-4 h-8 text-xs font-semibold cursor-pointer disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-transform"
                 disabled={!(scopeOf(job) && (scopeOf(job) !== "character" || charPicked(job)))}
                 onclick={() => confirmPick(job)}
               >安装</button>
@@ -189,7 +197,7 @@
 
         {#if job.warnings.length > 0}
           {#each job.warnings as w}
-            <p class="text-xs text-secondary -mt-2 pl-1">{w}</p>
+            <p class="text-xs text-amber-500 -mt-1 pl-1">{w}</p>
           {/each}
         {/if}
       {/each}

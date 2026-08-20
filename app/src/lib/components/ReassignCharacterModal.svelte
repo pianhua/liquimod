@@ -89,8 +89,8 @@
 >
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
-    class="glass radius-panel w-full max-w-md p-6 flex flex-col gap-4 shadow-2xl relative"
-    style="box-shadow: var(--shadow-lift);"
+    class="glass-floating radius-panel w-full max-w-md p-6 flex flex-col gap-4 shadow-2xl relative border border-[var(--glass-floating-stroke)]"
+    style="box-shadow: var(--glass-floating-shadow);"
     onclick={(e) => e.stopPropagation()}
   >
     <!-- 标题与说明 -->
