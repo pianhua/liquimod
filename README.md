@@ -83,6 +83,20 @@ cd app && npm run check && npm test
 
 ---
 
+## 核心架构演进路线 (7 大工程特性)
+
+1. ✅ **列表拖拽排序物理重排引擎 (`v0.2.6 ~ v0.2.7`)**：原生 Pointer Events 物理重排，平滑位移插槽；
+2. ✅ **立绘预览流体极光自适应 (`v0.2.8`)**：双层极光环境光漫反射（Ambient Glow）与暗房 Lightbox；
+3. ⏳ **游戏运行状态看门狗 (Process Watchdog & Live Badge)**：实时感知 `StarRail.exe` 进程生命周期与危险操作防呆；
+4. ⏳ **复杂 Mod 多变体/配件选择器 (Multi-Variant Switcher)**：识别子变体目录并在卡片内分段单选切换；
+5. ⏳ **非 NTFS (exFAT/移动盘) 自动降级容灾 (FileSystem Fallback)**：卷类型自动探测与 Copy 模式无缝降级；
+6. ⏳ **INI 常量与变量 AST 虚拟命名空间隔离 (Namespace Collision Isolation)**：防止多 Mod 全局变量名碰撞冲突；
+7. ⏳ **运行环境诊断向导与杀软加白自检 (Diagnostic Hub)**：WebView2/VC++ 运行库自检与 Defender 排除项加白。
+
+更多深度设计方案与技术细节，请详阅 **[HANDOVER.md](HANDOVER.md)** 第 6 章。
+
+---
+
 ## 开源许可证
 
 本项目采用 [MIT 许可证](LICENSE)。
