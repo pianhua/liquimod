@@ -7,23 +7,29 @@
     mod,
     categories,
     selected = false,
+    checked = false,
+    isMultiSelectMode = false,
     ontoggle,
     onrename,
     onuninstall,
     onopen,
     onmove,
     onselect,
+    oncheck,
     onmenu,
   }: {
     mod: ModDto;
     categories: CategoryDto[];
     selected?: boolean;
+    checked?: boolean;
+    isMultiSelectMode?: boolean;
     ontoggle: (next: boolean) => void;
     onrename: (name: string) => Promise<boolean>;
     onuninstall: () => Promise<void>;
     onopen: () => void;
     onmove: (categoryId: number | null) => void;
-    onselect?: () => void;
+    onselect?: (e: MouseEvent) => void;
+    oncheck?: (checked: boolean) => void;
     onmenu?: (e: MouseEvent, mod: ModDto) => void;
   } = $props();
 
@@ -96,7 +102,7 @@
       ontoggle(!mod.enabled);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      onselect?.();
+      onselect?.(e as unknown as MouseEvent);
     }
   }
 
@@ -104,7 +110,7 @@
     // 若点击来自 Toggle、按钮、输入框或菜单则不重复触发选择
     const target = e.target as HTMLElement | null;
     if (target?.closest("button, input, [role='switch'], [role='menu']")) return;
-    onselect?.();
+    onselect?.(e);
   }
 </script>
 
@@ -113,8 +119,9 @@
   role="listitem"
   tabindex="0"
   aria-label={mod.name}
-  class="group glass radius-card px-4 py-3.5 flex items-center gap-3.5 outline-none transition-all cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
-  class:selected-row={selected}
+  class="group glass radius-card px-4 py-3.5 flex items-center gap-3 outline-none transition-all cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  class:selected-row={selected && !checked}
+  class:checked-row={checked}
   onclick={onRowClick}
   ondblclick={onopen}
   onkeydown={onRowKeydown}
@@ -149,6 +156,24 @@
       </div>
     </div>
   {:else}
+    <!-- 桌面级多选框 -->
+    <button
+      type="button"
+      class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-all cursor-pointer {checked ? 'bg-[var(--accent)] text-white shadow-sm' : 'border border-[var(--glass-stroke)] hover:border-[var(--accent)] bg-[var(--item-hover)] opacity-0 group-hover:opacity-100'} {isMultiSelectMode ? '!opacity-100' : ''}"
+      onclick={(e) => {
+        e.stopPropagation();
+        oncheck?.(!checked);
+      }}
+      title={checked ? "取消选择" : "多选"}
+      aria-label="选择此 Mod"
+    >
+      {#if checked}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      {/if}
+    </button>
+
     {#if mod.thumb && !imgError}
       <img
         src={mod.thumb}
@@ -265,5 +290,9 @@
   .selected-row {
     box-shadow: inset 0 0 0 1.5px var(--accent), 0 6px 20px var(--accent-glow) !important;
     background: var(--glass-tint) !important;
+  }
+  .checked-row {
+    box-shadow: inset 0 0 0 1.5px var(--accent) !important;
+    background: var(--accent-fill) !important;
   }
 </style>

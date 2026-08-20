@@ -19,6 +19,7 @@
   import { pushEscHandler } from "$lib/esc";
   import { enqueueInstalls } from "$lib/install.svelte";
   import ReassignCharacterModal from "$lib/components/ReassignCharacterModal.svelte";
+  import BatchActionBar from "$lib/components/BatchActionBar.svelte";
 
   let {
     character,
@@ -74,6 +75,8 @@
   let mods = $state<ModDto[]>([]);
   let allCharacters = $state<CharacterSummary[]>([]);
   let reassignTargetMod = $state<ModDto | null>(null);
+  let checkedModIds = $state<Set<number>>(new Set());
+  let lastAnchorId = $state<number | null>(null);
   let error = $state("");
   let enabledFilter = $state<EnabledFilter>("all");
   let selectedModId = $state<number | null>(null);
@@ -95,6 +98,107 @@
     } catch (e) {
       error = String(e);
     }
+  }
+
+  function handleRowSelect(e: MouseEvent, mod: ModDto) {
+    selectedModId = mod.id;
+    if (e.ctrlKey || e.metaKey) {
+      const next = new Set(checkedModIds);
+      if (next.has(mod.id)) {
+        next.delete(mod.id);
+      } else {
+        next.add(mod.id);
+      }
+      checkedModIds = next;
+      lastAnchorId = mod.id;
+    } else if (e.shiftKey && lastAnchorId != null) {
+      const anchorIdx = shown.findIndex((m) => m.id === lastAnchorId);
+      const currIdx = shown.findIndex((m) => m.id === mod.id);
+      if (anchorIdx !== -1 && currIdx !== -1) {
+        const [start, end] = [Math.min(anchorIdx, currIdx), Math.max(anchorIdx, currIdx)];
+        const next = new Set(checkedModIds);
+        for (let i = start; i <= end; i++) {
+          next.add(shown[i].id);
+        }
+        checkedModIds = next;
+      }
+    } else {
+      if (checkedModIds.size > 0) {
+        checkedModIds = new Set();
+      }
+      lastAnchorId = mod.id;
+    }
+  }
+
+  function handleRowCheck(mod: ModDto, checked: boolean) {
+    const next = new Set(checkedModIds);
+    if (checked) {
+      next.add(mod.id);
+    } else {
+      next.delete(mod.id);
+    }
+    checkedModIds = next;
+    lastAnchorId = mod.id;
+  }
+
+  function selectAll() {
+    checkedModIds = new Set(shown.map((m) => m.id));
+  }
+
+  function clearSelection() {
+    checkedModIds = new Set();
+  }
+
+  async function batchEnable() {
+    const targets = mods.filter((m) => checkedModIds.has(m.id) && !m.enabled);
+    if (targets.length === 0) return;
+    for (const m of targets) {
+      try {
+        await api.setModEnabled(m.id, true);
+        m.enabled = true;
+      } catch {}
+    }
+    toast(`已批量启用 ${targets.length} 个 Mod`);
+    onconfigured();
+  }
+
+  async function batchDisable() {
+    const targets = mods.filter((m) => checkedModIds.has(m.id) && m.enabled);
+    if (targets.length === 0) return;
+    for (const m of targets) {
+      try {
+        await api.setModEnabled(m.id, false);
+        m.enabled = false;
+      } catch {}
+    }
+    toast(`已批量禁用 ${targets.length} 个 Mod`);
+    onconfigured();
+  }
+
+  async function batchMoveCategory(cid: number | null) {
+    const targets = mods.filter((m) => checkedModIds.has(m.id));
+    if (targets.length === 0) return;
+    for (const m of targets) {
+      try {
+        await api.setModCategory(m.id, cid);
+        m.category_id = cid;
+      } catch {}
+    }
+    toast(`已批量移动 ${targets.length} 个 Mod 分类`);
+    await refreshMods();
+  }
+
+  async function batchUninstall() {
+    const targets = mods.filter((m) => checkedModIds.has(m.id));
+    if (targets.length === 0) return;
+    for (const m of targets) {
+      try {
+        await api.uninstallMod(m.id);
+      } catch {}
+    }
+    toast(`已成功卸载 ${targets.length} 个 Mod`);
+    clearSelection();
+    await refreshMods();
   }
 
   onMount(async () => {
@@ -236,7 +340,71 @@
   } | null>(null);
 
   function handleModContextMenu(e: MouseEvent, mod: ModDto) {
-    selectedModId = mod.id;
+    if (!checkedModIds.has(mod.id)) {
+      selectedModId = mod.id;
+    }
+
+    // 多选状态下的批量右键菜单
+    if (checkedModIds.has(mod.id) && checkedModIds.size > 1) {
+      const count = checkedModIds.size;
+      const batchCategoryItems: MenuItem[] = [
+        {
+          id: "batch-cat-char",
+          label: "角色 (默认)",
+          action: () => batchMoveCategory(null),
+        },
+        ...categories.map((c) => ({
+          id: `batch-cat-${c.id}`,
+          label: c.name,
+          action: () => batchMoveCategory(c.id),
+        })),
+      ];
+
+      contextMenu = {
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          {
+            id: "batch-enable",
+            label: `批量启用 (${count} 项)`,
+            icon: "⚡",
+            action: batchEnable,
+          },
+          {
+            id: "batch-disable",
+            label: `批量禁用 (${count} 项)`,
+            icon: "🚫",
+            action: batchDisable,
+          },
+          {
+            id: "batch-move",
+            label: `批量移动到分类…`,
+            icon: "🏷️",
+            children: batchCategoryItems,
+          },
+          { id: "d1", label: "", divider: true },
+          {
+            id: "batch-uninstall",
+            label: `批量卸载 (${count} 项)`,
+            icon: "🗑️",
+            danger: true,
+            action: () => {
+              if (window.confirm(`确定要批量卸载选中的 ${count} 个 Mod 吗？`)) {
+                batchUninstall();
+              }
+            },
+          },
+          {
+            id: "clear-sel",
+            label: "取消选择",
+            shortcut: "Esc",
+            action: clearSelection,
+          },
+        ],
+      };
+      return;
+    }
+
     const categoryItems: MenuItem[] = [
       {
         id: "cat-char",
@@ -335,14 +503,30 @@
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
         return;
       }
-      if (e.key === " " && selectedMod) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        selectAll();
+        return;
+      }
+      if (e.key === "Escape" && checkedModIds.size > 0) {
+        e.preventDefault();
+        clearSelection();
+        return;
+      }
+      if (e.key === " " && selectedMod && checkedModIds.size <= 1) {
         e.preventDefault();
         toggle(selectedMod, !selectedMod.enabled);
         return;
       }
-      if (e.key === "Delete" && selectedMod) {
+      if (e.key === "Delete") {
         e.preventDefault();
-        uninstallMod(selectedMod);
+        if (checkedModIds.size > 1) {
+          if (window.confirm(`确定要批量卸载选中的 ${checkedModIds.size} 个 Mod 吗？`)) {
+            batchUninstall();
+          }
+        } else if (selectedMod) {
+          uninstallMod(selectedMod);
+        }
         return;
       }
     }
@@ -550,12 +734,15 @@
             {mod}
             {categories}
             selected={selectedMod?.id === mod.id}
+            checked={checkedModIds.has(mod.id)}
+            isMultiSelectMode={checkedModIds.size > 0}
             ontoggle={(next) => toggle(mod, next)}
             onrename={(name) => renameMod(mod, name)}
             onuninstall={() => uninstallMod(mod)}
             onopen={() => openModDir(mod)}
             onmove={(cid) => moveCategory(mod, cid)}
-            onselect={() => (selectedModId = mod.id)}
+            onselect={(e) => handleRowSelect(e, mod)}
+            oncheck={(checked) => handleRowCheck(mod, checked)}
             onmenu={handleModContextMenu}
           />
         {/each}
@@ -569,7 +756,7 @@
                 {mods.length === 0 ? "暂无 Mod" : "无匹配项"}
               </p>
               <p class="text-xs text-secondary">
-                {mods.length === 0 ? "直接将压缩包（.zip / .7z / .rar）拖入窗口即可自动安装" : "请尝试切换上面的筛选状态"}
+                {mods.length === 0 ? "直接将压缩包（.zip / .7z / .rar）或文件夹拖入窗口即可自动安装" : "请尝试切换上面的筛选状态"}
               </p>
             </div>
           </div>
@@ -607,6 +794,20 @@
     </div>
   </div>
 
+  <!-- 底部悬浮批量操作栏 -->
+  <BatchActionBar
+    selectedCount={checkedModIds.size}
+    {categories}
+    onEnableAll={batchEnable}
+    onDisableAll={batchDisable}
+    onMoveCategory={batchMoveCategory}
+    onReassignCharacter={() => {
+      if (selectedMod) reassignTargetMod = selectedMod;
+    }}
+    onUninstallAll={batchUninstall}
+    onClearSelection={clearSelection}
+  />
+
   {#if contextMenu}
     <ContextMenu
       x={contextMenu.x}
@@ -622,7 +823,17 @@
       currentCharacter={character.internal_name}
       characters={allCharacters}
       onClose={() => (reassignTargetMod = null)}
-      onReassigned={async () => {
+      onReassigned={async (target) => {
+        // 如果批量选中，将选中的其余项也一起迁移
+        if (checkedModIds.size > 1) {
+          const others = mods.filter((m) => checkedModIds.has(m.id) && m.id !== reassignTargetMod?.id);
+          for (const m of others) {
+            try {
+              await api.reassignMod(m.id, target);
+            } catch {}
+          }
+        }
+        clearSelection();
         await refreshMods();
       }}
     />
