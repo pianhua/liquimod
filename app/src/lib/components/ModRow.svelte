@@ -136,7 +136,7 @@
   class:checked-row={checked && !isDragging}
   class:dragging-active={isDragging}
   style={isDragging
-    ? `transform: translateY(${dragOffsetY}px) scale(1.02); z-index: 50; position: relative; box-shadow: 0 16px 36px rgba(0,0,0,0.35), inset 0 0 0 1.5px var(--accent); background: var(--glass-floating-bg); pointer-events: none;`
+    ? `transform: translateY(${dragOffsetY}px); z-index: 50; position: relative; border-radius: var(--radius-card, 16px); box-shadow: 0 20px 40px -8px rgba(0,0,0,0.38), 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1.5px var(--accent), 0 0 20px -2px var(--accent-glow); background: var(--panel-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); pointer-events: none; overflow: hidden;`
     : slotShiftY
     ? `transform: translateY(${slotShiftY}px); transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);`
     : "transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);"}
@@ -177,7 +177,7 @@
     <!-- 拖拽手柄 (Pointer 物理抓手) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="w-5 h-7 flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing text-secondary/50 hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-md transition-all touch-none select-none"
+      class="w-5 h-7 flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing text-secondary/50 hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-md transition-all touch-none select-none {isDragging ? '!opacity-100 !text-[var(--accent)]' : ''}"
       title="按住拖拽排序"
       aria-label="拖拽手柄"
       onpointerdown={(e) => {

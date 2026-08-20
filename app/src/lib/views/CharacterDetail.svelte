@@ -867,7 +867,7 @@
         bind:this={listContainerEl}
         role="region"
         aria-label="Mod 列表"
-        class="flex flex-col gap-2.5 overflow-y-auto flex-1 min-h-0 pr-1 outline-none pb-12 select-none"
+        class="flex flex-col gap-2.5 overflow-y-auto flex-1 min-h-0 pr-1.5 p-1 -m-1 outline-none pb-12 select-none {draggingModId !== null ? 'cursor-grabbing' : ''}"
         tabindex="0"
         onkeydown={onListKeydown}
       >
