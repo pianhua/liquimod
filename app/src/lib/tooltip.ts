@@ -1,5 +1,5 @@
 /**
- * 全局 iOS 质感 Tooltip 状态机与智能定位引擎
+ * 全局 iOS / Liquid Glass 质感 Tooltip 状态机与智能定位引擎
  */
 
 export interface TooltipInfo {
@@ -29,15 +29,49 @@ function notify(info: TooltipInfo | null) {
 }
 
 /**
- * 智能解析 Tooltip 文本中的快捷键括号，例如 "在文件夹中打开 (Ctrl+O)"
+ * 严格判断一段字符串是否为真正的键盘快捷键
+ * 避免把普通中文说明（如“用于游戏大版本更新与修复”、“热重载 Mod”）误识别为快捷键
+ */
+export function isKeyShortcut(str: string): boolean {
+  const t = str.trim();
+  if (!t || t.length > 20) return false;
+
+  // 1. 包含 Ctrl / Cmd / Alt / Shift / Win / Meta / Option 组合键
+  if (/^(?:ctrl|cmd|alt|shift|win|meta|opt|option)(?:\s*\+\s*(?:[a-z0-9]|f[1-9][0-2]?|space|enter|esc|tab|del|delete|backspace|arrow[a-z]+|\/|\?|\.|\,|\-|\=))+$/i.test(t)) {
+    return true;
+  }
+
+  // 2. 独立功能键 (F1-F12, Esc, Space, Enter, Tab, Del, etc.)
+  if (/^(?:f[1-9]|f1[0-2]|esc|escape|space|enter|return|tab|del|delete|backspace|insert|home|end|pageup|pagedown)$/i.test(t)) {
+    return true;
+  }
+
+  // 3. 数字小键盘键 (Num *, Num /, Num 1, etc.)
+  if (/^num\s*(?:[\d\.\*\+\-\/]|lock)$/i.test(t)) {
+    return true;
+  }
+
+  // 4. 单字符按键与符号 (A-Z, 0-9, -, +, =, /, ?, ., etc.)
+  if (/^[A-Za-z0-9\/\?\+\-\=\.\,\;]$/.test(t)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 智能解析 Tooltip 文本中的快捷键括号，例如 "搜索角色或 Mod (Ctrl+K)"
  */
 export function parseTooltipContent(raw: string): { main: string; shortcut?: string } {
   const trimmed = raw.trim();
   const match = trimmed.match(/^(.*?)(?:\s*[（(]([^）)]+)[）)])$/);
-  if (match && match[2] && match[2].length <= 15) {
-    const main = match[1].trim();
-    if (main) {
-      return { main, shortcut: match[2].trim() };
+  if (match && match[2]) {
+    const candidate = match[2].trim();
+    if (isKeyShortcut(candidate)) {
+      const main = match[1].trim();
+      if (main) {
+        return { main, shortcut: candidate };
+      }
     }
   }
   return { main: trimmed };
@@ -68,11 +102,11 @@ function calculatePosition(rect: DOMRect): { x: number; y: number; placement: "t
   const gap = 8;
   const centerX = rect.left + rect.width / 2;
   // 视口安全边距
-  const padding = 12;
+  const padding = 16;
   const clampedX = Math.max(padding, Math.min(window.innerWidth - padding, centerX));
 
-  // 默认放置在下方，若下方空间不足（预估高度 40px）则翻转至上方
-  const hasBottomSpace = rect.bottom + 48 <= window.innerHeight;
+  // 默认放置在下方，若下方空间不足（预估高度 48px）则翻转至上方
+  const hasBottomSpace = rect.bottom + 52 <= window.innerHeight;
   const placement: "top" | "bottom" = hasBottomSpace ? "bottom" : "top";
   const y = placement === "bottom" ? rect.bottom + gap : rect.top - gap;
 
@@ -108,7 +142,7 @@ export function initGlobalTooltip(): () => void {
     hideTooltip();
     activeTarget = found.target;
 
-    // 200ms iOS 响应延迟，避免掠过时闪烁
+    // 180ms 触感延迟，避免高速掠过时闪烁
     showTimer = window.setTimeout(() => {
       if (!activeTarget || !document.body.contains(activeTarget)) {
         hideTooltip();
@@ -125,7 +159,7 @@ export function initGlobalTooltip(): () => void {
         y: pos.y,
         placement: pos.placement,
       });
-    }, 200);
+    }, 180);
   }
 
   function handlePointerOut(e: PointerEvent) {

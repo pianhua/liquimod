@@ -375,7 +375,7 @@
         <button
           class="h-7 px-2 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
           onclick={onlaunchofficial}
-          title="打开崩铁官方启动器 / HoYoPlay（用于游戏大版本更新与修复）"
+          title="打开崩铁官方启动器 / HoYoPlay"
         >
           <span>官方启动器</span>
         </button>
@@ -385,7 +385,7 @@
         <button
           class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
           onclick={onrefreshgame}
-          title="向游戏发送 F10 刷新信号（热重载 Mod）"
+          title="向游戏发送刷新信号 (F10)"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>

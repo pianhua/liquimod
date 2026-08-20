@@ -432,9 +432,9 @@
     <h2 class="text-2xl font-bold tracking-tight">设置</h2>
   </div>
 
-  <div class="flex flex-col gap-4 px-8 pb-10 overflow-y-auto flex-1 min-h-0 max-w-2xl w-full mx-auto">
+  <div class="flex flex-col gap-4 px-8 pb-10 overflow-y-auto flex-1 min-h-0 max-w-3xl w-full mx-auto">
     <!-- 分组 1：外观与偏好 -->
-    <section class="glass radius-panel p-5 flex flex-col gap-3.5">
+    <section class="glass radius-panel p-6 flex flex-col gap-4">
       <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">外观与偏好</h3>
       
       <div class="flex items-center justify-between gap-3">
@@ -456,7 +456,7 @@
         </div>
       </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-3">
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex items-center justify-between gap-3">
         <div>
           <p class="text-sm font-medium">安装后自动启用</p>
           <p class="text-xs text-secondary mt-0.5">解压并导入 Mod 成功后，立即创建软链接部署到游戏</p>
@@ -464,7 +464,7 @@
         <Toggle checked={config?.auto_enable ?? false} ariaLabel="自动启用" onchange={toggleAutoEnable} />
       </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-3">
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex items-center justify-between gap-3">
         <div class="min-w-0">
           <p class="text-sm font-medium">角色分类别名</p>
           <p class="text-xs text-secondary mt-0.5">侧边栏与面包屑的默认角色大类显示名</p>
@@ -478,7 +478,7 @@
             onkeydown={(e) => e.key === "Enter" && saveCatName()}
           />
           <button
-            class="accent-fill accent-text radius-pill h-8 px-3 text-xs font-semibold cursor-pointer disabled:opacity-50"
+            class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
             disabled={!catNameDraft.trim() || catNameDraft.trim() === config?.character_category_name}
             onclick={saveCatName}
           >
@@ -489,136 +489,152 @@
     </section>
 
     <!-- 分组 2：游戏与 3Dmigoto 集成 -->
-    <section class="glass radius-panel p-5 flex flex-col gap-3.5">
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">游戏与 3Dmigoto 集成</h3>
-          <p class="text-xs text-secondary mt-0.5">智能嗅探国服路径、一键初始化或导入已有 3Dmigoto 套件</p>
-        </div>
-        <div class="flex items-center gap-2 shrink-0">
-          <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer transition-transform hover:scale-[1.02]"
-            onclick={handleInitMigoto}
-            title="一键切换至 LiquiMod 内置 3DMigoto 托管目录"
-          >
-            📦 内置 3DM
-          </button>
-          <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer transition-transform hover:scale-[1.02]"
-            onclick={handleMigrateOldMigoto}
-            title="选择旧 SSMI/3DMigoto 目录，自动导入其中所有 Mod"
-          >
-            🔄 迁移旧 Mod
-          </button>
-          <button
-            class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer transition-transform hover:scale-[1.02]"
-            onclick={import3dMigoto}
-          >
-            ✨ 识别目录
-          </button>
-        </div>
+    <section class="glass radius-panel p-6 flex flex-col gap-4">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">游戏与 3Dmigoto 集成</h3>
+        <p class="text-xs text-secondary leading-relaxed">智能嗅探国服路径、一键初始化或导入已有 3Dmigoto 套件</p>
       </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-4">
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium">游戏主程序</p>
-          <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.game_exe ?? "未配置"}>{config?.game_exe ?? "未配置"}</p>
-        </div>
-        <div class="flex items-center justify-end gap-1.5 shrink-0">
-          <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)]"
-            disabled={detectingGame}
-            onclick={autoDetectGame}
-            title="自动从注册表和运行日志嗅探 StarRail.exe"
-          >
-            {#if detectingGame}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin text-[var(--accent)]">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-              </svg>
-              <span>探测中…</span>
-            {:else}
-              <span>🔍</span>
-              <span>自动探测</span>
+      <!-- 快速向导操作卡片栏 -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        <button
+          class="glass radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95"
+          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+          onclick={handleInitMigoto}
+        >
+          <span class="text-xl">📦</span>
+          <span class="text-xs font-semibold text-[var(--text)]">内置 3DM 套件</span>
+          <span class="text-[11px] text-secondary">一键切换托管目录</span>
+        </button>
+
+        <button
+          class="glass radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95"
+          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+          onclick={handleMigrateOldMigoto}
+        >
+          <span class="text-xl">🔄</span>
+          <span class="text-xs font-semibold text-[var(--text)]">迁移旧版 Mod</span>
+          <span class="text-[11px] text-secondary">批量导入旧目录资产</span>
+        </button>
+
+        <button
+          class="radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] accent-fill active:scale-95"
+          style="box-shadow: inset 0 0 0 1px var(--accent)"
+          onclick={import3dMigoto}
+        >
+          <span class="text-xl">✨</span>
+          <span class="text-xs font-bold text-[var(--accent)]">识别外部目录</span>
+          <span class="text-[11px] text-[var(--accent)] opacity-80">智能绑定现有配置</span>
+        </button>
+      </div>
+
+      <!-- 路径配置项列表 -->
+      <div class="flex flex-col gap-3 pt-1">
+        <!-- 游戏主程序 -->
+        <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium">游戏主程序</p>
+            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.game_exe ?? "未配置"}>{config?.game_exe ?? "未配置"}</p>
+          </div>
+          <div class="flex items-center justify-end gap-1.5 shrink-0">
+            <button
+              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)]"
+              disabled={detectingGame}
+              onclick={autoDetectGame}
+              title="自动从注册表和运行日志嗅探 StarRail.exe"
+            >
+              {#if detectingGame}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin text-[var(--accent)]">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span>探测中…</span>
+              {:else}
+                <span>🔍</span>
+                <span>自动探测</span>
+              {/if}
+            </button>
+            {#if config?.game_exe}
+              <button
+                class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
+                title="在资源管理器中定位"
+                onclick={() => config?.game_exe && api.openPathInExplorer(config.game_exe)}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              </button>
             {/if}
-          </button>
-          {#if config?.game_exe}
-            <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
-              title="在资源管理器中定位"
-              onclick={() => config?.game_exe && api.openPathInExplorer(config.game_exe)}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("game")}>
+              选择…
             </button>
-          {/if}
-          <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("game")}>
-            选择…
-          </button>
+          </div>
         </div>
-      </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-4">
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium">3Dmigoto 加载器</p>
-          <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.loader_exe ?? "未配置"}>{config?.loader_exe ?? "未配置"}</p>
-        </div>
-        <div class="flex items-center justify-end gap-1.5 shrink-0">
-          {#if config?.loader_exe}
-            <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
-              title="在资源管理器中定位"
-              onclick={() => config?.loader_exe && api.openPathInExplorer(config.loader_exe)}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        <!-- 3Dmigoto 加载器 -->
+        <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium">3Dmigoto 加载器</p>
+            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.loader_exe ?? "未配置"}>{config?.loader_exe ?? "未配置"}</p>
+          </div>
+          <div class="flex items-center justify-end gap-1.5 shrink-0">
+            {#if config?.loader_exe}
+              <button
+                class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
+                title="在资源管理器中定位"
+                onclick={() => config?.loader_exe && api.openPathInExplorer(config.loader_exe)}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              </button>
+            {/if}
+            <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("loader")}>
+              选择…
             </button>
-          {/if}
-          <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("loader")}>
-            选择…
-          </button>
+          </div>
         </div>
-      </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-4">
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium">3Dmigoto Mods 部署目录</p>
-          <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.mods_dir ?? "未配置"}>{config?.mods_dir ?? "未配置"}</p>
-        </div>
-        <div class="flex items-center justify-end gap-1.5 shrink-0">
-          {#if config?.mods_dir}
+        <!-- 3Dmigoto Mods 部署目录 -->
+        <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium">3Dmigoto Mods 部署目录</p>
+            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.mods_dir ?? "未配置"}>{config?.mods_dir ?? "未配置"}</p>
+          </div>
+          <div class="flex items-center justify-end gap-1.5 shrink-0">
+            {#if config?.mods_dir}
+              <button
+                class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
+                title="在资源管理器中打开"
+                onclick={() => config?.mods_dir && api.openPathInExplorer(config.mods_dir)}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              </button>
+            {/if}
             <button
-              class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
-              title="在资源管理器中打开"
-              onclick={() => config?.mods_dir && api.openPathInExplorer(config.mods_dir)}
+              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]"
+              onclick={pickModsDir}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              选择…
             </button>
-          {/if}
-          <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]"
-            onclick={pickModsDir}
-          >
-            选择…
-          </button>
+          </div>
         </div>
-      </div>
 
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center justify-between gap-4">
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium">LiquiMod 核心仓库（Library）</p>
-          <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.library_root ?? "…"}>{config?.library_root ?? "…"}</p>
-        </div>
-        <div class="flex items-center justify-end shrink-0">
-          <button
-            class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-[var(--item-hover)]"
-            onclick={() => config?.library_root && api.openPathInExplorer(config.library_root)}
-          >
-            <span>📂</span> 打开仓库
-          </button>
+        <!-- LiquiMod 核心仓库 -->
+        <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium">LiquiMod 核心仓库（Library）</p>
+            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.library_root ?? "…"}>{config?.library_root ?? "…"}</p>
+          </div>
+          <div class="flex items-center justify-end shrink-0">
+            <button
+              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-[var(--item-hover)]"
+              onclick={() => config?.library_root && api.openPathInExplorer(config.library_root)}
+            >
+              <span>📂</span> 打开仓库
+            </button>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- 分组 3：3DMigoto 核心套件与启动引擎微调 -->
-    <section class="glass radius-panel p-5 flex flex-col gap-3.5">
+    <section class="glass radius-panel p-6 flex flex-col gap-4">
       <div class="flex items-center justify-between gap-3">
         <div>
           <div class="flex items-center gap-2">
@@ -630,14 +646,14 @@
           <p class="text-xs text-secondary mt-0.5">原生挂起注入、延迟缓冲微调与云端 SRMI 核心套件一键安装/更新</p>
         </div>
         <button
-          class="glass radius-pill h-8 px-3 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)]"
+          class="glass radius-pill h-8 px-3.5 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)]"
           disabled={checkingMigoto || installingMigoto}
           onclick={handleCheckMigotoUpdate}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class={checkingMigoto ? "animate-spin" : ""}>
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
           </svg>
-          {checkingMigoto ? "检查中…" : "检查 3DMigoto 核心更新"}
+          {checkingMigoto ? "检查中…" : "检查 3DM 核心更新"}
         </button>
       </div>
 
@@ -697,13 +713,13 @@
       {/if}
 
       <!-- 注入延迟调节 -->
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex flex-col gap-2">
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium">3DM 启动后延时启动游戏的时间 (注入缓冲延迟)</p>
             <p class="text-xs text-secondary mt-0.5">带 Mod 启动时，先启动 3DMigoto Loader，等待指定毫秒再自动拉起游戏主程序，为 DirectX 注入留出缓冲时间（默认 500ms）</p>
           </div>
-          <span class="text-xs font-mono font-bold text-[var(--accent)] px-2 py-0.5 glass radius-pill">
+          <span class="text-xs font-mono font-bold text-[var(--accent)] px-2.5 py-0.5 glass radius-pill">
             {delayDraft} ms
           </span>
         </div>
@@ -721,7 +737,7 @@
       </div>
 
       <!-- 云端镜像与加速通道 -->
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex flex-col gap-2.5">
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-2.5">
         <div>
           <p class="text-sm font-medium">GitHub 镜像与加速通道 (可选)</p>
           <p class="text-xs text-secondary mt-0.5">国内环境若无法直连 GitHub，可配置镜像前缀 (如 https://ghproxy.net/)</p>
@@ -743,7 +759,7 @@
         </div>
         <div class="flex justify-end">
           <button
-            class="accent-fill accent-text radius-pill h-7 px-3 text-xs font-semibold cursor-pointer"
+            class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer"
             onclick={saveGithubSettings}
           >
             保存加速配置
@@ -752,8 +768,8 @@
       </div>
     </section>
 
-    <!-- 分组 3：解压密码本 -->
-    <section class="glass radius-panel p-5 flex flex-col gap-3.5">
+    <!-- 分组 4：解压密码本 -->
+    <section class="glass radius-panel p-6 flex flex-col gap-4">
       <div>
         <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">解压密码本</h3>
         <p class="text-xs text-secondary mt-0.5">安装加密压缩包时将自动轮询密码本，无需每次重复输入</p>
@@ -799,42 +815,42 @@
       </div>
     </section>
 
-    <!-- 分组 4：维护与诊断 -->
-    <section class="glass radius-panel p-5 flex flex-col gap-3.5">
+    <!-- 分组 5：维护与诊断 -->
+    <section class="glass radius-panel p-6 flex flex-col gap-4">
       <div>
         <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">维护与系统诊断</h3>
         <p class="text-xs text-secondary mt-0.5">检查组件状态、同步磁盘索引或清理缓存</p>
       </div>
 
       <!-- 诊断指示灯 -->
-      <div class="grid grid-cols-2 gap-2 text-xs">
-        <div class="p-2.5 rounded-lg flex items-center justify-between" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
-          <span class="text-secondary">F10 游戏内热刷新</span>
+      <div class="grid grid-cols-2 gap-2.5 text-xs">
+        <div class="p-3 rounded-xl flex items-center justify-between" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)">
+          <span class="text-secondary font-medium">F10 游戏内热刷新</span>
           <span class="flex items-center gap-1.5 font-medium {diagStatus?.helper_ready ? 'text-emerald-500' : 'text-amber-500'}">
-            <span class="w-1.5 h-1.5 rounded-full {diagStatus?.helper_ready ? 'bg-emerald-500' : 'bg-amber-500'}"></span>
+            <span class="w-2 h-2 rounded-full {diagStatus?.helper_ready ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]' : 'bg-amber-500'}"></span>
             {diagStatus?.helper_ready ? "就绪" : "未启动/缺组件"}
           </span>
         </div>
-        <div class="p-2.5 rounded-lg flex items-center justify-between" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
-          <span class="text-secondary">3Dmigoto 关联</span>
+        <div class="p-3 rounded-xl flex items-center justify-between" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)">
+          <span class="text-secondary font-medium">3Dmigoto 关联</span>
           <span class="flex items-center gap-1.5 font-medium {diagStatus?.mods_dir_configured ? 'text-emerald-500' : 'text-zinc-400'}">
-            <span class="w-1.5 h-1.5 rounded-full {diagStatus?.mods_dir_configured ? 'bg-emerald-500' : 'bg-zinc-400'}"></span>
+            <span class="w-2 h-2 rounded-full {diagStatus?.mods_dir_configured ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]' : 'bg-zinc-400'}"></span>
             {diagStatus?.mods_dir_configured ? "已配置" : "未配置"}
           </span>
         </div>
       </div>
 
       <!-- 维护动作按钮组 -->
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex items-center gap-2">
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex items-center gap-2">
         <button
-          class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--glass-hover)] disabled:opacity-50"
+          class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
           disabled={busy}
           onclick={handleRescan}
         >
           <span>🔄</span> 全库扫描与对齐
         </button>
         <button
-          class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--glass-hover)] disabled:opacity-50"
+          class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
           disabled={busy}
           onclick={handleCleanCache}
         >
@@ -843,19 +859,19 @@
       </div>
 
       <!-- 角色数据云端热更新卡片 -->
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex flex-col gap-2.5">
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-2.5">
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium flex items-center gap-1.5">
               <span>☁️</span> 崩坏：星穹铁道 角色数据云端同步
             </p>
             <p class="text-xs text-secondary mt-0.5">
-              当前版本：<span class="font-mono">{localAssetVersion || "内嵌预置版本"}</span>
+              当前版本：<span class="font-mono font-medium text-[var(--accent)]">{localAssetVersion || "内嵌预置版本"}</span>
             </p>
           </div>
           <div class="flex items-center gap-2">
             <button
-              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--glass-hover)] disabled:opacity-50"
+              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
               disabled={checkingUpdate || syncing}
               onclick={handleCheckAssetUpdate}
             >
@@ -872,7 +888,7 @@
         </div>
 
         {#if syncProgress}
-          <div class="p-3 rounded-lg flex flex-col gap-1.5 bg-[var(--glass-tint)]" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+          <div class="p-3.5 radius-card flex flex-col gap-1.5 bg-[var(--glass-tint)]" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
             <div class="flex items-center justify-between text-xs">
               <span class="text-secondary truncate max-w-[320px]">{syncProgress.message}</span>
               <span class="font-mono font-medium">{syncProgress.percent}%</span>
@@ -888,7 +904,7 @@
       </div>
 
       <!-- 日志预览 -->
-      <div class="border-t border-[var(--glass-stroke)] pt-3 flex flex-col gap-2">
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <p class="text-sm font-medium">运行日志</p>
           <div class="flex gap-1.5">
@@ -897,13 +913,13 @@
           </div>
         </div>
         <pre
-          class="text-[11px] font-mono rounded-lg p-3 max-h-40 overflow-auto whitespace-pre-wrap break-all select-text leading-relaxed opacity-85"
-          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+          class="text-[11px] font-mono rounded-xl p-3 max-h-40 overflow-auto whitespace-pre-wrap break-all select-text leading-relaxed opacity-85"
+          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)"
         >{formatLog(logText) || "（暂无日志）"}</pre>
       </div>
 
       <!-- 关于信息 -->
-      <div class="border-t border-[var(--glass-stroke)] pt-3 text-xs text-secondary flex items-center justify-between">
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 text-xs text-secondary flex items-center justify-between">
         <span>LiquiMod —— 崩坏：星穹铁道 Mod 管理器</span>
         <span class="font-mono">v0.1.0 (Rust + Tauri 2 + Svelte 5)</span>
       </div>
