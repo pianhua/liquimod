@@ -1,51 +1,55 @@
-# LiquiMod
+# LiquiMod 开发手册 (Developer Guide)
 
 崩铁（3Dmigoto）Mod 管理器。Rust core + Tauri 2 + Svelte 5。
 
-## 构建
+## 1. 本地构建与运行
 
 ```bash
-# 前端
+# 前端安装与构建
 cd app && npm install && npm run build
-# 主程序（必须带 tauri/custom-protocol，否则 exe 不内嵌前端、导航到 devUrl）
+
+# 主程序（必须带 tauri/custom-protocol，否则 exe 不内嵌前端）
 cargo build --release --features tauri/custom-protocol --manifest-path app/src-tauri/Cargo.toml
+
 # F10 刷新 helper（必须与 liquimod-app.exe 同目录，运行时 current_exe().parent() 定位）
 cargo build --release -p liquimod-refresh-helper
 ```
 
-产物：`target/release/liquimod-app.exe` + `target/release/liquimod-refresh-helper.exe`。
-dev 模式（`cargo run`）下 helper 不存在于 target/debug，自动刷新会 toast 提示并跳过——正常。
+产物输出：`target/release/liquimod-app.exe` + `target/release/liquimod-refresh-helper.exe`。
 
-## 测试 / 检查
+---
+
+## 2. 本地与云端质量检查
 
 ```bash
+# 后端全量测试与 Clippy 诊断
 cargo test --workspace
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
-cd app && npm test && npm run check
+
+# 前端类型检查与 Vitest 测试 (95+ 测试用例)
+cd app && npm run check && npm test
 ```
 
-## 调试 WebView2
+### ⚡ GitHub Actions CI/CD 流水线
+- **CI Quality Gate**：每次 push/PR 触发，前后端完全并行起跑（前端极速 Ubuntu 30s 秒通，后端 Windows 增量缓存验证）；
+- **Build & Release**：推送版本 Tag（如 `v*`）或在 GitHub 网页手动点击触发，全自动打包生成 `LiquiMod-Windows-x64.zip` 并发布 GitHub Release。
 
-设 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223` 启动 exe，然后 CDP 连 `http://localhost:9223/json`。WebView2 缓存位于 `%LOCALAPPDATA%\com.liquimod.app\EBWebView`，前端异常时先删。
+---
 
-已知引擎差异：WebView2 的 grid auto 行高计算无视 grid item 的 aspect-ratio/padding-top 撑高——UI 勿依赖内容撑高定 grid 行高（CharacterGrid 用 ResizeObserver 显式写 grid-auto-rows）。
+## 3. 架构铁律与设计规范
 
-## 里程碑 8（分类与新布局）
+**完整设计规范与交互基准请查阅 `STYLE.md`**。
 
-- 分类纯 DB：`categories` 表 + `mods.category_id`（NULL = 角色视图），磁盘目录不变；`category_id` 列迁移走 ALTER + 吞 duplicate column 惯例。
-- 「角色」是虚拟分类，显示名 config.character_category_name 可改；「未分类」= 未归类且不属于已知角色（约等于角色网格的 Others 桶平铺）。
-- 主题：config.theme = auto|light|dark，`document.documentElement.dataset.theme` 驱动 CSS 变量；auto 监听 prefers-color-scheme（theme.ts 单次挂监听，dataset.themeChoice 记录当前选择）。
-- 布局：Sidebar（分类导航）+ Toolbar（面包屑/排序/预设）+ view 状态机（`$lib/view.ts`）；滚动记忆按 viewKey 存 Map，切视图前显式保存、刷新后恢复（Chromium display:none 会清零 scrollTop）。
-- 浮层面板（预设/分类菜单）的祖先必须自带定位与 z-index（Toolbar 是 `relative z-30`）——transform 的卡片会建层叠上下文盖住无定位面板。
-- CDP 探针注意：`[...document.querySelectorAll("button")]` 按文本找按钮会误命中侧边栏导航（如「武器」），点弹层项要 scope 在面板元素内。
+### 3.1 核心 UI 铁律
+1. **图标操作按钮**：统一为 `w-8 h-8 glass radius-pill`（32px 玻璃圆钮），禁止私造 24px/28px 小按钮；
+2. **按钮高度三档**：主要控制 `h-9`、标准操作 `h-8`、紧凑微控 `h-7`，同层严格同规格；
+3. **圆角系统**：窗口 `radius-window`(26px)、面板 `radius-panel`(20px)、卡片 `radius-card`(18px)、矩形菜单项 `rounded-lg`(8px)、对象与胶囊 `radius-pill`；
+4. **色彩与主题**：100% 采用 `app.css` CSS 变量（`--surface`, `--text`, `--accent`, `--glass-*` 等），严禁硬编码色值，亮/暗双主题必须全量验证对比度；
+5. **物理触感**：所有开关统一使用 `<Toggle />`（具备 `:active` 横向果冻拉伸与回弹），所有按钮具备物理按压反馈（`scale(0.96)`）。
 
-## UI 视觉规范（铁律）
-
-**完整规范见 `STYLE.md`**（尺寸档/圆角档/间距/文本/色板/玻璃约定）。改 UI 前先读，新增组件必须遵守以下铁律，否则视为视觉回归：
-
-1. 图标操作按钮统一 `w-8 h-8 glass radius-pill`（32px 玻璃圆钮）；**禁用** 24px 透明小图标按钮（历史残留）。
-2. 圆角：按钮/矩形菜单项 **8px**，卡片 `radius-card`(18)、面板 `radius-panel`(20)、胶囊/对象 `radius-pill`；不硬写 `rounded-xl`。
-3. 按钮高度三层：主 `h-9` / 标准 `h-8` / 小 `h-7`，同层严格同规格。
-4. 颜色一律用 app.css 的 `--*` 变量，禁止硬编码色值；亮/暗两套主题都须验证对比度。
-5. 文本层级：页标题 `text-2xl`、主文本/按钮 `text-sm`、次要/元数据 `text-xs text-secondary`。
+### 3.2 视图状态与架构铁律
+- **全链路搜索记忆**：页面导航必须基于 `viewSearchMemory` 独立快照各个视图的搜索词，返回上一级时 100% 精准恢复过滤状态；
+- **滚动记忆恢复**：脱离视图或打开设置前显式调用 `saveScroll()`，渲染后调用 `restoreScroll()`；
+- **层叠上下文**：浮层面板祖先容器必须自带定位与层级声明（如 `relative z-30`）；
+- **WebView2 渲染引擎避坑**：网格行高必须显式声明（如 `[grid-auto-rows:200px]`），勿依赖 item 内部撑高。
