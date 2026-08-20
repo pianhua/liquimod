@@ -57,12 +57,24 @@
     };
   });
 
+  function getInitialDetailWidth(): number {
+    if (typeof window === "undefined") return 440;
+    try {
+      const saved = localStorage.getItem("liquimod_detail_pane_width");
+      if (saved) {
+        const w = parseInt(saved, 10);
+        if (!isNaN(w) && w >= 320 && w <= 750) return w;
+      }
+    } catch {}
+    return 440;
+  }
+
   let mods = $state<ModDto[]>([]);
   let error = $state("");
   let enabledFilter = $state<EnabledFilter>("all");
   let selectedModId = $state<number | null>(null);
   let radioMode = $state(false);
-  let detailWidth = $state(440);
+  let detailWidth = $state(getInitialDetailWidth());
   let isDragging = $state(false);
 
   let shown = $derived(filterMods(mods, query, enabledFilter));
@@ -71,11 +83,6 @@
   );
 
   onMount(async () => {
-    const savedWidth = localStorage.getItem("liquimod_detail_pane_width");
-    if (savedWidth) {
-      const w = parseInt(savedWidth, 10);
-      if (!isNaN(w) && w >= 320 && w <= 750) detailWidth = w;
-    }
     try {
       mods = await api.listMods(character.internal_name, categoryId);
       if (mods.length > 0) {
@@ -503,9 +510,9 @@
       <div class="w-[3px] h-12 rounded-full bg-[var(--splitter-bg)] group-hover:bg-[var(--accent)] group-hover:h-20 transition-all"></div>
     </div>
 
-    <!-- 右侧大图与属性检查器面板 (可调宽度) -->
+    <!-- 右侧大图与属性检查器面板 (丝滑右侧滑入与弹性展开) -->
     <div
-      class="shrink-0 h-full flex flex-col min-h-0 pl-3 {isDragging ? '' : 'transition-[width] duration-150'}"
+      class="shrink-0 h-full flex flex-col min-h-0 pl-3 animate-in fade-in slide-in-from-right-4 duration-300 ease-out {isDragging ? '' : 'transition-[width] duration-150'}"
       style={`width: ${detailWidth}px`}
     >
       <ModDetailPane

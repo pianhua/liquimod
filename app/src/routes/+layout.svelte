@@ -14,6 +14,15 @@
       }
     }
     window.addEventListener("contextmenu", handleContextMenu);
+
+    // 优雅呈现已完成第一帧渲染并恢复窗口坐标的无闪烁窗口
+    import("@tauri-apps/api/webviewWindow").then(({ getCurrentWebviewWindow }) => {
+      try {
+        const win = getCurrentWebviewWindow();
+        void win.show();
+      } catch {}
+    }).catch(() => {});
+
     return () => {
       window.removeEventListener("contextmenu", handleContextMenu);
     };
