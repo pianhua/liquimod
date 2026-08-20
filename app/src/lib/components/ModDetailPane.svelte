@@ -427,9 +427,9 @@
 
 <div class="glass radius-panel p-6 flex flex-col gap-5 h-full min-h-0 overflow-y-auto">
   {#if mod}
-    <!-- 1. 大预览图展示区（带环境光虚化背景与悬浮操作） -->
+    <!-- 1. 大预览图展示区（带双层极光环境光与立体悬浮海报设计） -->
     <div
-      class="group relative w-full aspect-[16/10] radius-card overflow-hidden grid place-items-center shrink-0 cursor-pointer select-none"
+      class="group relative w-full h-[260px] min-h-[200px] max-h-[340px] radius-card overflow-hidden flex items-center justify-center p-3 shrink-0 cursor-pointer select-none"
       style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)"
       role="button"
       tabindex="0"
@@ -438,18 +438,20 @@
       onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openCoverLightbox()}
     >
       {#if mod.thumb}
-        <!-- 虚化环境光背景 -->
+        <!-- 双层极光流体环境光背景（彻底消除死板灰色留白） -->
         <img
           src={mod.thumb}
           alt=""
-          class="absolute inset-0 w-full h-full object-cover blur-2xl scale-125 opacity-40 pointer-events-none"
+          class="absolute inset-0 w-full h-full object-cover blur-3xl scale-150 opacity-65 saturate-150 brightness-90 pointer-events-none"
           draggable="false"
         />
-        <!-- 主图 -->
+        <div class="absolute inset-0 bg-black/20 pointer-events-none"></div>
+
+        <!-- 主图主体（自适应居中悬浮立体卡片） -->
         <img
           src={mod.thumb}
           alt={mod.name}
-          class="relative max-h-full max-w-full object-contain drop-shadow-md z-10 transition-transform duration-300 group-hover:scale-[1.02]"
+          class="relative max-h-full max-w-full object-contain rounded-xl shadow-[0_12px_32px_rgba(0,0,0,0.45)] ring-1 ring-white/25 z-10 transition-all duration-300 group-hover:scale-[1.03] group-hover:shadow-[0_16px_40px_rgba(0,0,0,0.6)]"
           draggable="false"
         />
         <!-- 状态角标 -->
@@ -464,7 +466,7 @@
           </span>
         </div>
       {:else}
-        <div class="flex flex-col items-center gap-2 text-secondary opacity-60">
+        <div class="flex flex-col items-center gap-2 text-secondary opacity-60 z-10">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
             <circle cx="8.5" cy="8.5" r="1.5"/>
@@ -991,11 +993,19 @@
           </button>
         {/if}
 
-        <!-- 高清图像主体 -->
+        <!-- 背景极光氛围漫反射 -->
+        <img
+          src={imgSrc}
+          alt=""
+          class="absolute inset-0 w-full h-full object-cover blur-3xl scale-125 opacity-25 pointer-events-none"
+          draggable="false"
+        />
+
+        <!-- 高清图像主体（自适应竖屏与横屏） -->
         <img
           src={imgSrc}
           alt={currentImg?.filename || "大图预览"}
-          class="max-w-[92vw] max-h-[76vh] object-contain drop-shadow-2xl pointer-events-none select-none will-change-transform"
+          class="relative max-w-[92vw] max-h-[82vh] object-contain rounded-lg drop-shadow-2xl pointer-events-none select-none will-change-transform z-10"
           style="transform: translate3d({pan.x}px, {pan.y}px, 0) scale({zoom}); transform-origin: center center; transition: {isDragging ? 'none' : 'transform 0.15s cubic-bezier(0.2, 0, 0, 1)'};"
           draggable="false"
         />
