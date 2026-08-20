@@ -192,10 +192,17 @@ mod tests {
     #[test]
     fn tie_prefers_earlier_character_in_game_order() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join("mod.ini"), "; acheron blade\n").unwrap();
+        let chars = fixture_game().characters();
+        let first = &chars[0].internal_name;
+        let second = &chars[1].internal_name;
+        std::fs::write(
+            tmp.path().join("mod.ini"),
+            format!("; {} {}\n", second.to_lowercase(), first.to_lowercase()),
+        )
+        .unwrap();
         assert_eq!(
             infer_character(tmp.path(), fixture_game()),
-            Some("Blade".to_string())
+            Some(first.clone())
         );
     }
 
