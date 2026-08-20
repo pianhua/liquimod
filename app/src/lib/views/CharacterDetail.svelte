@@ -17,6 +17,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { toast } from "$lib/toast.svelte";
   import { pushEscHandler } from "$lib/esc";
+  import { enqueueInstalls } from "$lib/install.svelte";
 
   let {
     character,
@@ -82,15 +83,19 @@
     shown.find((m) => m.id === selectedModId) ?? (shown.length > 0 ? shown[0] : null)
   );
 
-  onMount(async () => {
+  async function refreshMods() {
     try {
       mods = await api.listMods(character.internal_name, categoryId);
-      if (mods.length > 0) {
+      if (mods.length > 0 && (!selectedModId || !mods.some((m) => m.id === selectedModId))) {
         selectedModId = mods[0].id;
       }
     } catch (e) {
       error = String(e);
     }
+  }
+
+  onMount(async () => {
+    await refreshMods();
   });
 
   async function toggle(mod: ModDto, next: boolean) {
@@ -361,6 +366,39 @@
     window.addEventListener("mousemove", onMouseMove, { passive: true });
     window.addEventListener("mouseup", onMouseUp, { once: true });
   }
+
+  async function handleImportArchive() {
+    if (!isTauri()) return;
+    try {
+      const selected = await open({
+        multiple: true,
+        directory: false,
+        filters: [{ name: "Mod 压缩包", extensions: ["zip", "7z", "rar"] }],
+      });
+      if (selected) {
+        const paths = Array.isArray(selected) ? selected : [selected];
+        enqueueInstalls(paths, character.internal_name, refreshMods);
+      }
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function handleImportFolder() {
+    if (!isTauri()) return;
+    try {
+      const selected = await open({
+        multiple: true,
+        directory: true,
+      });
+      if (selected) {
+        const paths = Array.isArray(selected) ? selected : [selected];
+        enqueueInstalls(paths, character.internal_name, refreshMods);
+      }
+    } catch (e) {
+      toast(String(e));
+    }
+  }
 </script>
 
 <div class="flex flex-col h-full min-h-0 {isDragging ? 'cursor-col-resize select-none' : ''}">
@@ -400,8 +438,35 @@
       </div>
     </div>
 
-    <!-- 顶部动作组：单选互斥换装模式 + 批量操作 -->
+    <!-- 顶部动作组：导入 Mod + 单选互斥换装模式 + 批量操作 -->
     <div class="flex items-center gap-2 shrink-0">
+      <!-- 导入 Mod 复合动作胶囊 (支持选择压缩包与文件夹) -->
+      <div class="flex items-center glass radius-pill p-0.5">
+        <button
+          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] text-[var(--accent)] active:scale-95"
+          title="选择本地 Mod 压缩包 (.zip / .7z / .rar) 导入到当前角色"
+          onclick={handleImportArchive}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span>导入压缩包</span>
+        </button>
+        <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-60"></span>
+        <button
+          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] text-emerald-500 active:scale-95"
+          title="选择本地 Mod 文件夹导入到当前角色"
+          onclick={handleImportFolder}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>导入文件夹</span>
+        </button>
+      </div>
+
       <label class="glass radius-pill h-8 px-3 text-xs flex items-center gap-2 cursor-pointer transition-colors"
         style={radioMode ? "background: var(--accent-fill); color: var(--accent); font-weight: 600" : ""}
         title="开启后，启用某个外观会自动关闭该角色的其余外观，实现一键换装"

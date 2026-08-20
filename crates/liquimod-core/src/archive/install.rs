@@ -45,6 +45,55 @@ pub fn install_archive_inferred(
     })
 }
 
+/// 指定角色安装外部文件夹（Folder-based Mod）。
+pub fn install_folder(
+    db: &Database,
+    library: &Library,
+    folder_path: &Path,
+    character: &str,
+) -> Result<InstallOutcome> {
+    let character = character.to_owned();
+    install_folder_inner(db, library, folder_path, |_| Ok(character))
+}
+
+/// 自动推断角色安装外部文件夹（Folder-based Mod）。
+pub fn install_folder_inferred(
+    db: &Database,
+    library: &Library,
+    game: &dyn Game,
+    folder_path: &Path,
+) -> Result<InstallOutcome> {
+    install_folder_inner(db, library, folder_path, |root| {
+        Ok(infer_character(root, game).unwrap_or_else(|| "Others".to_string()))
+    })
+}
+
+fn install_folder_inner(
+    db: &Database,
+    library: &Library,
+    folder_path: &Path,
+    resolve_character: impl FnOnce(&Path) -> Result<String>,
+) -> Result<InstallOutcome> {
+    if !folder_path.is_dir() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("不是有效的文件夹: {}", folder_path.display()),
+        )));
+    }
+    let name = folder_path
+        .file_name()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("folder has no name: {}", folder_path.display()),
+            )
+        })?;
+    let content_root = resolve_content_root(folder_path)?;
+    let character = resolve_character(&content_root)?;
+    commit_install_to_library(db, library, &content_root, &name, character, Vec::new())
+}
+
 /// Installs an archive into the library. Destination ownership checking, copying, and rollback are
 /// protected by a process-local mutex; simultaneous operations from multiple processes on the same
 /// library are outside the protection scope because the desktop application is single-instance.
@@ -109,21 +158,41 @@ fn install_inner(
     };
     let character = resolve_character(temp_dir.path())?;
     let content_root = resolve_content_root(temp_dir.path())?;
+    let mut outcome =
+        commit_install_to_library(db, library, &content_root, &name, character, report.nested_warnings)?;
+    if let InstallOutcome::Installed { ref mut warnings, .. } = outcome {
+        if let Some(password) = password {
+            if password_book.learn(&password).is_err() {
+                warnings.push("密码未记住".to_string());
+            }
+        }
+    }
+    Ok(outcome)
+}
+
+fn commit_install_to_library(
+    db: &Database,
+    library: &Library,
+    content_root: &Path,
+    name: &str,
+    character: String,
+    warnings: Vec<String>,
+) -> Result<InstallOutcome> {
     let _install_lock = INSTALL_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     if !is_valid_segment(&character) {
         return Err(LiquiModError::InvalidName(character));
     }
-    if !is_valid_segment(&name) {
-        return Err(LiquiModError::InvalidName(name));
+    if !is_valid_segment(name) {
+        return Err(LiquiModError::InvalidName(name.to_string()));
     }
-    let destination = library.layout.mod_dir(&character, &name);
+    let destination = library.layout.mod_dir(&character, name);
     match std::fs::symlink_metadata(&destination) {
         Ok(_) => {
             return Err(LiquiModError::DestinationExists {
                 character: character.clone(),
-                name: name.clone(),
+                name: name.to_string(),
             });
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -133,7 +202,7 @@ fn install_inner(
     let marker = destination.join(crate::library::INSTALLING_MARKER);
     std::fs::create_dir_all(&destination)?;
     std::fs::File::create(&marker)?;
-    let entry = match library.add_folder(&content_root, &character, &name) {
+    let entry = match library.add_folder(content_root, &character, name) {
         Ok(entry) => entry,
         Err(error) => {
             let _ = std::fs::remove_dir_all(&destination);
@@ -145,12 +214,6 @@ fn install_inner(
         return Err(error);
     }
     let _ = std::fs::remove_file(&marker);
-    let mut warnings = report.nested_warnings;
-    if let Some(password) = password {
-        if password_book.learn(&password).is_err() {
-            warnings.push("密码未记住".to_string());
-        }
-    }
     Ok(InstallOutcome::Installed {
         mod_id: entry.id,
         name: entry.name,
@@ -710,5 +773,61 @@ mod tests {
         };
         assert_eq!(character, "Others");
         assert!(library.layout.mod_dir("Others", "UnknownMod").is_dir());
+    }
+
+    #[test]
+    fn folder_install_with_explicit_character() {
+        let (tmp, library) = setup();
+        let folder = tmp.path().join("Kafka_Dress_Mod");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("Kafka.ini"), b"[Constants]").unwrap();
+
+        let outcome = install_folder(&library.db, &library, &folder, "Kafka").unwrap();
+
+        let InstallOutcome::Installed { character, name, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(character, "Kafka");
+        assert_eq!(name, "Kafka_Dress_Mod");
+        assert!(library.layout.mod_dir("Kafka", "Kafka_Dress_Mod").join("Kafka.ini").is_file());
+    }
+
+    #[test]
+    fn folder_install_inferred_character() {
+        let (tmp, library) = setup();
+        let folder = tmp.path().join("Acheron_Katana");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("mod.ini"), b"; acheron weapon\nglobal $acheron = 1").unwrap();
+
+        let outcome = install_folder_inferred(
+            &library.db,
+            &library,
+            crate::games::hsr::Hsr::shared(),
+            &folder,
+        )
+        .unwrap();
+
+        let InstallOutcome::Installed { character, name, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(character, "Acheron");
+        assert_eq!(name, "Acheron_Katana");
+        assert!(library.layout.mod_dir("Acheron", "Acheron_Katana").join("mod.ini").is_file());
+    }
+
+    #[test]
+    fn folder_install_unwraps_nested_folders() {
+        let (tmp, library) = setup();
+        let folder = tmp.path().join("OuterPackage");
+        let nested = folder.join("InnerSubfolder").join("KafkaMod");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("Kafka.ini"), b"[Constants]").unwrap();
+
+        let outcome = install_folder(&library.db, &library, &folder, "Kafka").unwrap();
+
+        assert!(matches!(outcome, InstallOutcome::Installed { .. }));
+        let destination = library.layout.mod_dir("Kafka", "OuterPackage");
+        assert!(destination.join("Kafka.ini").is_file());
+        assert!(!destination.join("InnerSubfolder").exists());
     }
 }

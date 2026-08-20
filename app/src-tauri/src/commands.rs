@@ -1,7 +1,10 @@
 use crate::config::Config;
 use crate::state::AppState;
 use base64::Engine;
-use liquimod_core::archive::install::{install_archive, install_archive_inferred, InstallOutcome};
+use liquimod_core::archive::install::{
+    install_archive, install_archive_inferred, install_folder, install_folder_inferred,
+    InstallOutcome,
+};
 use liquimod_core::deploy::Deployer;
 use liquimod_core::error::LiquiModError;
 use liquimod_core::games::hsr::Hsr;
@@ -503,7 +506,7 @@ fn launch_exe(exe: Option<&Path>, what: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 安装压缩包：character=None 时从内容推断。人话错误信息。
+/// 安装 Mod（支持文件夹或压缩包）：character=None 时从内容推断。人话错误信息。
 pub fn install_entry(
     lib: &Library,
     game: &dyn Game,
@@ -512,14 +515,20 @@ pub fn install_entry(
     password: Option<&str>,
 ) -> Result<InstallResultDto, String> {
     if !path.exists() {
-        return Err(format!("文件不存在：{}", path.display()));
+        return Err(format!("路径不存在：{}", path.display()));
     }
-    if !path.is_file() {
-        return Err("不支持的内容：请拖入压缩包文件".to_string());
-    }
-    let outcome = match character {
-        Some(c) => install_archive(&lib.db, lib, path, c, password),
-        None => install_archive_inferred(&lib.db, lib, game, path, password),
+    let outcome = if path.is_dir() {
+        match character {
+            Some(c) => install_folder(&lib.db, lib, path, c),
+            None => install_folder_inferred(&lib.db, lib, game, path),
+        }
+    } else if path.is_file() {
+        match character {
+            Some(c) => install_archive(&lib.db, lib, path, c, password),
+            None => install_archive_inferred(&lib.db, lib, game, path, password),
+        }
+    } else {
+        return Err("不支持的内容：请拖入 Mod 文件夹或压缩包文件 (zip/7z/rar)".to_string());
     };
     match outcome {
         Ok(InstallOutcome::Installed {
@@ -2410,15 +2419,18 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert!(err.contains("文件不存在"));
+        assert!(err.contains("不存在"));
     }
 
     #[test]
-    fn install_entry_rejects_directory_path() {
+    fn install_entry_supports_directory_path() {
         let (_d, lib) = temp_lib();
         let dir = tempfile::tempdir().unwrap();
-        let err = install_entry(&lib, Hsr::shared(), dir.path(), None, None).unwrap_err();
-        assert!(err.contains("请拖入压缩包文件"));
+        let mod_dir = dir.path().join("Kafka_Test_Mod");
+        std::fs::create_dir_all(&mod_dir).unwrap();
+        std::fs::write(mod_dir.join("Kafka.ini"), b"[Constants]").unwrap();
+        let res = install_entry(&lib, Hsr::shared(), &mod_dir, Some("Kafka"), None).unwrap();
+        assert!(matches!(res, InstallResultDto::Installed { character, name, .. } if character == "Kafka" && name == "Kafka_Test_Mod"));
     }
 
     #[test]
