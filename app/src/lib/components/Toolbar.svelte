@@ -42,14 +42,30 @@
   let conflictModalOpen = $state(false);
   let showDevKeyHelp = $state(false);
   let showSortMenu = $state(false);
+  let searchInputEl = $state<HTMLInputElement | null>(null);
 
   function handleWindowClick() {
     showSortMenu = false;
     showDevKeyHelp = false;
   }
+
+  function onGlobalKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+      e.preventDefault();
+      searchInputEl?.focus();
+      searchInputEl?.select();
+    } else if (
+      e.key === "/" &&
+      !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+    ) {
+      e.preventDefault();
+      searchInputEl?.focus();
+      searchInputEl?.select();
+    }
+  }
 </script>
 
-<svelte:window onclick={handleWindowClick} />
+<svelte:window onclick={handleWindowClick} onkeydown={onGlobalKeydown} />
 
 <header class="relative z-30 flex items-center justify-between h-14 px-6 shrink-0 gap-4" aria-label="全局控制台">
   <!-- 左侧：面包屑导航 -->
@@ -76,10 +92,21 @@
         <path d="M8.8 8.8L12 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
       </svg>
       <input
+        bind:this={searchInputEl}
         bind:value={query}
         type="search"
         placeholder="搜索角色或 Mod (Ctrl+K)…"
         class="flex-1 min-w-0 bg-transparent outline-none text-xs placeholder:text-[var(--text-secondary)]"
+        onkeydown={(e) => {
+          if (e.key === "Escape") {
+            if (query) {
+              query = "";
+              e.stopPropagation();
+            } else {
+              searchInputEl?.blur();
+            }
+          }
+        }}
       />
       {#if query}
         <button

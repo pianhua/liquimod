@@ -532,12 +532,12 @@
               {mod.name}
             </h2>
             <button
-              class="glass radius-pill w-7 h-7 grid place-items-center opacity-0 group-hover/title:opacity-100 transition-opacity text-secondary hover:text-[var(--text)] cursor-pointer shrink-0"
+              class="glass radius-pill w-8 h-8 grid place-items-center opacity-0 group-hover/title:opacity-100 transition-opacity text-secondary hover:text-[var(--text)] cursor-pointer shrink-0"
               title="重命名"
               aria-label="重命名"
               onclick={startRename}
             >
-              <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                 <path d="M8.6 2.2 10.8 4.4 4.7 10.5l-2.9.7.7-2.9 6.1-6.1Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
               </svg>
             </button>
@@ -773,7 +773,7 @@
           <p class="text-xs text-red-500 font-medium">确定要彻底卸载此 Mod 吗？所有相关文件将被物理删除。</p>
           <div class="flex items-center gap-2 justify-end">
             <button
-              class="radius-pill h-7 px-3 text-xs font-medium text-white cursor-pointer disabled:opacity-50"
+              class="radius-pill h-8 px-3.5 text-xs font-medium text-white cursor-pointer disabled:opacity-50"
               style="background: var(--danger)"
               disabled={busy}
               onclick={confirmUninstall}
@@ -781,7 +781,7 @@
               确定删除
             </button>
             <button
-              class="glass radius-pill h-7 px-3 text-xs font-medium cursor-pointer"
+              class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer"
               onclick={() => (confirming = false)}
             >
               取消

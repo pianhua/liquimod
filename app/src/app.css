@@ -207,3 +207,18 @@ button:active:not(:disabled),
 [role="button"]:active:not(:disabled) {
   transform: scale(0.96);
 }
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+/* 苹果晶体输入框聚焦光晕 */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-fill), 0 0 0 1px var(--accent);
+}

@@ -72,14 +72,14 @@
 >
   <!-- 右上角：喜爱置顶按钮 -->
   <button
-    class="absolute top-2.5 right-2.5 z-20 w-7 h-7 radius-pill flex items-center justify-center backdrop-blur-md transition-all cursor-pointer {character.is_favorite ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 hover:scale-110'}"
+    class="absolute top-2.5 right-2.5 z-20 w-8 h-8 glass radius-pill flex items-center justify-center backdrop-blur-md transition-all cursor-pointer {character.is_favorite ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 hover:scale-110'}"
     style={character.is_favorite
       ? "background: rgba(255, 45, 85, 0.85); color: #fff; box-shadow: 0 2px 8px rgba(255, 45, 85, 0.4)"
-      : "background: rgba(0,0,0,0.45); color: rgba(255,255,255,0.8)"}
+      : "color: rgba(255,255,255,0.9)"}
     title={character.is_favorite ? "取消喜爱" : "标为喜爱（置顶）"}
     onclick={handleFavoriteClick}
   >
-    <svg width="13" height="13" viewBox="0 0 24 24" fill={character.is_favorite ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill={character.is_favorite ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
     </svg>
   </button>
