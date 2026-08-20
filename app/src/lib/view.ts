@@ -36,14 +36,17 @@ export function filterMods(
 export function sortMods(mods: ModDto[], sort: ModSort): ModDto[] {
   const arr = [...mods];
   return arr.sort((a, b) => {
-    // 💖 喜爱/置顶优先
+    // 自定义拖拽模式下：100% 遵从用户的拖拽物理序号
+    if (sort === "custom") {
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    }
+
+    // 其它常规排序模式下：💖 喜爱/置顶优先
     const favA = a.is_favorite ? 1 : 0;
     const favB = b.is_favorite ? 1 : 0;
     if (favA !== favB) return favB - favA;
 
     switch (sort) {
-      case "custom":
-        return (a.sort_order ?? 0) - (b.sort_order ?? 0);
       case "recent":
         return b.installed_at - a.installed_at;
       case "name":

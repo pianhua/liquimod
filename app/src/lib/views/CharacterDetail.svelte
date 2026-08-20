@@ -21,6 +21,11 @@
   import ReassignCharacterModal from "$lib/components/ReassignCharacterModal.svelte";
   import BatchActionBar from "$lib/components/BatchActionBar.svelte";
   import CustomSelect from "$lib/components/CustomSelect.svelte";
+  import IconGrip from "$lib/components/icons/IconGrip.svelte";
+  import IconClock from "$lib/components/icons/IconClock.svelte";
+  import IconSortAlpha from "$lib/components/icons/IconSortAlpha.svelte";
+  import IconZap from "$lib/components/icons/IconZap.svelte";
+  import IconSortSize from "$lib/components/icons/IconSortSize.svelte";
 
   let {
     character,
@@ -483,6 +488,7 @@
   }
 
   let draggedModId = $state<number | null>(null);
+  let dragOverModId = $state<number | null>(null);
 
   async function toggleFavoriteMod(mod: ModDto) {
     try {
@@ -502,8 +508,11 @@
     }
   }
 
-  function handleDragOver(e: DragEvent) {
+  function handleDragOver(mod: ModDto, e: DragEvent) {
     e.preventDefault();
+    if (draggedModId !== mod.id) {
+      dragOverModId = mod.id;
+    }
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = "move";
     }
@@ -511,9 +520,12 @@
 
   async function handleDrop(targetMod: ModDto, e: DragEvent) {
     e.preventDefault();
-    if (draggedModId == null || draggedModId === targetMod.id) return;
+    const sourceId = draggedModId ?? Number(e.dataTransfer?.getData("text/plain"));
+    draggedModId = null;
+    dragOverModId = null;
+    if (!sourceId || sourceId === targetMod.id) return;
 
-    const fromIdx = mods.findIndex((m) => m.id === draggedModId);
+    const fromIdx = mods.findIndex((m) => m.id === sourceId);
     const toIdx = mods.findIndex((m) => m.id === targetMod.id);
     if (fromIdx === -1 || toIdx === -1) return;
 
@@ -522,13 +534,12 @@
     const [moved] = nextMods.splice(fromIdx, 1);
     nextMods.splice(toIdx, 0, moved);
 
-    // 更新各项 sort_order
+    // 刷新各项目的 sort_order
     nextMods.forEach((m, idx) => {
       m.sort_order = idx;
     });
     mods = nextMods;
     sort = "custom";
-    draggedModId = null;
 
     try {
       await api.reorderMods(nextMods.map((m) => m.id));
@@ -540,6 +551,7 @@
 
   function handleDragEnd() {
     draggedModId = null;
+    dragOverModId = null;
   }
 
   function onListKeydown(e: KeyboardEvent) {
@@ -800,11 +812,11 @@
           <CustomSelect
             bind:value={sort}
             options={[
-              { value: "custom", label: "自定义拖拽", icon: "⠿" },
-              { value: "recent", label: "最新安装", icon: "🕒" },
-              { value: "name", label: "按名称 A-Z", icon: "🔤" },
-              { value: "enabled", label: "启用状态置顶", icon: "⚡" },
-              { value: "size", label: "按文件大小", icon: "📊" },
+              { value: "custom", label: "自定义拖拽", icon: IconGrip },
+              { value: "recent", label: "最新安装", icon: IconClock },
+              { value: "name", label: "按名称 A-Z", icon: IconSortAlpha },
+              { value: "enabled", label: "启用状态置顶", icon: IconZap },
+              { value: "size", label: "按文件大小", icon: IconSortSize },
             ]}
             size="xs"
           />
@@ -828,6 +840,7 @@
             checked={checkedModIds.has(mod.id)}
             isMultiSelectMode={checkedModIds.size > 0}
             isDraggingThis={draggedModId === mod.id}
+            isDragOverTarget={dragOverModId === mod.id && draggedModId !== mod.id}
             ontoggle={(next) => toggle(mod, next)}
             ontogglefavorite={() => toggleFavoriteMod(mod)}
             onrename={(name) => renameMod(mod, name)}
@@ -838,7 +851,7 @@
             oncheck={(checked) => handleRowCheck(mod, checked)}
             onmenu={handleModContextMenu}
             ondragstart={(e) => handleDragStart(mod, e)}
-            ondragover={handleDragOver}
+            ondragover={(e) => handleDragOver(mod, e)}
             ondrop={(e) => handleDrop(mod, e)}
             ondragend={handleDragEnd}
           />

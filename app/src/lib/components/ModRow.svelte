@@ -2,6 +2,8 @@
   import type { CategoryDto, ModDto } from "$lib/api";
   import Toggle from "./Toggle.svelte";
   import CategoryMenu from "./CategoryMenu.svelte";
+  import IconGrip from "./icons/IconGrip.svelte";
+  import IconStar from "./icons/IconStar.svelte";
 
   let {
     mod,
@@ -10,6 +12,7 @@
     checked = false,
     isMultiSelectMode = false,
     isDraggingThis = false,
+    isDragOverTarget = false,
     ontoggle,
     ontogglefavorite,
     onrename,
@@ -30,6 +33,7 @@
     checked?: boolean;
     isMultiSelectMode?: boolean;
     isDraggingThis?: boolean;
+    isDragOverTarget?: boolean;
     ontoggle: (next: boolean) => void;
     ontogglefavorite?: () => void;
     onrename: (name: string) => Promise<boolean>;
@@ -136,6 +140,7 @@
   class:selected-row={selected && !checked}
   class:checked-row={checked}
   class:opacity-40={isDraggingThis}
+  class:drag-over-row={isDragOverTarget}
   onclick={onRowClick}
   ondblclick={onopen}
   onkeydown={onRowKeydown}
@@ -174,20 +179,13 @@
       </div>
     </div>
   {:else}
-    <!-- 拖拽手柄图标 -->
+    <!-- 拖拽手柄图标 (Apple 精密矢量 6 点手柄) -->
     <div
       class="w-4 h-6 flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing text-secondary/40 hover:text-[var(--text)] transition-opacity opacity-0 group-hover:opacity-100"
       title="拖拽排序"
       aria-label="拖拽手柄"
     >
-      <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-        <circle cx="2" cy="2" r="1.5"/>
-        <circle cx="8" cy="2" r="1.5"/>
-        <circle cx="2" cy="7" r="1.5"/>
-        <circle cx="8" cy="7" r="1.5"/>
-        <circle cx="2" cy="12" r="1.5"/>
-        <circle cx="8" cy="12" r="1.5"/>
-      </svg>
+      <IconGrip size={14} />
     </div>
 
     <!-- 桌面级多选框 -->
@@ -208,7 +206,7 @@
       {/if}
     </button>
 
-    <!-- 💖 标为喜爱/置顶快捷按钮 -->
+    <!-- 💖 标为喜爱/置顶快捷按钮 (精密星标) -->
     <button
       type="button"
       class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer {mod.is_favorite ? 'text-amber-400 opacity-100 scale-105' : 'text-secondary/50 hover:text-amber-400 opacity-0 group-hover:opacity-100 hover:scale-110'}"
@@ -219,15 +217,7 @@
       title={mod.is_favorite ? "已设为喜爱（置顶）" : "标为喜爱（置顶）"}
       aria-label={mod.is_favorite ? "取消喜爱" : "标为喜爱"}
     >
-      {#if mod.is_favorite}
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-        </svg>
-      {:else}
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-        </svg>
-      {/if}
+      <IconStar size={14} filled={Boolean(mod.is_favorite)} />
     </button>
 
     {#if mod.thumb && !imgError}
@@ -350,5 +340,10 @@
   .checked-row {
     box-shadow: inset 0 0 0 1.5px var(--accent) !important;
     background: var(--accent-fill) !important;
+  }
+  .drag-over-row {
+    border-color: var(--accent) !important;
+    box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 16px var(--accent-glow) !important;
+    transform: translateY(-2px);
   }
 </style>

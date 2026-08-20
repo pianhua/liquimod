@@ -5,6 +5,13 @@
   import CustomSelect from "./CustomSelect.svelte";
   import IconGamepad from "./icons/IconGamepad.svelte";
   import IconWrench from "./icons/IconWrench.svelte";
+  import IconHeart from "./icons/IconHeart.svelte";
+  import IconSortAlpha from "./icons/IconSortAlpha.svelte";
+  import IconPackage from "./icons/IconPackage.svelte";
+  import IconZap from "./icons/IconZap.svelte";
+  import IconStar from "./icons/IconStar.svelte";
+  import IconClock from "./icons/IconClock.svelte";
+  import IconSortSize from "./icons/IconSortSize.svelte";
 
   let {
     crumbs,
@@ -148,11 +155,11 @@
       <CustomSelect
         bind:value={charSort}
         options={[
-          { value: "default", label: "默认排序 (喜爱置顶)", icon: "💖" },
-          { value: "name", label: "名称 (A-Z)", icon: "🔤" },
-          { value: "mods", label: "Mod 数量", icon: "📦" },
-          { value: "enabled", label: "启用优先", icon: "⚡" },
-          { value: "rarity", label: "星级稀有度", icon: "⭐" },
+          { value: "default", label: "默认排序 (喜爱置顶)", icon: IconHeart },
+          { value: "name", label: "名称 (A-Z)", icon: IconSortAlpha },
+          { value: "mods", label: "Mod 数量", icon: IconPackage },
+          { value: "enabled", label: "启用优先", icon: IconZap },
+          { value: "rarity", label: "星级稀有度", icon: IconStar },
         ]}
         size="sm"
       />
@@ -161,10 +168,10 @@
       <CustomSelect
         bind:value={sort}
         options={[
-          { value: "recent", label: "最近安装", icon: "🕒" },
-          { value: "name", label: "名称 (A-Z)", icon: "🔤" },
-          { value: "enabled", label: "启用优先", icon: "⚡" },
-          { value: "size", label: "文件大小", icon: "📊" },
+          { value: "recent", label: "最近安装", icon: IconClock },
+          { value: "name", label: "名称 (A-Z)", icon: IconSortAlpha },
+          { value: "enabled", label: "启用优先", icon: IconZap },
+          { value: "size", label: "文件大小", icon: IconSortSize },
         ]}
         size="sm"
       />

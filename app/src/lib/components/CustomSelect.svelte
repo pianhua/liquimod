@@ -1,8 +1,10 @@
 <script module lang="ts">
+  import type { Component } from "svelte";
+
   export interface SelectOption<V> {
     value: V;
     label: string;
-    icon?: string;
+    icon?: Component<{ size?: number; class?: string }> | string;
   }
 </script>
 
@@ -120,7 +122,12 @@
   >
     <div class="flex items-center gap-1.5 truncate">
       {#if currentOption?.icon}
-        <span class="text-xs shrink-0">{currentOption.icon}</span>
+        {#if typeof currentOption.icon === "string"}
+          <span class="text-xs shrink-0">{currentOption.icon}</span>
+        {:else}
+          {@const IconComp = currentOption.icon}
+          <span class="shrink-0 text-secondary flex items-center"><IconComp size={13} /></span>
+        {/if}
       {/if}
       <span class="truncate font-medium text-[var(--text)]">
         {currentOption?.label ?? placeholder}
@@ -169,7 +176,12 @@
         >
           <div class="flex items-center gap-2 truncate">
             {#if opt.icon}
-              <span class="text-xs shrink-0">{opt.icon}</span>
+              {#if typeof opt.icon === "string"}
+                <span class="text-xs shrink-0">{opt.icon}</span>
+              {:else}
+                {@const IconComp = opt.icon}
+                <span class="shrink-0 flex items-center {isSelected ? 'text-[var(--accent)]' : 'text-secondary'}"><IconComp size={13} /></span>
+              {/if}
             {/if}
             <span class="truncate">{opt.label}</span>
           </div>
