@@ -12,40 +12,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-and-check:
-    name: Test & Lint (Windows)
-    runs-on: windows-latest
+  frontend-check:
+    name: Frontend Check & Test (Fast Ubuntu)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: "npm"
           cache-dependency-path: app/package-lock.json
 
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Install Frontend Dependencies
         working-directory: app
         run: npm ci
 
-      - name: Frontend Type & Diagnostic Check
+      - name: Frontend Diagnostics Check
         working-directory: app
         run: npm run check
 
       - name: Frontend Vitest Tests
         working-directory: app
         run: npm test
+
+  rust-check:
+    name: Rust Check & Test (Windows Native)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache (Incremental)
+        uses: Swatinem/rust-cache@v2
 
       - name: Rust Format Check
         run: cargo fmt --all -- --check
