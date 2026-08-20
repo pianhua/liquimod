@@ -2,6 +2,8 @@
   import type { ModSort } from "$lib/view";
   import type { ConflictReportDto, CharacterSortOption } from "$lib/api";
   import PresetMenu from "./PresetMenu.svelte";
+  import IconGamepad from "./icons/IconGamepad.svelte";
+  import IconWrench from "./icons/IconWrench.svelte";
 
   let {
     crumbs,
@@ -258,25 +260,25 @@
     <!-- 工作模式切换胶囊 (Play / Dev) -->
     <div class="relative flex items-center h-8 glass radius-pill px-1 gap-1">
       <button
-        class="h-6 px-2 text-[11px] font-medium flex items-center gap-1 cursor-pointer rounded-full transition-all"
+        class="h-6 px-2 text-[11px] font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all"
         class:accent-fill={workMode === "play"}
         class:accent-text={workMode === "play"}
         class:text-secondary={workMode !== "play"}
         onclick={() => ontoggleworkmode?.()}
         title={workMode === "play" ? "当前为游玩模式：极致流畅无Dump开销。点击切换" : "点击切换为游玩模式"}
       >
-        <span>🎮</span>
+        <IconGamepad size={13} class={workMode === "play" ? "text-[var(--accent)]" : "text-secondary"} />
         <span>游玩</span>
       </button>
       <button
-        class="h-6 px-2 text-[11px] font-medium flex items-center gap-1 cursor-pointer rounded-full transition-all"
+        class="h-6 px-2 text-[11px] font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all"
         class:accent-fill={workMode === "dev"}
         class:accent-text={workMode === "dev"}
         class:text-secondary={workMode !== "dev"}
         onclick={() => ontoggleworkmode?.()}
         title={workMode === "dev" ? "当前为抓取模式：开启着色器/Hash捕获。点击切换" : "点击切换为抓取模式"}
       >
-        <span>🛠️</span>
+        <IconWrench size={13} class={workMode === "dev" ? "text-[var(--accent)]" : "text-secondary"} />
         <span>抓取</span>
       </button>
       {#if workMode === "dev"}
@@ -307,7 +309,7 @@
           >
             <div class="flex items-center justify-between">
               <span class="flex items-center gap-1.5 text-sm font-bold text-[var(--accent)]">
-                <span>🛠️</span>
+                <IconWrench size={15} />
                 <span>3Dmigoto 抓取小键盘速查</span>
               </span>
               <button
@@ -364,26 +366,34 @@
       </button>
       <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
       <button
-        class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
+        class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
         onclick={onlaunchnativegame}
         title="直接启动游戏主程序，不注入 3DMigoto（原版纯净游戏）"
       >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polygon points="10 8 16 12 10 16 10 8"/>
+        </svg>
         <span>纯净启动</span>
       </button>
       {#if onlaunchofficial}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
         <button
-          class="h-7 px-2 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
+          class="h-7 px-2 text-xs text-secondary flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
           onclick={onlaunchofficial}
           title="打开崩铁官方启动器 / HoYoPlay"
         >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/>
+          </svg>
           <span>官方启动器</span>
         </button>
       {/if}
       {#if onrefreshgame}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
         <button
-          class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
+          class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
           onclick={onrefreshgame}
           title="向游戏发送刷新信号 (F10)"
         >

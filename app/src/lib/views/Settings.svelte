@@ -495,34 +495,51 @@
         <p class="text-xs text-secondary leading-relaxed">智能嗅探国服路径、一键初始化或导入已有 3Dmigoto 套件</p>
       </div>
 
-      <!-- 快速向导操作卡片栏 (三大平行集成动作，统一优雅毛玻璃风格) -->
+      <!-- 快速向导操作卡片栏 (三大平行集成动作，统一优雅毛玻璃与晶体矢量图标) -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <button
-          class="glass radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95"
+          class="glass radius-card p-4 flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95 group"
           style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
           onclick={handleInitMigoto}
         >
-          <span class="text-xl">📦</span>
+          <div class="w-9 h-9 rounded-xl grid place-items-center bg-[var(--input-bg)] text-[var(--accent)] group-hover:scale-110 transition-transform">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
           <span class="text-xs font-semibold text-[var(--text)]">内置 3DM 套件</span>
           <span class="text-[11px] text-secondary">一键切换托管目录</span>
         </button>
 
         <button
-          class="glass radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95"
+          class="glass radius-card p-4 flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95 group"
           style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
           onclick={handleMigrateOldMigoto}
         >
-          <span class="text-xl">🔄</span>
+          <div class="w-9 h-9 rounded-xl grid place-items-center bg-[var(--input-bg)] text-emerald-500 group-hover:scale-110 transition-transform">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/>
+              <polyline points="16 3 21 3 21 8"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </div>
           <span class="text-xs font-semibold text-[var(--text)]">迁移旧版 Mod</span>
           <span class="text-[11px] text-secondary">批量导入旧目录资产</span>
         </button>
 
         <button
-          class="glass radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95"
+          class="glass radius-card p-4 flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95 group"
           style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
           onclick={import3dMigoto}
         >
-          <span class="text-xl">✨</span>
+          <div class="w-9 h-9 rounded-xl grid place-items-center bg-[var(--input-bg)] text-amber-500 group-hover:scale-110 transition-transform">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3v3m0 12v3M3 12h3m12 0h3m-2.64-6.36l-2.12 2.12m-6.48 6.48l-2.12 2.12m0-10.72l2.12 2.12m6.48 6.48l2.12 2.12"/>
+              <circle cx="12" cy="12" r="4"/>
+            </svg>
+          </div>
           <span class="text-xs font-semibold text-[var(--text)]">识别外部目录</span>
           <span class="text-[11px] text-secondary">智能绑定现有配置</span>
         </button>
@@ -847,14 +864,20 @@
           disabled={busy}
           onclick={handleRescan}
         >
-          <span>🔄</span> 全库扫描与对齐
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span>全库扫描与对齐</span>
         </button>
         <button
           class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
           disabled={busy}
           onclick={handleCleanCache}
         >
-          <span>🧹</span> 清理封面缓存
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+          </svg>
+          <span>清理封面缓存</span>
         </button>
       </div>
 
@@ -863,7 +886,10 @@
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium flex items-center gap-1.5">
-              <span>☁️</span> 崩坏：星穹铁道 角色数据云端同步
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--accent)]">
+                <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+              </svg>
+              <span>崩坏：星穹铁道 角色数据云端同步</span>
             </p>
             <p class="text-xs text-secondary mt-0.5">
               当前版本：<span class="font-mono font-medium text-[var(--accent)]">{localAssetVersion || "内嵌预置版本"}</span>
@@ -875,14 +901,21 @@
               disabled={checkingUpdate || syncing}
               onclick={handleCheckAssetUpdate}
             >
-              <span>🔍</span> {checkingUpdate ? "检查中…" : "检查更新"}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <span>{checkingUpdate ? "检查中…" : "检查更新"}</span>
             </button>
             <button
               class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               disabled={syncing || checkingUpdate}
               onclick={handleSyncAssets}
             >
-              <span>⚡</span> {syncing ? "正在同步…" : "同步星铁数据"}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              <span>{syncing ? "正在同步…" : "同步星铁数据"}</span>
             </button>
           </div>
         </div>
