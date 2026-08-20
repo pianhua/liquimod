@@ -237,6 +237,13 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         if (m) m.name = n;
         return undefined as T;
       }
+      case "reassign_mod": {
+        const m = mockMods.find((x) => x.id === Number(args?.id));
+        const c = String(args?.target_character ?? "").trim();
+        if (!c) throw "角色名称不合法";
+        if (m) (m as any).character = c;
+        return undefined as T;
+      }
       case "set_auto_enable":
         return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: Boolean(args?.enabled), theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
       case "set_theme":
@@ -450,6 +457,8 @@ export const api = {
   addPassword: (value: string) => call<void>("add_password", { value }),
   removePassword: (value: string) => call<void>("remove_password", { value }),
   renameMod: (id: number, name: string) => call<void>("rename_mod", { id, name }),
+  reassignMod: (id: number, targetCharacter: string) =>
+    call<void>("reassign_mod", { id, targetCharacter }),
   setAutoEnable: (enabled: boolean) => call<ConfigDto>("set_auto_enable", { enabled }),
   setTheme: (theme: string) => call<ConfigDto>("set_theme", { theme }),
   setCharacterCategoryName: (name: string) => call<ConfigDto>("set_character_category_name", { name }),

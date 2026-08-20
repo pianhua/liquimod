@@ -170,6 +170,36 @@ impl Library {
         }
         self.db.get_mod(id)
     }
+
+    /// 将仓库内 Mod 移动到另一个角色目录下（物理移动目录 + 更新 DB；Junction 重建由调用方负责）。
+    /// 目标角色不存在时会自动创建其根目录。
+    pub fn reassign_character(&self, id: i64, new_character: &str) -> Result<ModEntry> {
+        if !is_valid_segment(new_character) {
+            return Err(crate::error::LiquiModError::InvalidName(new_character.into()));
+        }
+        let entry = self.db.get_mod(id)?;
+        if entry.character == new_character {
+            return Ok(entry);
+        }
+        if self.db.name_taken(new_character, &entry.name, id)? {
+            return Err(crate::error::LiquiModError::DestinationExists {
+                character: new_character.into(),
+                name: entry.name.clone(),
+            });
+        }
+        let old_dir = self.layout.root.join(&entry.rel_path);
+        let new_rel = format!("mods/{}/{}", new_character, entry.name);
+        let new_dir = self.layout.root.join(&new_rel);
+        if let Some(parent) = new_dir.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::rename(&old_dir, &new_dir)?;
+        if let Err(e) = self.db.reassign_character(id, new_character, &new_rel) {
+            let _ = std::fs::rename(&new_dir, &old_dir); // DB 失败回滚目录
+            return Err(e);
+        }
+        self.db.get_mod(id)
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
@@ -545,6 +575,38 @@ mod tests {
         ));
         // 冲突失败后目录原样
         assert!(lib.layout.mod_dir("A", "m1").is_dir());
+    }
+
+    #[test]
+    fn reassign_character_moves_dir_and_updates_db() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "Others", "KafkaDress").unwrap();
+        let reassigned = lib.reassign_character(m.id, "Kafka").unwrap();
+        assert_eq!(reassigned.character, "Kafka");
+        assert_eq!(reassigned.name, "KafkaDress");
+        assert!(lib.layout.mod_dir("Kafka", "KafkaDress").is_dir());
+        assert!(!lib.layout.mod_dir("Others", "KafkaDress").exists());
+    }
+
+    #[test]
+    fn reassign_character_rejects_conflict_and_invalid() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m1 = lib.add_folder(src.path(), "Others", "Mod1").unwrap();
+        lib.add_folder(src.path(), "Kafka", "Mod1").unwrap();
+        assert!(matches!(
+            lib.reassign_character(m1.id, "Kafka"),
+            Err(crate::error::LiquiModError::DestinationExists { .. })
+        ));
+        assert!(matches!(
+            lib.reassign_character(m1.id, "bad/char/name"),
+            Err(crate::error::LiquiModError::InvalidName(_))
+        ));
     }
 
     #[test]

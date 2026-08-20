@@ -18,6 +18,7 @@
   import { toast } from "$lib/toast.svelte";
   import { pushEscHandler } from "$lib/esc";
   import { enqueueInstalls } from "$lib/install.svelte";
+  import ReassignCharacterModal from "$lib/components/ReassignCharacterModal.svelte";
 
   let {
     character,
@@ -71,6 +72,8 @@
   }
 
   let mods = $state<ModDto[]>([]);
+  let allCharacters = $state<CharacterSummary[]>([]);
+  let reassignTargetMod = $state<ModDto | null>(null);
   let error = $state("");
   let enabledFilter = $state<EnabledFilter>("all");
   let selectedModId = $state<number | null>(null);
@@ -96,6 +99,9 @@
 
   onMount(async () => {
     await refreshMods();
+    try {
+      allCharacters = await api.getCharacters();
+    } catch {}
   });
 
   async function toggle(mod: ModDto, next: boolean) {
@@ -260,6 +266,14 @@
           label: "在资源管理器中定位",
           icon: "📂",
           action: () => openModDir(mod),
+        },
+        {
+          id: "reassign",
+          label: "重新分配角色…",
+          icon: "🎯",
+          action: () => {
+            reassignTargetMod = mod;
+          },
         },
         {
           id: "move",
@@ -599,6 +613,18 @@
       y={contextMenu.y}
       items={contextMenu.items}
       onclose={() => (contextMenu = null)}
+    />
+  {/if}
+
+  {#if reassignTargetMod}
+    <ReassignCharacterModal
+      mod={reassignTargetMod}
+      currentCharacter={character.internal_name}
+      characters={allCharacters}
+      onClose={() => (reassignTargetMod = null)}
+      onReassigned={async () => {
+        await refreshMods();
+      }}
     />
   {/if}
 </div>

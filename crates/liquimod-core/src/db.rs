@@ -116,6 +116,14 @@ impl Database {
         Ok(())
     }
 
+    pub fn reassign_character(&self, id: i64, new_character: &str, new_rel: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE mods SET character = ?2, rel_path = ?3 WHERE id = ?1",
+            rusqlite::params![id, new_character, new_rel],
+        )?;
+        Ok(())
+    }
+
     pub fn update_stats(&self, id: i64, size_bytes: i64, file_count: i64) -> Result<()> {
         self.conn.execute(
             "UPDATE mods SET size_bytes = ?2, file_count = ?3 WHERE id = ?1",
@@ -650,6 +658,17 @@ mod tests {
         assert_eq!(m.name, "new");
         assert_eq!(m.rel_path, "mods/A/new");
         assert!(!m.enabled && m.installed_at > 0);
+    }
+
+    #[test]
+    fn reassign_character_updates_character_and_rel_path() {
+        let db = Database::open_in_memory().unwrap();
+        let id = db.upsert_mod("OldChar", "Mod1", "mods/OldChar/Mod1").unwrap();
+        db.reassign_character(id, "NewChar", "mods/NewChar/Mod1").unwrap();
+        let m = db.get_mod(id).unwrap();
+        assert_eq!(m.character, "NewChar");
+        assert_eq!(m.name, "Mod1");
+        assert_eq!(m.rel_path, "mods/NewChar/Mod1");
     }
 
     #[test]

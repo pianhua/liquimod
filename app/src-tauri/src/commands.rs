@@ -610,6 +610,35 @@ pub fn rename_entry(
     Ok(())
 }
 
+/// 重新分配 Mod 归属角色：禁用中只动文件与 DB；启用中先删旧 Junction、移动、再建新 Junction。
+pub fn reassign_entry(
+    lib: &Library,
+    mods_dir: Option<&Path>,
+    id: i64,
+    new_character: &str,
+) -> Result<(), String> {
+    let entry = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+    if entry.character == new_character {
+        return Ok(());
+    }
+    if !entry.enabled {
+        lib.reassign_character(id, new_character)
+            .map_err(|e| humanize_install_error(&e))?;
+    } else {
+        let mods_dir = mods_dir.ok_or("未配置 3Dmigoto Mods 目录")?;
+        let dep = Deployer::new(lib, mods_dir);
+        dep.disable(id).map_err(|e| e.to_string())?;
+        if let Err(e) = lib.reassign_character(id, new_character) {
+            let _ = dep.enable(id); // 移动失败，恢复旧 junction
+            return Err(humanize_install_error(&e));
+        }
+        dep.enable(id)
+            .map_err(|e| format!("已移动至 {new_character}，但重新启用失败：{e}"))?;
+    }
+    tracing::info!("reassigned mod {id} to character {new_character}");
+    Ok(())
+}
+
 /// 安装后自动启用（设置开启时）；失败仅告警，不否决安装。
 pub fn maybe_auto_enable(
     lib: &Library,
@@ -996,6 +1025,30 @@ pub async fn rename_mod(
     })
     .await
     .map_err(|e| format!("重命名任务失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn reassign_mod(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    target_character: String,
+) -> Result<(), String> {
+    let library = std::sync::Arc::clone(&state.library);
+    let refresh = std::sync::Arc::clone(&state.refresh);
+    let mods_dir = state.config.lock().unwrap().mods_dir.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        let result = reassign_entry(&lib, mods_dir.as_deref(), id, &target_character);
+        if result.is_ok() {
+            drop(lib);
+            maybe_refresh_game(&app2, &refresh);
+        }
+        result
+    })
+    .await
+    .map_err(|e| format!("角色重分配失败：{e}"))?
 }
 
 #[tauri::command]
@@ -2524,6 +2577,38 @@ mod tests {
         assert_eq!(lib.db.get_mod(m1.id).unwrap().name, "m1");
         assert!(junction::exists(mods.path().join("A--m1")).unwrap());
         assert!(lib.db.get_mod(m1.id).unwrap().enabled);
+    }
+
+    #[test]
+    fn reassign_entry_disabled_mod() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "Others", "KafkaMod").unwrap();
+        reassign_entry(&lib, None, m.id, "Kafka").unwrap();
+        let m_after = lib.db.get_mod(m.id).unwrap();
+        assert_eq!(m_after.character, "Kafka");
+        assert_eq!(m_after.name, "KafkaMod");
+        assert!(lib.layout.mod_dir("Kafka", "KafkaMod").is_dir());
+        assert!(!lib.layout.mod_dir("Others", "KafkaMod").exists());
+    }
+
+    #[test]
+    fn reassign_entry_enabled_rebuilds_junction() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "Others", "KafkaMod").unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        set_enabled(&lib, Some(mods.path()), m.id, true).unwrap();
+        reassign_entry(&lib, Some(mods.path()), m.id, "Kafka").unwrap();
+        assert!(junction::exists(mods.path().join("Kafka--KafkaMod")).unwrap());
+        assert!(!mods.path().join("Others--KafkaMod").exists());
+        let target = junction::get_target(mods.path().join("Kafka--KafkaMod")).unwrap();
+        assert_eq!(target, lib.layout.mod_dir("Kafka", "KafkaMod"));
+        assert!(lib.db.get_mod(m.id).unwrap().enabled);
     }
 
     #[test]

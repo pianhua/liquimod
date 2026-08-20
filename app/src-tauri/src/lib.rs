@@ -128,6 +128,7 @@ pub fn run() {
             commands::install_mod,
             commands::uninstall_mod,
             commands::rename_mod,
+            commands::reassign_mod,
             commands::set_auto_enable,
             commands::read_log,
             commands::list_presets,
