@@ -20,6 +20,8 @@ pub struct ModEntry {
     pub is_favorite: bool,
     /// 自定义排序序号（拖拽排序）
     pub sort_order: i64,
+    /// 当前选择的变体目录；无变体时为 None
+    pub active_variant: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

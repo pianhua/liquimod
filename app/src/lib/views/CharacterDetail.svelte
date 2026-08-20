@@ -251,6 +251,13 @@
     } catch {}
   });
 
+  async function changeVariant(mod: ModDto, variant: string | null): Promise<void> {
+    error = "";
+    await api.setModVariant(mod.id, variant);
+    mod.active_variant = variant;
+    await refreshMods();
+    onconfigured();
+  }
   async function toggle(mod: ModDto, next: boolean) {
     error = "";
     try {
@@ -1001,6 +1008,7 @@
         onuninstall={() => selectedMod ? uninstallMod(selectedMod) : Promise.resolve()}
         onopen={() => selectedMod && openModDir(selectedMod)}
         onmove={(cid) => selectedMod && moveCategory(selectedMod, cid)}
+        onvariantchange={(variant) => selectedMod ? changeVariant(selectedMod, variant) : Promise.resolve()}
       />
     </div>
   </div>

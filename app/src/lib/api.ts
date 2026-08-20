@@ -26,6 +26,10 @@ export interface MigotoReleaseInfoDto {
   size_bytes: number | null;
 }
 
+export interface GameStatusDto {
+  running: boolean;
+}
+
 export interface LaunchResultDto {
   success: boolean;
   message: string;
@@ -61,6 +65,10 @@ export interface CategoryDto {
   mod_count: number;
 }
 
+export interface ModVariantDto {
+  name: string;
+}
+
 export interface ModDto {
   id: number;
   name: string;
@@ -75,6 +83,8 @@ export interface ModDto {
   cover_image: string | null;
   is_favorite?: boolean;
   sort_order?: number;
+  active_variant?: string | null;
+  variants?: ModVariantDto[];
 }
 
 export interface ModKeyBindingDto {
@@ -98,6 +108,11 @@ export interface ConflictModInfoDto {
 export interface ConflictReportDto {
   hash: string;
   section: string;
+  conflicting_mods: ConflictModInfoDto[];
+}
+
+export interface VariableConflictDto {
+  variable: string;
   conflicting_mods: ConflictModInfoDto[];
 }
 
@@ -147,7 +162,7 @@ const mockCharacters: CharacterSummary[] = [
 ];
 
 const mockMods: ModDto[] = [
-  { id: 1, name: "Summer Skin", enabled: true, installed_at: 1755000000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Summer Skin", category_id: null, note: null, cover_image: null },
+  { id: 1, name: "Summer Skin", enabled: true, installed_at: 1755000000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Summer Skin", category_id: null, note: null, cover_image: null, active_variant: "Option A", variants: [{ name: "Option A" }, { name: "Option B" }] },
   { id: 2, name: "Battle FX+", enabled: false, installed_at: 1755100000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/Battle FX+", category_id: null, note: null, cover_image: null },
   { id: 3, name: "HD Textures", enabled: false, installed_at: 1755200000, thumb: null, size_bytes: 12345678, file_count: 42, path: "C:/mock/Library/mods/Firefly/HD Textures", category_id: 1, note: null, cover_image: null },
 ];
@@ -171,6 +186,8 @@ const mockCategories: CategoryDto[] = [
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauri()) {
     switch (cmd) {
+      case "get_game_status":
+        return { running: false } as T;
       case "get_config":
         return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
       case "get_characters": {
@@ -205,6 +222,11 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       }
       case "uninstall_mod":
         return undefined as T;
+      case "set_mod_variant": {
+        const m = mockMods.find((x) => x.id === Number(args?.id));
+        if (m) m.active_variant = args?.variant == null ? null : String(args.variant);
+        return undefined as T;
+      }
       case "list_presets":
         return structuredClone(mockPresets) as T;
       case "save_preset": {
@@ -392,6 +414,8 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return "data:image/jpeg;base64,mocknewthumb" as T;
       case "get_active_conflicts":
         return [] as T;
+      case "get_active_variable_conflicts":
+        return [] as T;
       case "get_mod_images":
         return [
           {
@@ -447,7 +471,22 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
           game_configured: true,
           loader_configured: true,
           mods_dir_configured: true,
+          checks: [
+            { id: "library", label: "LiquiMod 仓库", state: "pass", detail: "目录可用", remediation: null },
+            { id: "mods_dir", label: "3Dmigoto Mods 目录", state: "pass", detail: "目录可用", remediation: null },
+            { id: "webview2", label: "WebView2 运行时", state: "pass", detail: "已检测到", remediation: null },
+            { id: "vc_runtime", label: "Microsoft Visual C++ 运行库", state: "pass", detail: "已检测到", remediation: null },
+            { id: "d3d11", label: "3Dmigoto d3d11.dll", state: "pass", detail: "已检测到", remediation: null },
+            { id: "refresh_helper", label: "F10 热刷新助手", state: "pass", detail: "已就绪", remediation: null },
+          ],
+          filesystem: "NTFS",
+          deploy_strategy: "NTFS 极速软链接模式",
+          defender_command: "Add-MpPreference -ExclusionPath 'C:/mock/Library'",
         } as T;
+      case "repair_deployment":
+        return undefined as T;
+      case "open_webview2_download":
+        return undefined as T;
       default:
         return undefined as T;
     }
@@ -464,6 +503,8 @@ export const api = {
     call<ModDto[]>("list_mods", { character, categoryId: categoryId ?? null }),
   setModEnabled: (id: number, enabled: boolean) =>
     call<void>("set_mod_enabled", { id, enabled }),
+  setModVariant: (id: number, variant: string | null) =>
+    call<void>("set_mod_variant", { id, variant }),
   installMod: (path: string, character?: string | null, password?: string | null) =>
     call<InstallResult>("install_mod", { path, character: character ?? null, password: password ?? null }),
   uninstallMod: (id: number) => call<void>("uninstall_mod", { id }),
@@ -493,6 +534,7 @@ export const api = {
   listUncategorizedMods: () => call<ModDto[]>("list_uncategorized_mods"),
   readLog: () => call<string>("read_log"),
   chooseGameExe: (path: string) => call<ConfigDto>("choose_game_exe", { path }),
+  getGameStatus: () => call<GameStatusDto>("get_game_status"),
   chooseLoaderExe: (path: string) => call<ConfigDto>("choose_loader_exe", { path }),
   launchGame: () => call<LaunchResultDto>("launch_game"),
   launchGameNative: () => call<LaunchResultDto>("launch_game_native"),
@@ -506,6 +548,7 @@ export const api = {
   setModCustomCover: (id: number, imagePath: string) =>
     call<string | null>("set_mod_custom_cover", { id, imagePath }),
   getActiveConflicts: () => call<ConflictReportDto[]>("get_active_conflicts"),
+  getActiveVariableConflicts: () => call<VariableConflictDto[]>("get_active_variable_conflicts"),
   openModFolder: (id: number) => call<void>("open_mod_folder", { id }),
   openPathInExplorer: (path: string) => call<void>("open_path_in_explorer", { path }),
   triggerRefreshGame: () => call<void>("trigger_refresh_game"),
@@ -517,6 +560,8 @@ export const api = {
   rescanLibrary: () => call<RescanResultDto>("rescan_library"),
   cleanCache: () => call<number>("clean_cache"),
   getDiagnosticStatus: () => call<DiagnosticStatusDto>("get_diagnostic_status"),
+  repairDeployment: () => call<void>("repair_deployment"),
+  openWebView2Download: () => call<void>("open_webview2_download"),
   getLocalAssetVersion: () => call<string | null>("get_local_asset_version"),
   checkGameAssetsUpdate: (game = "Honkai") => call<AssetUpdateCheckResultDto>("check_game_assets_update", { game }),
   syncGameAssets: (game = "Honkai") => call<AssetSyncResultDto>("sync_game_assets", { game }),
@@ -592,6 +637,18 @@ export interface DiagnosticStatusDto {
   game_configured: boolean;
   loader_configured: boolean;
   mods_dir_configured: boolean;
+  checks: DiagnosticCheckDto[];
+  filesystem: string | null;
+  deploy_strategy: string | null;
+  defender_command: string | null;
+}
+
+export interface DiagnosticCheckDto {
+  id: string;
+  label: string;
+  state: "pass" | "warn" | "fail" | "unknown";
+  detail: string;
+  remediation: string | null;
 }
 
 /// 立绘 URL（SvelteKit files.assets 指向 assets/hsr）。

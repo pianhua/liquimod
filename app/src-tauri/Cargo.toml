@@ -1,6 +1,6 @@
 [package]
 name = "liquimod-app"
-version = "0.2.9"
+version = "0.3.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -38,4 +38,3 @@ uuid = { version = "1", features = ["v4"] }
 tempfile = "3"
 junction = "1"
 zip = { version = "8.6.0", features = ["aes-crypto", "deflate"] }
-

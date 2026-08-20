@@ -2,7 +2,7 @@
 
 面向《崩坏：星穹铁道》（3Dmigoto）的现代化、极速、无感 Mod 管理器。基于 Rust Core 2021 + Tauri 2.x + Svelte 5 (Runes) + Tailwind CSS v4 构建。
 
-[![Version](https://img.shields.io/badge/version-v0.2.9-blue.svg)](https://github.com/pianhua/liquimod/releases)
+[![Version](https://img.shields.io/badge/version-v0.3.0-blue.svg)](https://github.com/pianhua/liquimod/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-24C8D8.svg)](https://v2.tauri.app/)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5.0-FF3E00.svg)](https://svelte.dev/)
@@ -72,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_package.ps1
 ## 测试与质量门禁
 
 ```bash
-# Rust 代码检查与全量单测 (157 个用例)
+# Rust 代码检查与全量单测 (207 passed, 3 个外部 RAR fixture + 1 个符号链接权限用例 ignored)
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
@@ -87,11 +87,11 @@ cd app && npm run check && npm test
 
 1. ✅ **列表拖拽排序物理重排引擎 (`v0.2.6 ~ v0.2.7`)**：原生 Pointer Events 物理重排，平滑位移插槽；
 2. ✅ **立绘预览流体极光自适应 (`v0.2.8`)**：双层极光环境光漫反射（Ambient Glow）与暗房 Lightbox；
-3. ⏳ **游戏运行状态看门狗 (Process Watchdog & Live Badge)**：实时感知 `StarRail.exe` 进程生命周期与危险操作防呆；
-4. ⏳ **复杂 Mod 多变体/配件选择器 (Multi-Variant Switcher)**：识别子变体目录并在卡片内分段单选切换；
-5. ⏳ **非 NTFS (exFAT/移动盘) 自动降级容灾 (FileSystem Fallback)**：卷类型自动探测与 Copy 模式无缝降级；
-6. ⏳ **INI 常量与变量 AST 虚拟命名空间隔离 (Namespace Collision Isolation)**：防止多 Mod 全局变量名碰撞冲突；
-7. ⏳ **运行环境诊断向导与杀软加白自检 (Diagnostic Hub)**：WebView2/VC++ 运行库自检与 Defender 排除项加白。
+3. ✅ **游戏运行状态看门狗 (Process Watchdog & Live Badge)**：实时感知 `StarRail.exe` 进程生命周期、显示 Live 徽标，并阻止运行中危险物理操作；
+4. ✅ **复杂 Mod 多变体/配件选择器 (Multi-Variant Switcher)**：识别子变体目录，生成运行副本并在详情面板内分段切换；
+5. ✅ **非 NTFS (exFAT/移动盘) 自动降级容灾 (FileSystem Fallback)**：卷类型自动探测并降级为带标记保护的 Copy 模式；
+6. ✅ **INI 常量与变量命名空间隔离 (Namespace Collision Isolation)**：运行副本中的全局变量按 Mod ID 隔离，并提供冲突诊断；
+7. ✅ **运行环境诊断向导与杀软加白自检 (Diagnostic Hub)**：展示组件检查结果、部署模式、WebView2 下载入口和 Defender 排除命令。
 
 更多深度设计方案与技术细节，请详阅 **[HANDOVER.md](HANDOVER.md)** 第 6 章。
 
@@ -100,4 +100,3 @@ cd app && npm run check && npm test
 ## 开源许可证
 
 本项目采用 [MIT 许可证](LICENSE)。
-

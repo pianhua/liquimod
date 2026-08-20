@@ -15,6 +15,12 @@ impl LibraryLayout {
     pub fn db_path(&self) -> PathBuf {
         self.root.join("liquimod.db")
     }
+    pub fn runtime_root(&self) -> PathBuf {
+        self.root.join(".liquimod-runtime")
+    }
+    pub fn runtime_mod_dir(&self, id: i64) -> PathBuf {
+        self.runtime_root().join(id.to_string())
+    }
     pub fn character_dir(&self, character: &str) -> PathBuf {
         self.mods_root().join(character)
     }

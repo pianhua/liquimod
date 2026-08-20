@@ -5,6 +5,11 @@ use crate::error::{LiquiModError, Result};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\liquimod-refresh";
@@ -187,5 +192,73 @@ mod tests {
         // 直接断言：不存在的进程 false；当前进程 true。
         assert!(!is_game_running(&["definitely-not-running-zzz.exe"]));
         assert!(is_game_running(&[&own]));
+    }
+}
+
+/// 游戏运行状态看门狗：低频轮询进程生命周期，只在状态变化时回调。
+pub struct GameWatchdog {
+    stop: Arc<AtomicBool>,
+    join: Option<JoinHandle<()>>,
+}
+
+impl GameWatchdog {
+    pub fn start<F>(process_names: Vec<String>, interval: Duration, mut on_change: F) -> Self
+    where
+        F: FnMut(bool) + Send + 'static,
+    {
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_thread = Arc::clone(&stop);
+        let join = thread::spawn(move || {
+            let mut last = None;
+            while !stop_thread.load(Ordering::Relaxed) {
+                let names: Vec<&str> = process_names.iter().map(String::as_str).collect();
+                let running = is_game_running(&names);
+                if last != Some(running) {
+                    on_change(running);
+                    last = Some(running);
+                }
+
+                let mut elapsed = Duration::ZERO;
+                while elapsed < interval && !stop_thread.load(Ordering::Relaxed) {
+                    let slice = (interval - elapsed).min(Duration::from_millis(100));
+                    thread::sleep(slice);
+                    elapsed += slice;
+                }
+            }
+        });
+        Self {
+            stop,
+            join: Some(join),
+        }
+    }
+}
+
+impl Drop for GameWatchdog {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+    }
+}
+
+#[cfg(test)]
+mod watchdog_tests {
+    use super::GameWatchdog;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    #[test]
+    fn watchdog_reports_initial_state_and_stops_cleanly() {
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let observed = Arc::clone(&states);
+        let watchdog = GameWatchdog::start(
+            vec!["liquimod-process-that-does-not-exist.exe".to_string()],
+            Duration::from_millis(20),
+            move |running| observed.lock().unwrap().push(running),
+        );
+        std::thread::sleep(Duration::from_millis(60));
+        drop(watchdog);
+        assert_eq!(states.lock().unwrap().as_slice(), &[false]);
     }
 }

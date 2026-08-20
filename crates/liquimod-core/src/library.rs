@@ -106,6 +106,13 @@ impl Library {
             if (item.size, item.count) != (-1, -1) {
                 self.db.update_stats(id, item.size, item.count)?;
             }
+            let current = self.db.get_mod(id)?;
+            let root = self.layout.mod_dir(&item.character, &item.name);
+            let active =
+                crate::variants::active_variant_name(&root, current.active_variant.as_deref());
+            if active != current.active_variant {
+                self.db.set_active_variant(id, active.as_deref())?;
+            }
             seen.push((item.character.clone(), item.name.clone()));
         }
 

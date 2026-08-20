@@ -13,7 +13,7 @@ use liquimod_core::library::Library;
 use liquimod_core::refresh::{is_game_running, RefreshClient, HELPER_EXE};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{atomic::Ordering, Mutex};
 use tauri::Emitter;
 
 /// 游戏运行中则通知 helper 发 F10；失败只 toast 不阻断。
@@ -69,6 +69,42 @@ pub struct ConfigDto {
     pub migoto_version: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+pub struct GameStatusDto {
+    pub running: bool,
+}
+
+/// 配置的 exe 名优先；未配置时保留 HSR 默认进程名，兼容首次启动和旧配置。
+pub fn configured_game_process_names(config: &Config) -> Vec<String> {
+    let mut names = Vec::new();
+    if let Some(name) = config
+        .game_exe
+        .as_ref()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+    {
+        names.push(name.to_string());
+    }
+    for name in Hsr::shared().process_names() {
+        if !names
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(name))
+        {
+            names.push((*name).to_string());
+        }
+    }
+    names
+}
+
+/// 游戏运行期间阻止会改动物理部署状态或删除库文件的操作。
+fn ensure_game_stopped(state: &AppState, operation: &str) -> Result<(), String> {
+    if state.game_running.load(Ordering::Relaxed) {
+        return Err(format!(
+            "游戏正在运行中，为避免资源锁定或闪退，已阻止{operation}；请退出游戏后重试"
+        ));
+    }
+    Ok(())
+}
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CategoryDto {
     pub id: i64,
@@ -104,6 +140,11 @@ pub struct CharacterSummary {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct VariantDto {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ModDto {
     pub id: i64,
     pub name: String,
@@ -118,6 +159,8 @@ pub struct ModDto {
     pub cover_image: Option<String>,
     pub is_favorite: bool,
     pub sort_order: i64,
+    pub active_variant: Option<String>,
+    pub variants: Vec<VariantDto>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -158,6 +201,12 @@ pub struct ModKeyBindingDto {
 pub struct ConflictReportDto {
     pub hash: String,
     pub section: String,
+    pub conflicting_mods: Vec<ConflictModInfoDto>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct VariableConflictDto {
+    pub variable: String,
     pub conflicting_mods: Vec<ConflictModInfoDto>,
 }
 
@@ -368,6 +417,11 @@ fn collect_rows_where(
                 cover_image: m.cover_image.clone(),
                 is_favorite: m.is_favorite,
                 sort_order: m.sort_order,
+                active_variant: m.active_variant.clone(),
+                variants: liquimod_core::variants::detect_variants(&dir)
+                    .into_iter()
+                    .map(|v| VariantDto { name: v.name })
+                    .collect(),
                 dir,
             }
         })
@@ -399,6 +453,8 @@ fn rows_to_dtos(root: &Path, rows: Vec<ModRow>) -> Vec<ModDto> {
                 cover_image: m.cover_image,
                 is_favorite: m.is_favorite,
                 sort_order: m.sort_order,
+                active_variant: m.active_variant,
+                variants: m.variants,
             }
         })
         .collect()
@@ -416,6 +472,8 @@ struct ModRow {
     cover_image: Option<String>,
     is_favorite: bool,
     sort_order: i64,
+    active_variant: Option<String>,
+    variants: Vec<VariantDto>,
     dir: PathBuf,
 }
 
@@ -833,6 +891,7 @@ pub async fn set_mod_enabled(
     id: i64,
     enabled: bool,
 ) -> Result<(), String> {
+    ensure_game_stopped(state.inner(), "切换 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
     let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
@@ -852,6 +911,48 @@ pub async fn set_mod_enabled(
 }
 
 #[tauri::command]
+pub async fn set_mod_variant(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    variant: Option<String>,
+) -> Result<(), String> {
+    ensure_game_stopped(state.inner(), "切换 Mod 变体")?;
+    let library = std::sync::Arc::clone(&state.library);
+    let config = std::sync::Arc::clone(&state.config);
+    let refresh = std::sync::Arc::clone(&state.refresh);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = library.lock().unwrap();
+        let entry = lib.db.get_mod(id).map_err(|e| e.to_string())?;
+        let root = lib.layout.root.join(&entry.rel_path);
+        let available = liquimod_core::variants::detect_variants(&root);
+        let requested = variant.filter(|v| !v.trim().is_empty());
+        if let Some(ref value) = requested {
+            if !available.iter().any(|v| v.name == *value) {
+                return Err(format!("变体不存在：{value}"));
+            }
+        }
+        lib.db
+            .set_active_variant(id, requested.as_deref())
+            .map_err(|e| e.to_string())?;
+        if entry.enabled {
+            let mods_dir = config
+                .lock()
+                .unwrap()
+                .mods_dir
+                .clone()
+                .ok_or_else(|| "未配置 3Dmigoto Mods 目录，无法刷新变体".to_string())?;
+            Deployer::new(&lib, &mods_dir)
+                .refresh(id)
+                .map_err(|e| e.to_string())?;
+            maybe_refresh_game(&app, &refresh);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("切换变体任务失败：{e}"))?
+}
+#[tauri::command]
 pub async fn install_mod(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
@@ -862,6 +963,7 @@ pub async fn install_mod(
     let library = std::sync::Arc::clone(&state.library);
     let refresh = std::sync::Arc::clone(&state.refresh);
     let config_arc = std::sync::Arc::clone(&state.config);
+    let game_running = std::sync::Arc::clone(&state.game_running);
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
@@ -875,7 +977,13 @@ pub async fn install_mod(
         if let Ok(InstallResultDto::Installed { mod_id, .. }) = &result {
             let mod_id = *mod_id;
             let cfg = config_arc.lock().unwrap().clone();
-            maybe_auto_enable(&lib, &cfg, mod_id, Some(&app2));
+            if cfg.auto_enable && game_running.load(std::sync::atomic::Ordering::Relaxed) {
+                let message = "游戏正在运行中，已完成安装但暂不自动启用；请退出游戏后手动启用";
+                tracing::warn!("auto-enable skipped for mod {mod_id}: game is running");
+                let _ = app2.emit("liquimod-toast", message);
+            } else {
+                maybe_auto_enable(&lib, &cfg, mod_id, Some(&app2));
+            }
             tracing::info!("installed mod {mod_id}");
             drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
             maybe_refresh_game(&app2, &refresh);
@@ -892,6 +1000,7 @@ pub async fn uninstall_mod(
     state: tauri::State<'_, AppState>,
     id: i64,
 ) -> Result<(), String> {
+    ensure_game_stopped(state.inner(), "卸载 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
     let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
@@ -947,6 +1056,7 @@ pub async fn apply_preset(
     id: i64,
     name: String,
 ) -> Result<ApplyResultDto, String> {
+    ensure_game_stopped(state.inner(), "应用预设")?;
     let library = std::sync::Arc::clone(&state.library);
     let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
@@ -1030,6 +1140,7 @@ pub async fn rename_mod(
     id: i64,
     name: String,
 ) -> Result<(), String> {
+    ensure_game_stopped(state.inner(), "重命名 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
     let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
@@ -1054,6 +1165,7 @@ pub async fn reassign_mod(
     id: i64,
     target_character: String,
 ) -> Result<(), String> {
+    ensure_game_stopped(state.inner(), "移动 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
     let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
@@ -1276,7 +1388,11 @@ pub fn set_character_category_name(
 }
 
 #[tauri::command]
-pub fn choose_game_exe(state: tauri::State<AppState>, path: String) -> Result<ConfigDto, String> {
+pub fn choose_game_exe(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    path: String,
+) -> Result<ConfigDto, String> {
     let p = PathBuf::from(path);
     if !p.is_file() {
         return Err(format!("文件不存在：{}", p.display()));
@@ -1294,7 +1410,17 @@ pub fn choose_game_exe(state: tauri::State<AppState>, path: String) -> Result<Co
     config
         .save_to(&state.config_path)
         .map_err(|e| format!("配置保存失败：{e}"))?;
-    Ok(config_dto(&config))
+    let dto = config_dto(&config);
+    drop(config);
+    crate::start_game_watchdog(&app, state.inner());
+    Ok(dto)
+}
+
+#[tauri::command]
+pub fn get_game_status(state: tauri::State<AppState>) -> GameStatusDto {
+    GameStatusDto {
+        running: state.game_running.load(Ordering::Relaxed),
+    }
 }
 
 #[tauri::command]
@@ -1914,6 +2040,30 @@ pub fn get_active_conflicts(
         .collect())
 }
 
+#[tauri::command]
+pub fn get_active_variable_conflicts(
+    state: tauri::State<AppState>,
+) -> Result<Vec<VariableConflictDto>, String> {
+    let lib = state.library.lock().unwrap();
+    let conflicts =
+        liquimod_core::d3d::detect_variable_conflicts(&lib).map_err(|e| e.to_string())?;
+    Ok(conflicts
+        .into_iter()
+        .map(|c| VariableConflictDto {
+            variable: c.variable,
+            conflicting_mods: c
+                .conflicting_mods
+                .into_iter()
+                .map(|m| ConflictModInfoDto {
+                    id: m.id,
+                    character: m.character,
+                    name: m.name,
+                })
+                .collect(),
+        })
+        .collect())
+}
+
 fn open_in_explorer(path: &Path) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("路径不存在：{}", path.display()));
@@ -2089,11 +2239,14 @@ pub struct RescanResultDto {
 pub async fn rescan_library(state: tauri::State<'_, AppState>) -> Result<RescanResultDto, String> {
     let library = std::sync::Arc::clone(&state.library);
     let config = std::sync::Arc::clone(&state.config);
+    let game_running = std::sync::Arc::clone(&state.game_running);
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
         let mods_dir = config.lock().unwrap().mods_dir.clone();
-        let (added, removed) = crate::reconcile_and_diff(&lib, mods_dir.as_deref())
-            .map_err(|e| format!("全库重新扫描失败：{e}"))?;
+        let deploy = !game_running.load(std::sync::atomic::Ordering::Relaxed);
+        let (added, removed) =
+            crate::reconcile_and_diff_with_deploy(&lib, mods_dir.as_deref(), deploy)
+                .map_err(|e| format!("全库重新扫描失败：{e}"))?;
         Ok(RescanResultDto { added, removed })
     })
     .await
@@ -2133,35 +2286,93 @@ pub struct DiagnosticStatusDto {
     pub game_configured: bool,
     pub loader_configured: bool,
     pub mods_dir_configured: bool,
+    pub checks: Vec<liquimod_core::diagnostics::DiagnosticCheck>,
+    pub filesystem: Option<String>,
+    pub deploy_strategy: Option<String>,
+    pub defender_command: Option<String>,
 }
 
 #[tauri::command]
 pub fn get_diagnostic_status(state: tauri::State<AppState>) -> DiagnosticStatusDto {
-    let config = state.config.lock().unwrap();
+    let (library_root, mods_dir, game_exe, loader_exe) = {
+        let config = state.config.lock().unwrap();
+        (
+            config.library_root.clone(),
+            config.mods_dir.clone(),
+            config.game_exe.clone(),
+            config.loader_exe.clone(),
+        )
+    };
     let helper_ready = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join("liquimod-refresh-helper.exe")))
         .map(|p| p.exists())
         .unwrap_or(false);
+    let checks = liquimod_core::diagnostics::collect_checks(
+        &library_root,
+        mods_dir.as_deref(),
+        game_exe.as_deref(),
+        loader_exe.as_deref(),
+        helper_ready,
+    );
+    let filesystem = mods_dir
+        .as_deref()
+        .and_then(|mods| liquimod_core::filesystem::same_volume_filesystem(&library_root, mods));
+    let deploy_strategy = mods_dir.as_deref().map(|mods| {
+        liquimod_core::deploy::Deployer::new(&state.library.lock().unwrap(), mods)
+            .strategy_label()
+            .to_owned()
+    });
+    let mut exclusion_paths = vec![library_root.as_path()];
+    if let Some(mods) = mods_dir.as_deref() {
+        exclusion_paths.push(mods);
+        if let Some(parent) = mods.parent() {
+            exclusion_paths.push(parent);
+        }
+    }
 
     DiagnosticStatusDto {
         helper_ready,
-        game_configured: config
-            .game_exe
-            .as_ref()
-            .map(|p| !p.as_os_str().is_empty())
-            .unwrap_or(false),
-        loader_configured: config
-            .loader_exe
-            .as_ref()
-            .map(|p| !p.as_os_str().is_empty())
-            .unwrap_or(false),
-        mods_dir_configured: config
-            .mods_dir
-            .as_ref()
-            .map(|p| !p.as_os_str().is_empty())
-            .unwrap_or(false),
+        game_configured: game_exe.is_some_and(|p| !p.as_os_str().is_empty()),
+        loader_configured: loader_exe.is_some_and(|p| !p.as_os_str().is_empty()),
+        mods_dir_configured: mods_dir.as_ref().is_some_and(|p| !p.as_os_str().is_empty()),
+        checks,
+        filesystem,
+        deploy_strategy,
+        defender_command: liquimod_core::diagnostics::defender_exclusion_command(&exclusion_paths),
     }
+}
+
+#[tauri::command]
+pub async fn repair_deployment(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    ensure_game_stopped(state.inner(), "修复 Mod 部署").map_err(|e| e.to_string())?;
+    let library = std::sync::Arc::clone(&state.library);
+    let config = std::sync::Arc::clone(&state.config);
+    tauri::async_runtime::spawn_blocking(move || {
+        let mods_dir = config
+            .lock()
+            .unwrap()
+            .mods_dir
+            .clone()
+            .ok_or_else(|| "未配置 3Dmigoto Mods 目录，无法修复部署".to_string())?;
+        let lib = library.lock().unwrap();
+        Deployer::new(&lib, &mods_dir)
+            .reconcile()
+            .map_err(|e| format!("部署对账失败：{e}"))
+    })
+    .await
+    .map_err(|e| format!("修复部署任务失败：{e}"))?
+}
+
+#[tauri::command]
+pub fn open_webview2_download(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(
+            liquimod_core::diagnostics::WEBVIEW2_DOWNLOAD_URL,
+            None::<String>,
+        )
+        .map_err(|e| format!("无法打开 WebView2 下载页面：{e}"))
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
