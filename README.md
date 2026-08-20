@@ -7,6 +7,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-24C8D8.svg)](https://v2.tauri.app/)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5.0-FF3E00.svg)](https://svelte.dev/)
+[![CI Quality Gate](https://github.com/pianhua/liquimod/actions/workflows/ci.yml/badge.svg)](https://github.com/pianhua/liquimod/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 *极致性能 · 优雅毛玻璃 UI · 零损封面记忆 · 全量子目录图集画廊 · F10 游戏内无感热重载*

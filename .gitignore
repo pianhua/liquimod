@@ -15,10 +15,11 @@ app/.env*
 /temp_research
 /.zcode
 
-# 内部开发计划与设计草稿
-/docs
-/HANDOVER.md
-/AGENTS.md
+# 内部开发计划与 AI 设计指令（本地保留，不推送 GitHub）
+AGENTS.md
+STYLE.md
+HANDOVER.md
+/docs/
 
 # 操作系统与 IDE 文件
 .DS_Store
