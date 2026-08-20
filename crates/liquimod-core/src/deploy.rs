@@ -17,9 +17,9 @@ impl<'a> Deployer<'a> {
         }
     }
 
-    /// 3Dmigoto Mods 目录中的链接名：角色--Mod名（确定性，避免跨角色重名冲突）
+    /// 3Dmigoto Mods 目录中的链接名：角色__Mod名__ID（防碰撞设计，具备全局绝对唯一性与高可读性）
     pub fn link_name(entry: &ModEntry) -> String {
-        format!("{}--{}", entry.character, entry.name)
+        format!("{}__{}__{}", entry.character, entry.name, entry.id)
     }
 
     pub fn enable(&self, id: i64) -> Result<()> {
@@ -59,13 +59,15 @@ impl<'a> Deployer<'a> {
         // 用 junction::exists 而非 Path::exists：后者会穿透 junction，悬空链接会被误判为不存在
         if junction::exists(link).unwrap_or(false) {
             Self::remove_junction(link)?;
-        } else if link.symlink_metadata().is_ok() {
-            std::fs::remove_dir(link).map_err(|e| {
-                crate::error::LiquiModError::Junction(format!(
-                    "path occupied by non-junction entry: {} ({e})",
+        } else if link.is_dir() {
+            if std::fs::read_dir(link)?.next().is_none() {
+                std::fs::remove_dir(link)?;
+            } else {
+                return Err(crate::error::LiquiModError::Junction(format!(
+                    "path occupied by non-empty directory: {}",
                     link.display()
-                ))
-            })?;
+                )));
+            }
         }
         Ok(())
     }
@@ -87,46 +89,52 @@ impl<'a> Deployer<'a> {
         self.library.db.op_finish(op)
     }
 
-    /// 让 Mods 目录与数据库启用状态一致。
-    /// 安全规则：只碰指向本仓库的 junction；用户自己放的目录/文件一律不动。
+    /// 重新对齐：让磁盘上的 Junction 状态与 DB `enabled` 严格一致。
+    /// 幂等执行，中途失败返回错误。
     pub fn reconcile(&self) -> Result<()> {
         let entries = self.library.db.list_mods()?;
-        let mut managed_links: HashSet<String> = HashSet::new();
+        let mut enabled_links = HashSet::new();
+
         for e in &entries {
             let link = self.mods_dir.join(Self::link_name(e));
-            managed_links.insert(Self::link_name(e));
-            let exists = junction::exists(&link).unwrap_or(false);
-            if e.enabled && !exists {
-                let target = self.library.layout.root.join(&e.rel_path);
+            let target = self.library.layout.root.join(&e.rel_path);
+
+            if e.enabled {
+                enabled_links.insert(Self::link_name(e));
                 if !target.is_dir() {
-                    continue; // 库目录已消失：留给 scan 对账，跳过不报错
-                }
-                Self::prepare_link(&link)?;
-                junction::create(&target, &link)
-                    .map_err(|err| crate::error::LiquiModError::Junction(err.to_string()))?;
-            } else if e.enabled && exists {
-                // 校验 junction 是否仍指向正确目标：库目录移动/重定向后会漂移，拆旧重建
-                let target = self.library.layout.root.join(&e.rel_path);
-                let points_correctly = junction::get_target(&link)
-                    .map(|t| t == target)
-                    .unwrap_or(false);
-                if !points_correctly {
-                    Self::remove_junction(&link)?;
-                    if target.is_dir() {
-                        Self::prepare_link(&link)?;
-                        junction::create(&target, &link).map_err(|err| {
-                            crate::error::LiquiModError::Junction(err.to_string())
-                        })?;
+                    // 仓库源目录丢失，自动置为禁用
+                    self.library.db.set_enabled(e.id, false)?;
+                    if junction::exists(&link).unwrap_or(false) {
+                        Self::remove_junction(&link)?;
                     }
+                    continue;
                 }
-            } else if !e.enabled && exists {
+
+                // 检查现有 link 是否健康指向正确 target
+                let is_correct = junction::exists(&link).unwrap_or(false)
+                    && junction::get_target(&link)
+                        .map(|t| t == target)
+                        .unwrap_or(false);
+
+                if !is_correct {
+                    Self::prepare_link(&link)?;
+                    junction::create(&target, &link)
+                        .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
+                }
+            } else if junction::exists(&link).unwrap_or(false) {
                 Self::remove_junction(&link)?;
             }
         }
-        // 清理指向本仓库、但数据库已无记录的孤儿 junction
-        if self.mods_dir.is_dir() {
-            for item in std::fs::read_dir(&self.mods_dir)? {
-                let item = item?;
+
+        // 清理受管目录中非当前启用 mod 的孤儿 junction
+        self.clean_orphaned_junctions(&enabled_links)?;
+        Ok(())
+    }
+
+    /// 清理 mods_dir 中指向当前仓库但不在 enabled 集合中的旧/悬空 junction
+    fn clean_orphaned_junctions(&self, managed_links: &HashSet<String>) -> Result<()> {
+        if let Ok(entries) = std::fs::read_dir(&self.mods_dir) {
+            for item in entries.flatten() {
                 let name = item.file_name().to_string_lossy().into_owned();
                 if managed_links.contains(&name) {
                     continue;
@@ -144,13 +152,29 @@ impl<'a> Deployer<'a> {
         Ok(())
     }
 
-    /// 返回每个受管 mod 与其部署状态是否一致。
+    /// 返回每个受管 mod 与其部署状态是否一致 (包括 Junction 真实 Target 校验)。
     pub fn status(&self) -> Result<Vec<(ModEntry, bool)>> {
         let mut out = Vec::new();
         for e in self.library.db.list_mods()? {
             let link = self.mods_dir.join(Self::link_name(&e));
-            let actual = junction::exists(&link).unwrap_or(false);
-            out.push((e.clone(), actual == e.enabled));
+            let target = self.library.layout.root.join(&e.rel_path);
+
+            let is_match = if e.enabled {
+                junction::exists(&link).unwrap_or(false)
+                    && junction::get_target(&link)
+                        .map(|t| {
+                            if let (Ok(c1), Ok(c2)) = (t.canonicalize(), target.canonicalize()) {
+                                c1 == c2
+                            } else {
+                                t == target
+                            }
+                        })
+                        .unwrap_or(false)
+            } else {
+                !junction::exists(&link).unwrap_or(false)
+            };
+
+            out.push((e.clone(), is_match));
         }
         Ok(out)
     }

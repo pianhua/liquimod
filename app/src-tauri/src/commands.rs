@@ -206,7 +206,8 @@ pub fn character_summaries(
     let mods = lib.list().map_err(|e| e.to_string())?;
     let fav_set: std::collections::HashSet<&str> = favorites.iter().map(|s| s.as_str()).collect();
     let mut out: Vec<CharacterSummary> = Vec::new();
-    for c in game.characters() {
+    let chars = game.characters();
+    for c in chars.iter() {
         let group: Vec<_> = mods
             .iter()
             .filter(|m| {
@@ -228,11 +229,8 @@ pub fn character_summaries(
 
     // 若指定了分类（如光锥/立绘等），且存在不属于已知角色的 Mod，在末尾附带虚拟「通用 / 未归属」卡片
     if let Some(cid) = category_id {
-        let known: std::collections::HashSet<&str> = game
-            .characters()
-            .iter()
-            .map(|c| c.internal_name.as_str())
-            .collect();
+        let known: std::collections::HashSet<String> =
+            chars.iter().map(|c| c.internal_name.clone()).collect();
         let other_mods: Vec<_> = mods
             .iter()
             .filter(|m| m.category_id == Some(cid) && !known.contains(m.character.as_str()))
@@ -267,7 +265,7 @@ fn summary(c: &CharacterInfo, total: usize, enabled: usize, is_favorite: bool) -
     }
 }
 
-/// character → 固定分类 kind。已知角色返回 None（角色虚拟类）；
+/// 角色 → 固定分类 kind。已知角色返回 None（角色虚拟类）；
 /// npc/lightcone/portrait/scene 返回对应 kind；其它一律「other」。
 fn char_category_kind(character: &str, game: &dyn Game) -> Option<&'static str> {
     if game
@@ -286,38 +284,37 @@ fn char_category_kind(character: &str, game: &dyn Game) -> Option<&'static str> 
     }
 }
 
-/// 幂等归类：让每个 Mod 的 category_id 与 character 推导一致。
-/// 已知角色 → NULL；非角色 → 对应固定分类。不动已正确的行。
+/// 幂等归类：对未显式分类的 Mod (category_id 为 NULL) 且属于固定分类的执行初始归类。
+/// (LM-P1-006) 保护用户手动指定的分类，绝不强行重置。
 pub fn sync_mod_categories(lib: &Library, game: &dyn Game) -> Result<usize, String> {
     let mut changed = 0;
     for m in lib.list().map_err(|e| e.to_string())? {
-        let want = char_category_kind(&m.character, game);
-        let want_id = match want {
-            None => None,
-            Some(kind) => {
-                let id = lib
-                    .db
-                    .category_id_by_kind(kind)
-                    .map_err(|e| e.to_string())?;
-                match id {
-                    Some(id) => Some(id),
-                    None => {
-                        // 固定分类缺失（极罕见）——补种后重查
-                        lib.db
-                            .ensure_default_categories()
-                            .map_err(|e| e.to_string())?;
-                        lib.db
-                            .category_id_by_kind(kind)
-                            .map_err(|e| e.to_string())?
-                    }
-                }
-            }
-        };
-        if m.category_id != want_id {
-            lib.db
-                .set_mod_category(m.id, want_id)
+        // 若用户已显式分配了分类，保护用户分类不受后台扫描影响
+        if m.category_id.is_some() {
+            continue;
+        }
+        if let Some(kind) = char_category_kind(&m.character, game) {
+            let id = lib
+                .db
+                .category_id_by_kind(kind)
                 .map_err(|e| e.to_string())?;
-            changed += 1;
+            let want_id = match id {
+                Some(id) => Some(id),
+                None => {
+                    lib.db
+                        .ensure_default_categories()
+                        .map_err(|e| e.to_string())?;
+                    lib.db
+                        .category_id_by_kind(kind)
+                        .map_err(|e| e.to_string())?
+                }
+            };
+            if m.category_id != want_id {
+                lib.db
+                    .set_mod_category(m.id, want_id)
+                    .map_err(|e| e.to_string())?;
+                changed += 1;
+            }
         }
     }
     Ok(changed)
@@ -331,13 +328,11 @@ fn collect_mod_rows(
 ) -> Result<Vec<ModRow>, String> {
     if character == "others" {
         if let Some(cid) = category_id {
-            let known: std::collections::HashSet<&str> = liquimod_core::games::hsr::Hsr::shared()
-                .characters()
-                .iter()
-                .map(|c| c.internal_name.as_str())
-                .collect();
+            let chars = liquimod_core::games::hsr::Hsr::shared().characters();
+            let known: std::collections::HashSet<String> =
+                chars.iter().map(|c| c.internal_name.clone()).collect();
             return collect_rows_where(lib, move |m| {
-                m.category_id == Some(cid) && !known.contains(m.character.as_str())
+                m.category_id == Some(cid) && !known.contains(&m.character)
             });
         }
     }
@@ -1235,13 +1230,11 @@ pub async fn list_uncategorized_mods(
         let (root, rows) = {
             let lib = library.lock().unwrap();
             let root = lib.layout.root.clone();
-            let known: Vec<&str> = Hsr::shared()
-                .characters()
-                .iter()
-                .map(|c| c.internal_name.as_str())
-                .collect();
+            let chars = Hsr::shared().characters();
+            let known: std::collections::HashSet<String> =
+                chars.iter().map(|c| c.internal_name.clone()).collect();
             let rows = collect_rows_where(&lib, |m| {
-                m.category_id.is_none() && !known.contains(&m.character.as_str())
+                m.category_id.is_none() && !known.contains(&m.character)
             })?;
             (root, rows)
         };
@@ -1288,7 +1281,12 @@ pub fn choose_game_exe(state: tauri::State<AppState>, path: String) -> Result<Co
     if !p.is_file() {
         return Err(format!("文件不存在：{}", p.display()));
     }
-    if p.extension().and_then(|e| e.to_str()) != Some("exe") {
+    if !p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("exe"))
+        .unwrap_or(false)
+    {
         return Err("请选择 .exe 可执行文件".to_string());
     }
     let mut config = state.config.lock().unwrap();
@@ -1305,7 +1303,12 @@ pub fn choose_loader_exe(state: tauri::State<AppState>, path: String) -> Result<
     if !p.is_file() {
         return Err(format!("文件不存在：{}", p.display()));
     }
-    if p.extension().and_then(|e| e.to_str()) != Some("exe") {
+    if !p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("exe"))
+        .unwrap_or(false)
+    {
         return Err("请选择 .exe 可执行文件".to_string());
     }
     let mut config = state.config.lock().unwrap();
@@ -1500,39 +1503,44 @@ pub async fn migrate_mods_from_old_migoto(
         if let Ok(entries) = std::fs::read_dir(&mods_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() {
-                    // 跳过符号链接/软连接，仅迁移真实实体目录
-                    if let Ok(meta) = entry.metadata() {
-                        if meta.file_type().is_symlink() {
-                            continue;
-                        }
-                    }
-                    let folder_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if folder_name.is_empty()
-                        || folder_name.starts_with('.')
-                        || folder_name.eq_ignore_ascii_case("disabled")
-                    {
+                // 安全防御 (LM-P2-014): 使用 symlink_metadata 严禁 follow symlink 误把软链接当实体复制
+                if let Ok(ft) = entry.file_type() {
+                    if ft.is_symlink() || !ft.is_dir() {
                         continue;
                     }
+                } else if let Ok(meta) = std::fs::symlink_metadata(&path) {
+                    if meta.file_type().is_symlink() || !meta.is_dir() {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
 
-                    total_found += 1;
+                let folder_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if folder_name.is_empty()
+                    || folder_name.starts_with('.')
+                    || folder_name.eq_ignore_ascii_case("disabled")
+                {
+                    continue;
+                }
 
-                    // 1. 尝试推断角色
-                    let character = liquimod_core::games::infer_character(&path, Hsr::shared())
-                        .unwrap_or_else(|| "others".to_string());
+                total_found += 1;
 
-                    // 2. 清洗 Mod 名
-                    let mod_name = folder_name.to_string();
+                // 1. 尝试推断角色
+                let character = liquimod_core::games::infer_character(&path, Hsr::shared())
+                    .unwrap_or_else(|| "others".to_string());
 
-                    // 3. 复制并收录到 Library
-                    match lib.add_folder(&path, &character, &mod_name) {
-                        Ok(_) => {
-                            migrated_count += 1;
-                        }
-                        Err(e) => {
-                            failed_count += 1;
-                            errors.push(format!("{}: {}", folder_name, e));
-                        }
+                // 2. 清洗 Mod 名
+                let mod_name = folder_name.to_string();
+
+                // 3. 复制并收录到 Library
+                match lib.add_folder(&path, &character, &mod_name) {
+                    Ok(_) => {
+                        migrated_count += 1;
+                    }
+                    Err(e) => {
+                        failed_count += 1;
+                        errors.push(format!("{}: {}", folder_name, e));
                     }
                 }
             }
@@ -1809,18 +1817,26 @@ pub fn set_mod_cover_from_internal(
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
     let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
-    let src = mod_dir.join(&relative_path);
+
+    // 安全防御 (LM-P1-004): 严禁利用 .. 越界逃出 Mod 文件夹
+    let safe_rel = liquimod_core::safe_path::sanitize_relative_path(Path::new(&relative_path))
+        .map_err(|e| format!("非法图片路径: {e}"))?;
+    let src = liquimod_core::safe_path::ensure_contained(&mod_dir, &safe_rel)
+        .map_err(|e| format!("图片路径越界: {e}"))?;
+
     if !src.is_file() {
         return Err("所选图片不存在".to_string());
     }
 
-    // 绝不拷贝覆盖磁盘原文件！直接将相对路径写入 DB 持久化记录
+    let rel_str = safe_rel.to_string_lossy().replace('\\', "/");
+
+    // 绝不拷贝覆盖磁盘原文件！直接将经过净化的规范相对路径写入 DB 持久化记录
     lib.db
-        .set_mod_cover_image(id, Some(&relative_path))
+        .set_mod_cover_image(id, Some(&rel_str))
         .map_err(|e| e.to_string())?;
 
     liquimod_core::thumbs::remove_thumbnail(&lib.layout.root, id);
-    let new_thumb = thumb_data_url(&lib.layout.root, &mod_dir, id, Some(&relative_path));
+    let new_thumb = thumb_data_url(&lib.layout.root, &mod_dir, id, Some(&rel_str));
     new_thumb.ok_or_else(|| "生成缩略图失败".to_string())
 }
 
@@ -1968,6 +1984,9 @@ pub fn get_mod_images(state: tauri::State<AppState>, id: i64) -> Result<Vec<ModI
     let active_cover =
         liquimod_core::thumbs::find_preview_image(&mod_dir, row.cover_image.as_deref());
 
+    const MAX_IMAGES_COUNT: usize = 60;
+    const MAX_IMAGE_BYTES: u64 = 15 * 1024 * 1024; // 15 MB
+
     let mut images = Vec::new();
     fn scan_imgs(
         dir: &Path,
@@ -1976,11 +1995,14 @@ pub fn get_mod_images(state: tauri::State<AppState>, id: i64) -> Result<Vec<ModI
         active_cover: Option<&PathBuf>,
         out: &mut Vec<ModImageDto>,
     ) {
-        if depth > 6 {
+        if depth > 6 || out.len() >= MAX_IMAGES_COUNT {
             return;
         }
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
+                if out.len() >= MAX_IMAGES_COUNT {
+                    break;
+                }
                 let p = entry.path();
                 if p.is_file() {
                     let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -1994,6 +2016,9 @@ pub fn get_mod_images(state: tauri::State<AppState>, id: i64) -> Result<Vec<ModI
                         || lower.ends_with(".avif")
                     {
                         if let Ok(meta) = p.metadata() {
+                            if meta.len() > MAX_IMAGE_BYTES {
+                                continue;
+                            }
                             let rel = p
                                 .strip_prefix(base)
                                 .map(|r| r.to_string_lossy().replace('\\', "/"))
@@ -2206,7 +2231,21 @@ pub async fn get_character_image_data(
     game: Option<String>,
     filename: String,
 ) -> Result<Option<String>, String> {
-    let game_name = game.as_deref().unwrap_or("Honkai");
+    let raw_game = game.as_deref().unwrap_or("Honkai");
+    // 安全防御 (LM-P1-003): 游戏目录白名单校验
+    let game_name = match raw_game.to_lowercase().as_str() {
+        "honkai" | "hsr" => "Honkai",
+        "genshin" => "Genshin",
+        "zenless" | "zzz" => "Zenless",
+        _ => return Ok(None),
+    };
+
+    // 安全防御: 净化文件名相对路径，严禁 .. 逃逸
+    let Ok(safe_file) = liquimod_core::safe_path::sanitize_relative_path(Path::new(&filename))
+    else {
+        return Ok(None);
+    };
+
     let asset_root = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("LiquiMod")
@@ -2215,17 +2254,34 @@ pub async fn get_character_image_data(
 
     // 尝试多个可能路径（支持大小写与子目录）
     let candidates = [
-        asset_root.join("Images").join("Characters").join(&filename),
-        asset_root.join("images").join("Characters").join(&filename),
-        asset_root.join("Images").join("characters").join(&filename),
-        asset_root.join("images").join("characters").join(&filename),
-        asset_root.join("Images").join(&filename),
-        asset_root.join("images").join(&filename),
-        asset_root.join(&filename),
+        asset_root
+            .join("Images")
+            .join("Characters")
+            .join(&safe_file),
+        asset_root
+            .join("images")
+            .join("Characters")
+            .join(&safe_file),
+        asset_root
+            .join("Images")
+            .join("characters")
+            .join(&safe_file),
+        asset_root
+            .join("images")
+            .join("characters")
+            .join(&safe_file),
+        asset_root.join("Images").join(&safe_file),
+        asset_root.join("images").join(&safe_file),
+        asset_root.join(&safe_file),
     ];
 
     for path in &candidates {
         if path.is_file() {
+            if let Ok(meta) = tokio::fs::metadata(path).await {
+                if meta.len() > 15 * 1024 * 1024 {
+                    continue;
+                }
+            }
             if let Ok(bytes) = tokio::fs::read(path).await {
                 use base64::Engine;
                 let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -2569,10 +2625,13 @@ mod tests {
         let m = lib.add_folder(src.path(), "A", "old").unwrap();
         let mods = tempfile::tempdir().unwrap();
         set_enabled(&lib, Some(mods.path()), m.id, true).unwrap();
+        let old_link_name = liquimod_core::deploy::Deployer::link_name(&m);
         rename_entry(&lib, Some(mods.path()), m.id, "new").unwrap();
-        assert!(junction::exists(mods.path().join("A--new")).unwrap());
-        assert!(!mods.path().join("A--old").exists());
-        assert!(lib.db.get_mod(m.id).unwrap().enabled);
+        let m_after = lib.db.get_mod(m.id).unwrap();
+        let new_link_name = liquimod_core::deploy::Deployer::link_name(&m_after);
+        assert!(junction::exists(mods.path().join(new_link_name)).unwrap());
+        assert!(!mods.path().join(old_link_name).exists());
+        assert!(m_after.enabled);
     }
 
     #[test]
@@ -2585,7 +2644,9 @@ mod tests {
         let mods = tempfile::tempdir().unwrap();
         set_enabled(&lib, Some(mods.path()), m.id, true).unwrap();
         rename_entry(&lib, Some(mods.path()), m.id, "new").unwrap();
-        let target = junction::get_target(mods.path().join("A--new")).unwrap();
+        let m_after = lib.db.get_mod(m.id).unwrap();
+        let link_name = liquimod_core::deploy::Deployer::link_name(&m_after);
+        let target = junction::get_target(mods.path().join(link_name)).unwrap();
         assert_eq!(target, lib.layout.mod_dir("A", "new"));
     }
 
@@ -2601,9 +2662,11 @@ mod tests {
         set_enabled(&lib, Some(mods.path()), m1.id, true).unwrap();
         let err = rename_entry(&lib, Some(mods.path()), m1.id, "m2").unwrap_err();
         assert!(err.contains("已存在同名 Mod"));
-        assert_eq!(lib.db.get_mod(m1.id).unwrap().name, "m1");
-        assert!(junction::exists(mods.path().join("A--m1")).unwrap());
-        assert!(lib.db.get_mod(m1.id).unwrap().enabled);
+        let m1_after = lib.db.get_mod(m1.id).unwrap();
+        assert_eq!(m1_after.name, "m1");
+        let link_name = liquimod_core::deploy::Deployer::link_name(&m1_after);
+        assert!(junction::exists(mods.path().join(link_name)).unwrap());
+        assert!(m1_after.enabled);
     }
 
     #[test]
@@ -2630,12 +2693,15 @@ mod tests {
         let m = lib.add_folder(src.path(), "Others", "KafkaMod").unwrap();
         let mods = tempfile::tempdir().unwrap();
         set_enabled(&lib, Some(mods.path()), m.id, true).unwrap();
+        let old_link_name = liquimod_core::deploy::Deployer::link_name(&m);
         reassign_entry(&lib, Some(mods.path()), m.id, "Kafka").unwrap();
-        assert!(junction::exists(mods.path().join("Kafka--KafkaMod")).unwrap());
-        assert!(!mods.path().join("Others--KafkaMod").exists());
-        let target = junction::get_target(mods.path().join("Kafka--KafkaMod")).unwrap();
+        let m_after = lib.db.get_mod(m.id).unwrap();
+        let new_link_name = liquimod_core::deploy::Deployer::link_name(&m_after);
+        assert!(junction::exists(mods.path().join(&new_link_name)).unwrap());
+        assert!(!mods.path().join(old_link_name).exists());
+        let target = junction::get_target(mods.path().join(&new_link_name)).unwrap();
         assert_eq!(target, lib.layout.mod_dir("Kafka", "KafkaMod"));
-        assert!(lib.db.get_mod(m.id).unwrap().enabled);
+        assert!(m_after.enabled);
     }
 
     #[test]
@@ -2739,13 +2805,11 @@ mod tests {
         lib.add_folder(src.path(), "Stranger", "M2").unwrap();
         let all = collect_rows_where(&lib, |_| true).unwrap();
         assert_eq!(all.len(), 2);
-        let known: Vec<&str> = Hsr::shared()
-            .characters()
-            .iter()
-            .map(|c| c.internal_name.as_str())
-            .collect();
+        let chars = Hsr::shared().characters();
+        let known: std::collections::HashSet<String> =
+            chars.iter().map(|c| c.internal_name.clone()).collect();
         let uncat = collect_rows_where(&lib, |m| {
-            m.category_id.is_none() && !known.contains(&m.character.as_str())
+            m.category_id.is_none() && !known.contains(&m.character)
         })
         .unwrap();
         assert_eq!(uncat.len(), 1);

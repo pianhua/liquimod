@@ -159,51 +159,87 @@
   async function batchEnable() {
     const targets = mods.filter((m) => checkedModIds.has(m.id) && !m.enabled);
     if (targets.length === 0) return;
+    let success = 0;
+    let failed = 0;
     for (const m of targets) {
       try {
         await api.setModEnabled(m.id, true);
         m.enabled = true;
-      } catch {}
+        success++;
+      } catch {
+        failed++;
+      }
     }
-    toast(`已批量启用 ${targets.length} 个 Mod`);
+    if (failed === 0) {
+      toast(`已批量启用 ${success} 个 Mod`);
+    } else {
+      toast(`已启用 ${success} 个 Mod，${failed} 个失败`);
+    }
     onconfigured();
   }
 
   async function batchDisable() {
     const targets = mods.filter((m) => checkedModIds.has(m.id) && m.enabled);
     if (targets.length === 0) return;
+    let success = 0;
+    let failed = 0;
     for (const m of targets) {
       try {
         await api.setModEnabled(m.id, false);
         m.enabled = false;
-      } catch {}
+        success++;
+      } catch {
+        failed++;
+      }
     }
-    toast(`已批量禁用 ${targets.length} 个 Mod`);
+    if (failed === 0) {
+      toast(`已批量禁用 ${success} 个 Mod`);
+    } else {
+      toast(`已禁用 ${success} 个 Mod，${failed} 个失败`);
+    }
     onconfigured();
   }
 
   async function batchMoveCategory(cid: number | null) {
     const targets = mods.filter((m) => checkedModIds.has(m.id));
     if (targets.length === 0) return;
+    let success = 0;
+    let failed = 0;
     for (const m of targets) {
       try {
         await api.setModCategory(m.id, cid);
         m.category_id = cid;
-      } catch {}
+        success++;
+      } catch {
+        failed++;
+      }
     }
-    toast(`已批量移动 ${targets.length} 个 Mod 分类`);
+    if (failed === 0) {
+      toast(`已批量移动 ${success} 个 Mod 分类`);
+    } else {
+      toast(`已移动 ${success} 个 Mod 分类，${failed} 个失败`);
+    }
     await refreshMods();
   }
 
   async function batchUninstall() {
     const targets = mods.filter((m) => checkedModIds.has(m.id));
     if (targets.length === 0) return;
+    let success = 0;
+    let failed = 0;
     for (const m of targets) {
       try {
         await api.uninstallMod(m.id);
-      } catch {}
+        success++;
+      } catch {
+        failed++;
+      }
     }
-    toast(`已成功卸载 ${targets.length} 个 Mod`);
+    if (failed === 0) {
+      toast(`已成功卸载 ${success} 个 Mod`);
+    } else {
+      toast(`已卸载 ${success} 个 Mod，${failed} 个失败`);
+    }
     clearSelection();
     await refreshMods();
   }
@@ -219,7 +255,7 @@
     error = "";
     try {
       if (next && radioMode) {
-        // 单选互斥模式：开启当前 Mod 时，自动关闭该角色的其余所有已启用 Mod
+        // 单选互斥模式：开启当前 Mod 时，自动关闭同角色的其余所有已启用 Mod
         const others = mods.filter((m) => m.id !== mod.id && m.enabled);
         await api.setModEnabled(mod.id, true);
         mod.enabled = true;
@@ -244,33 +280,47 @@
 
   async function enableAll() {
     error = "";
-    let count = 0;
+    let success = 0;
+    let failed = 0;
     for (const m of shown) {
       if (!m.enabled) {
         try {
           await api.setModEnabled(m.id, true);
           m.enabled = true;
-          count++;
-        } catch {}
+          success++;
+        } catch {
+          failed++;
+        }
       }
     }
-    toast(`已批量启用 ${count} 个 Mod`);
+    if (failed === 0) {
+      toast(`已批量启用 ${success} 个 Mod`);
+    } else {
+      toast(`已启用 ${success} 个 Mod，${failed} 个失败`);
+    }
     onconfigured();
   }
 
   async function disableAll() {
     error = "";
-    let count = 0;
+    let success = 0;
+    let failed = 0;
     for (const m of shown) {
       if (m.enabled) {
         try {
           await api.setModEnabled(m.id, false);
           m.enabled = false;
-          count++;
-        } catch {}
+          success++;
+        } catch {
+          failed++;
+        }
       }
     }
-    toast(`已批量禁用 ${count} 个 Mod`);
+    if (failed === 0) {
+      toast(`已批量禁用 ${success} 个 Mod`);
+    } else {
+      toast(`已禁用 ${success} 个 Mod，${failed} 个失败`);
+    }
     onconfigured();
   }
 

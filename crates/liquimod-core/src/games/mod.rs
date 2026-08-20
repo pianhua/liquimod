@@ -14,10 +14,12 @@ pub struct CharacterInfo {
     pub rarity: Option<u8>,
 }
 
+use std::sync::Arc;
+
 pub trait GameAdapter: Send + Sync {
     fn id(&self) -> &'static str;
     fn display_name(&self) -> &'static str;
-    fn characters(&self) -> &[CharacterInfo];
+    fn characters(&self) -> Arc<[CharacterInfo]>;
     /// 游戏主进程可执行文件名（小写，含 .exe）。
     fn process_names(&self) -> &'static [&'static str];
     /// 默认目标程序特征名
@@ -68,7 +70,8 @@ pub fn infer_character(dir: &Path, game: &dyn Game) -> Option<String> {
     let mut budget = MAX_TOTAL_BYTES;
     collect_text(dir, 0, &mut budget, &mut corpus);
     let mut best: Option<(usize, &str)> = None;
-    for c in game.characters() {
+    let chars = game.characters();
+    for c in chars.iter() {
         let mut score = 0usize;
         let stem = Path::new(&c.image)
             .file_stem()

@@ -19,25 +19,41 @@ pub struct MigotoInfo {
     pub mods_dir: Option<PathBuf>,
 }
 
+/// 剥离行内注释（支持引号感知：引号内的 ';' 或 '#' 不会被截断）
+fn strip_ini_inline_comment(line: &str) -> &str {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut escape = false;
+
+    for (idx, ch) in line.char_indices() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if ch == '\\' {
+            escape = true;
+            continue;
+        }
+        if ch == '"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+        } else if ch == '\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
+        } else if (ch == ';' || ch == '#') && !in_single_quote && !in_double_quote {
+            return &line[..idx];
+        }
+    }
+    line
+}
+
 /// 简易轻量、健壮的 INI 解析：
 /// 支持分号 `;` 或 `#` 开头的注释、大小写不敏感的 section 匹配、去除引号及两端空白。
 pub fn parse_ini_sections(content: &str) -> HashMap<String, HashMap<String, String>> {
     let mut sections: HashMap<String, HashMap<String, String>> = HashMap::new();
     let mut current_section = String::new();
 
-    for line in content.lines() {
-        let mut line_str = line.trim();
+    for raw_line in content.lines() {
+        let line_str = strip_ini_inline_comment(raw_line.trim()).trim();
         if line_str.is_empty() || line_str.starts_with(';') || line_str.starts_with('#') {
-            continue;
-        }
-        // 剥离分号与井号行内注释（如果不在引号内）
-        if let Some((clean, _)) = line_str.split_once(';') {
-            line_str = clean.trim();
-        }
-        if let Some((clean, _)) = line_str.split_once('#') {
-            line_str = clean.trim();
-        }
-        if line_str.is_empty() {
             continue;
         }
 
@@ -965,5 +981,23 @@ show_warnings = 0
         assert_eq!(inspect_work_mode(&play_ini), MigotoWorkMode::Play);
         assert!(play_ini.contains("hunting = 0"));
         assert!(play_ini.contains("marking_actions = clipboard"));
+    }
+
+    #[test]
+    fn test_quote_aware_comment_parsing() {
+        let ini = r#"
+[Loader]
+target = "D:\Games\Star#Rail\StarRail.exe" ; real comment
+loader = 'E:\Mods;Custom\Loader.exe' # another comment
+normal = simple_val ; inline comment
+"#;
+        let sections = parse_ini_sections(ini);
+        let loader = sections.get("loader").unwrap();
+        assert_eq!(
+            loader.get("target").unwrap(),
+            r"D:\Games\Star#Rail\StarRail.exe"
+        );
+        assert_eq!(loader.get("loader").unwrap(), r"E:\Mods;Custom\Loader.exe");
+        assert_eq!(loader.get("normal").unwrap(), "simple_val");
     }
 }

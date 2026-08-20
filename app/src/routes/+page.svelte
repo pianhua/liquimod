@@ -98,19 +98,38 @@
     }
   }
 
+  let refreshSeq = 0;
+
   async function refresh() {
+    const seq = ++refreshSeq;
     error = "";
     try {
-      config = await api.getConfig();
+      const cfg = await api.getConfig();
+      if (seq !== refreshSeq) return;
+      config = cfg;
       applyTheme(config.theme);
-      categories = await api.listCategories();
-      homeCharacters = await api.getCharacters(null);
+
+      const cats = await api.listCategories();
+      if (seq !== refreshSeq) return;
+      categories = cats;
+
+      const homeChars = await api.getCharacters(null);
+      if (seq !== refreshSeq) return;
+      homeCharacters = homeChars;
+
       const catId = view.kind === "type" ? view.id : (view.kind === "character" ? (view.categoryId ?? null) : null);
-      characters = (catId == null) ? homeCharacters : await api.getCharacters(catId);
+      const curChars = (catId == null) ? homeChars : await api.getCharacters(catId);
+      if (seq !== refreshSeq) return;
+      characters = curChars;
+
       await loadViewMods();
+      if (seq !== refreshSeq) return;
+
       conflicts = await api.getActiveConflicts().catch(() => []);
     } catch (e) {
-      error = String(e);
+      if (seq === refreshSeq) {
+        error = String(e);
+      }
     }
   }
 

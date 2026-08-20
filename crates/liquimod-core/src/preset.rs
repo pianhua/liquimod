@@ -22,6 +22,15 @@ pub fn snapshot_enabled(lib: &Library) -> Result<Vec<i64>> {
 /// 逐项容错：单个 mod 失败（如库目录已消失）不阻塞其余 mod，失败被收集为聚合错误返回；
 /// 此时预设可能已被部分应用，重跑 `apply_preset` 或 `Deployer::recover` 会收敛到目标状态。
 pub fn apply_preset(lib: &Library, mods_dir: &Path, preset_id: i64) -> Result<(usize, usize)> {
+    // 关键校验 (LM-P2-012): 必须先验证 preset 真实存在，防止无效 ID 将全部 Mod 清空禁用
+    let presets = lib.db.list_presets()?;
+    if !presets.iter().any(|p| p.id == preset_id) {
+        return Err(LiquiModError::Io(std::io::Error::other(format!(
+            "预设 (ID: {}) 不存在，已阻止错误应用",
+            preset_id
+        ))));
+    }
+
     let want: std::collections::HashSet<i64> =
         lib.db.preset_mod_ids(preset_id)?.into_iter().collect();
     let dep = Deployer::new(lib, mods_dir);

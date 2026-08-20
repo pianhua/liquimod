@@ -131,13 +131,17 @@ impl Library {
             return Err(crate::error::LiquiModError::InvalidName(name.into()));
         }
         let dest = self.layout.mod_dir(character, name);
-        std::fs::create_dir_all(&dest)?;
         let src_canon = src.canonicalize()?;
+        std::fs::create_dir_all(&dest)?;
         let dest_canon = dest.canonicalize()?;
         if src_canon.starts_with(&dest_canon) || dest_canon.starts_with(&src_canon) {
+            let _ = std::fs::remove_dir_all(&dest);
             return Err(crate::error::LiquiModError::InvalidName(name.into()));
         }
-        copy_dir_recursive(&src_canon, &dest_canon)?;
+        if let Err(e) = copy_dir_recursive(&src_canon, &dest_canon) {
+            let _ = std::fs::remove_dir_all(&dest);
+            return Err(e);
+        }
         let rel = format!("mods/{}/{}", character, name);
         let id = self.db.upsert_mod(character, name, &rel)?;
         refresh_stats(&self.db, id, &dest)?;

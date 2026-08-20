@@ -282,9 +282,16 @@ impl AssetSyncService {
                     continue;
                 }
             }
+
+            // 安全防御 (LM-P1-001): 严禁路径穿越组件逃逸出资源根目录
+            let Ok(target_path) =
+                crate::safe_path::ensure_contained(&self.asset_root, Path::new(&r_file.path))
+            else {
+                continue;
+            };
+
             remote_paths.insert(key.clone());
 
-            let target_path = self.asset_root.join(&r_file.path);
             if !target_path.exists() {
                 files_to_download.push(r_file.clone());
             } else if let Some(l_file) = local_map.get(&key) {
@@ -314,7 +321,10 @@ impl AssetSyncService {
                         continue;
                     }
                 }
-                if !remote_paths.contains(&key) {
+                // 安全防御：确保待删除相对路径也是合法的相对路径
+                if crate::safe_path::sanitize_relative_path(Path::new(&f.path)).is_ok()
+                    && !remote_paths.contains(&key)
+                {
                     files_to_delete.push(f.path.clone());
                 }
             }
@@ -434,9 +444,19 @@ impl AssetSyncService {
             .buffer_unordered(MAX_PARALLEL_DOWNLOADS);
 
         let results: Vec<Result<(), String>> = stream.collect().await;
-        let successful_downloads = results.iter().filter(|r| r.is_ok()).count();
+        let failed_errors: Vec<String> = results.into_iter().filter_map(|r| r.err()).collect();
 
-        // 清理孤儿文件
+        if !failed_errors.is_empty() {
+            return Err(format!(
+                "资产同步未全部成功完成 ({} 个文件失败)，已中止写入清单以防数据损坏: {}",
+                failed_errors.len(),
+                failed_errors[0]
+            ));
+        }
+
+        let successful_downloads = total_downloads;
+
+        // 清理孤儿文件 (仅在下载全胜后执行)
         let mut deleted_count = 0;
         if !diff.files_to_delete.is_empty() {
             send_progress(AssetSyncProgress {
@@ -448,16 +468,20 @@ impl AssetSyncService {
                 message: "正在清理废弃文件...".to_string(),
             });
             for del_rel in &diff.files_to_delete {
-                let del_path = self.asset_root.join(del_rel);
-                if del_path.exists() {
-                    let _ = tokio::fs::remove_file(del_path).await;
-                    deleted_count += 1;
+                if let Ok(del_path) =
+                    crate::safe_path::ensure_contained(&self.asset_root, Path::new(del_rel))
+                {
+                    if del_path.exists() && tokio::fs::remove_file(&del_path).await.is_ok() {
+                        deleted_count += 1;
+                    }
                 }
             }
         }
 
-        // 写入最新清单
-        let _ = self.write_local_manifest(&remote).await;
+        // 全部无误，原子写入最新清单
+        self.write_local_manifest(&remote)
+            .await
+            .map_err(|e| format!("写入本地资产清单失败: {}", e))?;
 
         send_progress(AssetSyncProgress {
             stage: "completed".to_string(),
@@ -484,7 +508,8 @@ impl AssetSyncService {
         entry: &AssetFileEntry,
         mirrors: &[MirrorInfo],
     ) -> Result<(), String> {
-        let target_path = asset_root.join(&entry.path);
+        let target_path = crate::safe_path::ensure_contained(asset_root, Path::new(&entry.path))
+            .map_err(|e| format!("目标路径不安全: {}", e))?;
         let tmp_path = asset_root.join(format!("{}.tmp", entry.path));
 
         if let Some(parent) = target_path.parent() {

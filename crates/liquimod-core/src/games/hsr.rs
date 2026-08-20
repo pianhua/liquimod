@@ -19,40 +19,44 @@ struct RawCharacter {
     rarity: Option<u8>,
 }
 
+use std::sync::Arc;
+
 /// 崩坏：星穹铁道角色清单（支持 LocalAppData 云端热更新数据覆盖 + 内嵌资产兜底）。
 pub struct Hsr {
-    characters: RwLock<Vec<CharacterInfo>>,
+    characters: RwLock<Arc<[CharacterInfo]>>,
 }
 
 impl Hsr {
     pub fn new() -> Self {
         let chars = Self::load_characters();
         Self {
-            characters: RwLock::new(chars),
+            characters: RwLock::new(Arc::from(chars.into_boxed_slice())),
         }
     }
 
     fn load_characters() -> Vec<CharacterInfo> {
-        // 1. 加载程序内置的权威中文角色数据作为本地化词典
+        // 1. 加载程序内置的权威中文角色数据作为本地化词典（保留原始有序列表）
         let vendored_raw: Vec<RawCharacter> = serde_json::from_str(include_str!(
             "../../assets/hsr/characters.json"
         ))
         .expect("assets/hsr/characters.json must be valid JSON; vendored data is guarded by tests");
 
-        let mut vendored_map: std::collections::HashMap<String, CharacterInfo> =
+        let vendored_list: Vec<CharacterInfo> = vendored_raw
+            .into_iter()
+            .map(|c| CharacterInfo {
+                internal_name: c.internal_name,
+                display_name: c.display_name,
+                image: c.image,
+                keys: c.keys,
+                element: c.element,
+                rarity: c.rarity,
+            })
+            .collect();
+
+        let mut vendored_map: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
-        for c in vendored_raw {
-            vendored_map.insert(
-                c.internal_name.to_lowercase(),
-                CharacterInfo {
-                    internal_name: c.internal_name,
-                    display_name: c.display_name,
-                    image: c.image,
-                    keys: c.keys,
-                    element: c.element,
-                    rarity: c.rarity,
-                },
-            );
+        for (idx, c) in vendored_list.iter().enumerate() {
+            vendored_map.insert(c.internal_name.to_lowercase(), idx);
         }
 
         // 2. 尝试从 LocalAppData/LiquiMod/GameAssets/Honkai/characters.json 读取云端同步资产
@@ -74,7 +78,8 @@ impl Hsr {
                             let key = c.internal_name.to_lowercase();
                             seen_keys.insert(key.clone());
 
-                            if let Some(v) = vendored_map.get(&key) {
+                            if let Some(&idx) = vendored_map.get(&key) {
+                                let v = &vendored_list[idx];
                                 // 权威中文保护：保留中文 DisplayName 与丰富的中文别名 Keys，图片使用云端指定
                                 let mut combined_keys = v.keys.clone();
                                 for k in c.keys {
@@ -107,9 +112,9 @@ impl Hsr {
                             }
                         }
 
-                        // 补充内置中存在但云端遗漏的角色
-                        for (key, v) in &vendored_map {
-                            if !seen_keys.contains(key) {
+                        // 补充内置中存在但云端遗漏的角色（保持 vendored 顺序）
+                        for v in &vendored_list {
+                            if !seen_keys.contains(&v.internal_name.to_lowercase()) {
                                 merged.push(v.clone());
                             }
                         }
@@ -120,15 +125,15 @@ impl Hsr {
             }
         }
 
-        // 3. Fallback 回退到纯内置数据
-        vendored_map.into_values().collect()
+        // 3. Fallback 回退到纯内置数据（绝对确定性顺序）
+        vendored_list
     }
 
     /// 热重载角色数据
     pub fn reload(&self) {
         let updated = Self::load_characters();
         if let Ok(mut guard) = self.characters.write() {
-            *guard = updated;
+            *guard = Arc::from(updated.into_boxed_slice());
         }
     }
 
@@ -151,16 +156,8 @@ impl super::GameAdapter for Hsr {
     fn display_name(&self) -> &'static str {
         "崩坏：星穹铁道"
     }
-    fn characters(&self) -> &[CharacterInfo] {
-        // SAFETY: 为了保持 GameAdapter trait 返回切片接口，此处返回一个不可变的引用
-        // 因为 characters 整体替换为 COW 或 Leak 静态引用
-        // 但更好的是通过内部持有不可变向量，重载时交换引用
-        // 此处利用 static 容器或 unsafe 切片转换（由 shared() 单例持有）
-        unsafe {
-            let guard = self.characters.read().unwrap();
-            let slice: &[CharacterInfo] = &guard;
-            std::mem::transmute(slice)
-        }
+    fn characters(&self) -> Arc<[CharacterInfo]> {
+        self.characters.read().unwrap().clone()
     }
     fn process_names(&self) -> &'static [&'static str] {
         &["starrail.exe"]
@@ -183,7 +180,8 @@ mod tests {
         assert_eq!(hsr.id(), "hsr");
         assert!(hsr.characters().len() > 50, "expected full HSR roster");
         let mut internal_names = HashSet::new();
-        for c in hsr.characters() {
+        let chars = hsr.characters();
+        for c in chars.iter() {
             assert!(!c.internal_name.is_empty());
             assert!(!c.display_name.is_empty());
             assert!(!c.image.is_empty());
@@ -214,12 +212,50 @@ mod tests {
     #[test]
     fn smart_merge_preserves_chinese_when_remote_is_english() {
         let hsr = Hsr::new();
-        let acheron = hsr
-            .characters()
-            .iter()
-            .find(|c| c.internal_name == "Acheron")
-            .unwrap();
+        let chars = hsr.characters();
+        let acheron = chars.iter().find(|c| c.internal_name == "Acheron").unwrap();
         assert_eq!(acheron.display_name, "黄泉");
         assert!(acheron.keys.iter().any(|k| k == "黄泉" || k == "huangquan"));
+    }
+
+    #[test]
+    fn concurrent_reload_and_iteration_is_thread_safe() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::thread;
+
+        let running = Arc::new(AtomicBool::new(true));
+        let running_writer = running.clone();
+
+        // 写入线程：持续触发 reload
+        let writer = thread::spawn(move || {
+            let hsr = Hsr::shared();
+            for _ in 0..50 {
+                hsr.reload();
+                thread::yield_now();
+            }
+            running_writer.store(false, Ordering::SeqCst);
+        });
+
+        // 多个读取线程：持续获取并迭代 characters 快照
+        let mut readers = Vec::new();
+        for _ in 0..4 {
+            let r_running = running.clone();
+            readers.push(thread::spawn(move || {
+                let hsr = Hsr::shared();
+                while r_running.load(Ordering::SeqCst) {
+                    let chars = hsr.characters();
+                    assert!(!chars.is_empty());
+                    for c in chars.iter() {
+                        assert!(!c.internal_name.is_empty());
+                    }
+                }
+            }));
+        }
+
+        writer.join().unwrap();
+        for r in readers {
+            r.join().unwrap();
+        }
     }
 }

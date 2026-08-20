@@ -20,10 +20,13 @@ pub fn reconcile_and_diff(
         .map(key)
         .collect();
     lib.scan().map_err(|e| e.to_string())?;
-    // 扫描后统一归类（角色→NULL；非角色→对应固定分类）
-    let _ = commands::sync_mod_categories(lib, liquimod_core::games::hsr::Hsr::shared());
+    // 扫描后统一归类（仅对未分类 Mod 赋初始分类）
+    commands::sync_mod_categories(lib, liquimod_core::games::hsr::Hsr::shared())
+        .map_err(|e| format!("分类对齐失败：{e}"))?;
     if let Some(dir) = mods_dir {
-        let _ = liquimod_core::deploy::Deployer::new(lib, dir).reconcile();
+        liquimod_core::deploy::Deployer::new(lib, dir)
+            .reconcile()
+            .map_err(|e| format!("部署状态对齐失败：{e}"))?;
     }
     let after: HashSet<_> = lib
         .list()

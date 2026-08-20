@@ -343,6 +343,19 @@ fn extract_migoto_zip_to_dir(zip_bytes: &[u8], target_dir: &Path) -> Result<()> 
         }
     }
 
+    const MAX_FILE_COUNT: usize = 10_000;
+    const MAX_TOTAL_DECOMPRESSED_BYTES: u64 = 512 * 1024 * 1024; // 512 MB
+    const MAX_SINGLE_FILE_BYTES: u64 = 200 * 1024 * 1024; // 200 MB
+
+    if file_count > MAX_FILE_COUNT {
+        return Err(LiquiModError::Io(std::io::Error::other(format!(
+            "压缩包文件数量 ({}) 超出安全上限 ({})",
+            file_count, MAX_FILE_COUNT
+        ))));
+    }
+
+    let mut total_decompressed: u64 = 0;
+
     // 2. 解压每个文件
     for i in 0..file_count {
         let mut entry = archive.by_index(i).map_err(|e| {
@@ -356,33 +369,41 @@ fn extract_migoto_zip_to_dir(zip_bytes: &[u8], target_dir: &Path) -> Result<()> 
             &raw_name
         };
 
-        if rel_name.is_empty() {
+        if rel_name.trim().is_empty() {
             continue;
         }
 
-        // 避免路径穿越
-        let clean_path = PathBuf::from(rel_name);
-        if clean_path
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
+        // 安全防御 (LM-P1-002): 严禁绝对路径、盘符、UNC 与 ParentDir 逃逸出目标目录
+        let Ok(out_path) = crate::safe_path::ensure_contained(target_dir, Path::new(rel_name))
+        else {
             continue;
-        }
-
-        let out_path = target_dir.join(&clean_path);
+        };
 
         if entry.is_dir() {
             std::fs::create_dir_all(&out_path)?;
         } else {
+            let entry_size = entry.size();
+            if entry_size > MAX_SINGLE_FILE_BYTES {
+                return Err(LiquiModError::Io(std::io::Error::other(format!(
+                    "单个文件解压大小 ({} MB) 超出安全阈值",
+                    entry_size / 1024 / 1024
+                ))));
+            }
+            total_decompressed += entry_size;
+            if total_decompressed > MAX_TOTAL_DECOMPRESSED_BYTES {
+                return Err(LiquiModError::Io(std::io::Error::other(
+                    "解压总数据量超出安全配额，已终止解压以防资源耗尽".to_string(),
+                )));
+            }
+
             if let Some(parent) = out_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
 
-            // 如果是 d3dx.ini 且本地已存在，优先保留本地已有 d3dx.ini 或做合并，避免破坏用户已配置的路径
+            // 如果是 d3dx.ini 且本地已存在，优先保留本地已有 d3dx.ini
             if out_path.file_name().and_then(|n| n.to_str()) == Some("d3dx.ini")
                 && out_path.is_file()
             {
-                // 仅解压为 d3dx.ini.upstream，保留用户现存 d3dx.ini
                 let upstream_path = target_dir.join("d3dx.ini.upstream");
                 let mut outfile = std::fs::File::create(upstream_path)?;
                 std::io::copy(&mut entry, &mut outfile)?;
