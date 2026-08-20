@@ -175,7 +175,9 @@ impl Library {
     /// 目标角色不存在时会自动创建其根目录。
     pub fn reassign_character(&self, id: i64, new_character: &str) -> Result<ModEntry> {
         if !is_valid_segment(new_character) {
-            return Err(crate::error::LiquiModError::InvalidName(new_character.into()));
+            return Err(crate::error::LiquiModError::InvalidName(
+                new_character.into(),
+            ));
         }
         let entry = self.db.get_mod(id)?;
         if entry.character == new_character {

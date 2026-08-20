@@ -116,6 +116,8 @@ pub struct ModDto {
     pub category_id: Option<i64>,
     pub note: Option<String>,
     pub cover_image: Option<String>,
+    pub is_favorite: bool,
+    pub sort_order: i64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -369,11 +371,18 @@ fn collect_rows_where(
                 category_id: m.category_id,
                 note: m.note.clone(),
                 cover_image: m.cover_image.clone(),
+                is_favorite: m.is_favorite,
+                sort_order: m.sort_order,
                 dir,
             }
         })
         .collect();
-    rows.sort_by(|a, b| a.name.cmp(&b.name));
+    rows.sort_by(|a, b| {
+        b.is_favorite
+            .cmp(&a.is_favorite)
+            .then_with(|| a.sort_order.cmp(&b.sort_order))
+            .then_with(|| a.name.cmp(&b.name))
+    });
     Ok(rows)
 }
 
@@ -393,6 +402,8 @@ fn rows_to_dtos(root: &Path, rows: Vec<ModRow>) -> Vec<ModDto> {
                 category_id: m.category_id,
                 note: m.note,
                 cover_image: m.cover_image,
+                is_favorite: m.is_favorite,
+                sort_order: m.sort_order,
             }
         })
         .collect()
@@ -408,6 +419,8 @@ struct ModRow {
     category_id: Option<i64>,
     note: Option<String>,
     cover_image: Option<String>,
+    is_favorite: bool,
+    sort_order: i64,
     dir: PathBuf,
 }
 
@@ -784,6 +797,18 @@ pub fn toggle_favorite_character(
         .save_to(&state.config_path)
         .map_err(|e| format!("保存配置失败：{e}"))?;
     Ok(is_fav)
+}
+
+#[tauri::command]
+pub fn toggle_favorite_mod(state: tauri::State<AppState>, id: i64) -> Result<bool, String> {
+    let lib = state.library.lock().unwrap();
+    lib.db.toggle_favorite_mod(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reorder_mods(state: tauri::State<AppState>, ids: Vec<i64>) -> Result<(), String> {
+    let lib = state.library.lock().unwrap();
+    lib.db.reorder_mods(&ids).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2483,7 +2508,9 @@ mod tests {
         std::fs::create_dir_all(&mod_dir).unwrap();
         std::fs::write(mod_dir.join("Kafka.ini"), b"[Constants]").unwrap();
         let res = install_entry(&lib, Hsr::shared(), &mod_dir, Some("Kafka"), None).unwrap();
-        assert!(matches!(res, InstallResultDto::Installed { character, name, .. } if character == "Kafka" && name == "Kafka_Test_Mod"));
+        assert!(
+            matches!(res, InstallResultDto::Installed { character, name, .. } if character == "Kafka" && name == "Kafka_Test_Mod")
+        );
     }
 
     #[test]

@@ -176,6 +176,8 @@ pub fn run() {
             commands::get_character_image_data,
             commands::set_mod_note,
             commands::toggle_favorite_character,
+            commands::toggle_favorite_mod,
+            commands::reorder_mods,
             commands::auto_detect_game_exe,
             commands::init_migoto_workspace,
             commands::check_migoto_update,

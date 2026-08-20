@@ -20,6 +20,7 @@
   import { enqueueInstalls } from "$lib/install.svelte";
   import ReassignCharacterModal from "$lib/components/ReassignCharacterModal.svelte";
   import BatchActionBar from "$lib/components/BatchActionBar.svelte";
+  import CustomSelect from "$lib/components/CustomSelect.svelte";
 
   let {
     character,
@@ -424,6 +425,13 @@
       y: e.clientY,
       items: [
         {
+          id: "toggle-fav",
+          label: mod.is_favorite ? "取消标为喜爱" : "标为喜爱 (置顶)",
+          icon: mod.is_favorite ? "💔" : "💖",
+          action: () => toggleFavoriteMod(mod),
+        },
+        { id: "d0", label: "", divider: true },
+        {
           id: "toggle",
           label: mod.enabled ? "禁用此 Mod" : "启用此 Mod",
           icon: mod.enabled ? "🚫" : "⚡",
@@ -472,6 +480,66 @@
         },
       ],
     };
+  }
+
+  let draggedModId = $state<number | null>(null);
+
+  async function toggleFavoriteMod(mod: ModDto) {
+    try {
+      const next = await api.toggleFavoriteMod(mod.id);
+      mod.is_favorite = next;
+      toast(next ? `已将「${mod.name}」标为喜爱并置顶` : `已取消「${mod.name}」的喜爱`);
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  function handleDragStart(mod: ModDto, e: DragEvent) {
+    draggedModId = mod.id;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(mod.id));
+    }
+  }
+
+  function handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = "move";
+    }
+  }
+
+  async function handleDrop(targetMod: ModDto, e: DragEvent) {
+    e.preventDefault();
+    if (draggedModId == null || draggedModId === targetMod.id) return;
+
+    const fromIdx = mods.findIndex((m) => m.id === draggedModId);
+    const toIdx = mods.findIndex((m) => m.id === targetMod.id);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    // 重新排序 mods 数组
+    const nextMods = [...mods];
+    const [moved] = nextMods.splice(fromIdx, 1);
+    nextMods.splice(toIdx, 0, moved);
+
+    // 更新各项 sort_order
+    nextMods.forEach((m, idx) => {
+      m.sort_order = idx;
+    });
+    mods = nextMods;
+    sort = "custom";
+    draggedModId = null;
+
+    try {
+      await api.reorderMods(nextMods.map((m) => m.id));
+      toast("已更新 Mod 自定义排序");
+    } catch (err) {
+      toast(String(err));
+    }
+  }
+
+  function handleDragEnd() {
+    draggedModId = null;
   }
 
   function onListKeydown(e: KeyboardEvent) {
@@ -729,15 +797,17 @@
       <div class="flex items-center justify-between shrink-0 mb-3 gap-2">
         <EnabledFilterChips bind:value={enabledFilter} />
         <div class="flex items-center gap-2">
-          <select
+          <CustomSelect
             bind:value={sort}
-            aria-label="Mod 排序"
-            class="h-7 px-2.5 text-xs rounded-full bg-[var(--item-hover)] text-secondary hover:text-[var(--text)] border border-[var(--glass-stroke)] outline-none cursor-pointer transition-colors"
-          >
-            <option value="recent">最新安装</option>
-            <option value="name">按名称 A-Z</option>
-            <option value="enabled">启用状态置顶</option>
-          </select>
+            options={[
+              { value: "custom", label: "自定义拖拽", icon: "⠿" },
+              { value: "recent", label: "最新安装", icon: "🕒" },
+              { value: "name", label: "按名称 A-Z", icon: "🔤" },
+              { value: "enabled", label: "启用状态置顶", icon: "⚡" },
+              { value: "size", label: "按文件大小", icon: "📊" },
+            ]}
+            size="xs"
+          />
           <span class="text-xs text-secondary shrink-0">{shown.length}/{mods.length}</span>
         </div>
       </div>
@@ -757,7 +827,9 @@
             selected={selectedMod?.id === mod.id}
             checked={checkedModIds.has(mod.id)}
             isMultiSelectMode={checkedModIds.size > 0}
+            isDraggingThis={draggedModId === mod.id}
             ontoggle={(next) => toggle(mod, next)}
+            ontogglefavorite={() => toggleFavoriteMod(mod)}
             onrename={(name) => renameMod(mod, name)}
             onuninstall={() => uninstallMod(mod)}
             onopen={() => openModDir(mod)}
@@ -765,6 +837,10 @@
             onselect={(e) => handleRowSelect(e, mod)}
             oncheck={(checked) => handleRowCheck(mod, checked)}
             onmenu={handleModContextMenu}
+            ondragstart={(e) => handleDragStart(mod, e)}
+            ondragover={handleDragOver}
+            ondrop={(e) => handleDrop(mod, e)}
+            ondragend={handleDragEnd}
           />
         {/each}
         {#if shown.length === 0}

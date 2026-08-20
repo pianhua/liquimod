@@ -5,7 +5,7 @@ export type View =
   | { kind: "type"; id: number; name: string } // 实体分类
   | { kind: "character"; name: string; display: string; categoryId?: number | null; categoryName?: string }; // 某角色详情
 
-export type ModSort = "recent" | "name" | "enabled";
+export type ModSort = "custom" | "recent" | "name" | "enabled" | "size";
 export type EnabledFilter = "all" | "on" | "off";
 
 export function viewKey(v: View): string {
@@ -35,14 +35,25 @@ export function filterMods(
 
 export function sortMods(mods: ModDto[], sort: ModSort): ModDto[] {
   const arr = [...mods];
-  switch (sort) {
-    case "recent":
-      return arr.sort((a, b) => b.installed_at - a.installed_at);
-    case "name":
-      return arr.sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
-    case "enabled":
-      return arr.sort(
-        (a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name, "zh-Hans-CN"),
-      );
-  }
+  return arr.sort((a, b) => {
+    // 💖 喜爱/置顶优先
+    const favA = a.is_favorite ? 1 : 0;
+    const favB = b.is_favorite ? 1 : 0;
+    if (favA !== favB) return favB - favA;
+
+    switch (sort) {
+      case "custom":
+        return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      case "recent":
+        return b.installed_at - a.installed_at;
+      case "name":
+        return a.name.localeCompare(b.name, "zh-Hans-CN");
+      case "enabled":
+        return Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name, "zh-Hans-CN");
+      case "size":
+        return b.size_bytes - a.size_bytes;
+      default:
+        return 0;
+    }
+  });
 }

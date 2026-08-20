@@ -158,9 +158,18 @@ fn install_inner(
     };
     let character = resolve_character(temp_dir.path())?;
     let content_root = resolve_content_root(temp_dir.path())?;
-    let mut outcome =
-        commit_install_to_library(db, library, &content_root, &name, character, report.nested_warnings)?;
-    if let InstallOutcome::Installed { ref mut warnings, .. } = outcome {
+    let mut outcome = commit_install_to_library(
+        db,
+        library,
+        &content_root,
+        &name,
+        character,
+        report.nested_warnings,
+    )?;
+    if let InstallOutcome::Installed {
+        ref mut warnings, ..
+    } = outcome
+    {
         if let Some(password) = password {
             if password_book.learn(&password).is_err() {
                 warnings.push("密码未记住".to_string());
@@ -784,12 +793,19 @@ mod tests {
 
         let outcome = install_folder(&library.db, &library, &folder, "Kafka").unwrap();
 
-        let InstallOutcome::Installed { character, name, .. } = outcome else {
+        let InstallOutcome::Installed {
+            character, name, ..
+        } = outcome
+        else {
             panic!("expected installed outcome");
         };
         assert_eq!(character, "Kafka");
         assert_eq!(name, "Kafka_Dress_Mod");
-        assert!(library.layout.mod_dir("Kafka", "Kafka_Dress_Mod").join("Kafka.ini").is_file());
+        assert!(library
+            .layout
+            .mod_dir("Kafka", "Kafka_Dress_Mod")
+            .join("Kafka.ini")
+            .is_file());
     }
 
     #[test]
@@ -797,7 +813,11 @@ mod tests {
         let (tmp, library) = setup();
         let folder = tmp.path().join("Acheron_Katana");
         std::fs::create_dir_all(&folder).unwrap();
-        std::fs::write(folder.join("mod.ini"), b"; acheron weapon\nglobal $acheron = 1").unwrap();
+        std::fs::write(
+            folder.join("mod.ini"),
+            b"; acheron weapon\nglobal $acheron = 1",
+        )
+        .unwrap();
 
         let outcome = install_folder_inferred(
             &library.db,
@@ -807,12 +827,19 @@ mod tests {
         )
         .unwrap();
 
-        let InstallOutcome::Installed { character, name, .. } = outcome else {
+        let InstallOutcome::Installed {
+            character, name, ..
+        } = outcome
+        else {
             panic!("expected installed outcome");
         };
         assert_eq!(character, "Acheron");
         assert_eq!(name, "Acheron_Katana");
-        assert!(library.layout.mod_dir("Acheron", "Acheron_Katana").join("mod.ini").is_file());
+        assert!(library
+            .layout
+            .mod_dir("Acheron", "Acheron_Katana")
+            .join("mod.ini")
+            .is_file());
     }
 
     #[test]

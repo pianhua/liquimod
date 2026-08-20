@@ -16,6 +16,10 @@ pub struct ModEntry {
     pub note: Option<String>,
     /// 自定义封面图片相对路径；None = 自动探测
     pub cover_image: Option<String>,
+    /// 是否标为喜爱（置顶）
+    pub is_favorite: bool,
+    /// 自定义排序序号（拖拽排序）
+    pub sort_order: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]

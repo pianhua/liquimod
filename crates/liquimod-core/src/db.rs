@@ -72,6 +72,8 @@ impl Database {
             "ALTER TABLE categories ADD COLUMN kind TEXT",
             "ALTER TABLE mods ADD COLUMN note TEXT",
             "ALTER TABLE mods ADD COLUMN cover_image TEXT",
+            "ALTER TABLE mods ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE mods ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
         ] {
             match conn.execute_batch(sql) {
                 Ok(()) => {}
@@ -176,12 +178,14 @@ impl Database {
             category_id: r.get(8)?,
             note: r.get(9)?,
             cover_image: r.get(10)?,
+            is_favorite: r.get::<_, i64>(11)? != 0,
+            sort_order: r.get(12)?,
         })
     }
 
     pub fn list_mods(&self) -> Result<Vec<ModEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image FROM mods ORDER BY character, name",
+            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order FROM mods ORDER BY is_favorite DESC, sort_order ASC, character, name",
         )?;
         let rows = stmt.query_map([], Self::row_to_entry)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -190,7 +194,7 @@ impl Database {
     pub fn get_mod(&self, id: i64) -> Result<ModEntry> {
         self.conn
             .query_row(
-                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image FROM mods WHERE id = ?1",
+                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order FROM mods WHERE id = ?1",
                 rusqlite::params![id],
                 Self::row_to_entry,
             )
@@ -198,6 +202,49 @@ impl Database {
                 rusqlite::Error::QueryReturnedNoRows => LiquiModError::ModNotFound(id.to_string()),
                 other => LiquiModError::Db(other),
             })
+    }
+
+    pub fn toggle_favorite_mod(&self, id: i64) -> Result<bool> {
+        let current: i64 = self
+            .conn
+            .query_row(
+                "SELECT is_favorite FROM mods WHERE id = ?1",
+                rusqlite::params![id],
+                |r| r.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => LiquiModError::ModNotFound(id.to_string()),
+                other => LiquiModError::Db(other),
+            })?;
+        let next = if current == 0 { 1 } else { 0 };
+        self.conn.execute(
+            "UPDATE mods SET is_favorite = ?2 WHERE id = ?1",
+            rusqlite::params![id, next],
+        )?;
+        Ok(next != 0)
+    }
+
+    pub fn set_mod_favorite(&self, id: i64, is_favorite: bool) -> Result<()> {
+        let n = self.conn.execute(
+            "UPDATE mods SET is_favorite = ?2 WHERE id = ?1",
+            rusqlite::params![id, is_favorite as i64],
+        )?;
+        if n == 0 {
+            return Err(LiquiModError::ModNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn reorder_mods(&self, ids: &[i64]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for (idx, &id) in ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE mods SET sort_order = ?2 WHERE id = ?1",
+                rusqlite::params![id, idx as i64],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn remove_mod(&self, id: i64) -> Result<()> {
@@ -663,8 +710,11 @@ mod tests {
     #[test]
     fn reassign_character_updates_character_and_rel_path() {
         let db = Database::open_in_memory().unwrap();
-        let id = db.upsert_mod("OldChar", "Mod1", "mods/OldChar/Mod1").unwrap();
-        db.reassign_character(id, "NewChar", "mods/NewChar/Mod1").unwrap();
+        let id = db
+            .upsert_mod("OldChar", "Mod1", "mods/OldChar/Mod1")
+            .unwrap();
+        db.reassign_character(id, "NewChar", "mods/NewChar/Mod1")
+            .unwrap();
         let m = db.get_mod(id).unwrap();
         assert_eq!(m.character, "NewChar");
         assert_eq!(m.name, "Mod1");

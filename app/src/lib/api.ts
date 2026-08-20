@@ -73,6 +73,8 @@ export interface ModDto {
   category_id: number | null;
   note: string | null;
   cover_image: string | null;
+  is_favorite?: boolean;
+  sort_order?: number;
 }
 
 export interface ModKeyBindingDto {
@@ -323,6 +325,23 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         }
         return false as T;
       }
+      case "toggle_favorite_mod": {
+        const id = Number(args?.id);
+        const m = mockMods.find((x) => x.id === id);
+        if (m) {
+          m.is_favorite = !m.is_favorite;
+          return m.is_favorite as T;
+        }
+        return false as T;
+      }
+      case "reorder_mods": {
+        const ids = (args?.ids as number[]) || [];
+        for (let i = 0; i < ids.length; i++) {
+          const m = mockMods.find((x) => x.id === ids[i]);
+          if (m) m.sort_order = i;
+        }
+        return undefined as T;
+      }
       case "read_log":
         return "2026-08-18T10:00:00 INFO LiquiMod starting\n2026-08-18T10:01:00 INFO installed mod 99" as T;
       case "choose_game_exe":
@@ -519,6 +538,8 @@ export const api = {
   setWorkMode: (mode: "play" | "dev") => call<ConfigDto>("set_work_mode", { mode }),
   setInjectionDelay: (delayMs: number) =>
     call<ConfigDto>("set_injection_delay", { delayMs }),
+  toggleFavoriteMod: (id: number) => call<boolean>("toggle_favorite_mod", { id }),
+  reorderMods: (ids: number[]) => call<void>("reorder_mods", { ids }),
   setGithubToken: (token: string) => call<ConfigDto>("set_github_token", { token }),
   setGithubMirror: (mirror: string) => call<ConfigDto>("set_github_mirror", { mirror }),
 };

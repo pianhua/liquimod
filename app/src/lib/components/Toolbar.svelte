@@ -2,6 +2,7 @@
   import type { ModSort } from "$lib/view";
   import type { ConflictReportDto, CharacterSortOption } from "$lib/api";
   import PresetMenu from "./PresetMenu.svelte";
+  import CustomSelect from "./CustomSelect.svelte";
   import IconGamepad from "./icons/IconGamepad.svelte";
   import IconWrench from "./icons/IconWrench.svelte";
 
@@ -144,114 +145,29 @@
 
     {#if isCharGrid}
       <!-- 角色网格自定义排序下拉菜单 -->
-      <div class="relative">
-        <button
-          class="glass radius-pill h-8 px-3 text-xs font-medium flex items-center gap-1.5 cursor-pointer hover:text-[var(--text)] transition-all"
-          onclick={(e) => {
-            e.stopPropagation();
-            showSortMenu = !showSortMenu;
-          }}
-          aria-label="角色排序"
-          title="选择排序方式"
-        >
-          <span class="text-secondary">
-            {charSort === "default" ? "默认排序 (喜爱置顶)" :
-             charSort === "name" ? "名称 (A-Z)" :
-             charSort === "mods" ? "Mod 数量" :
-             charSort === "enabled" ? "启用优先" :
-             charSort === "rarity" ? "星级稀有度" : "排序"}
-          </span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-60 transition-transform" class:rotate-180={showSortMenu}>
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-
-        {#if showSortMenu}
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <div
-            class="absolute right-0 top-full mt-1.5 w-44 p-1.5 radius-card shadow-2xl z-[100] flex flex-col gap-1 text-xs animate-in fade-in zoom-in-95 border border-[var(--glass-stroke)]"
-            style="background: var(--panel-bg); color: var(--text); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); box-shadow: var(--glass-floating-shadow); isolation: isolate;"
-            role="menu"
-            tabindex="-1"
-            onclick={(e) => e.stopPropagation()}
-            onkeydown={(e) => e.stopPropagation()}
-          >
-            {#each [
-              { id: "default", label: "默认排序 (喜爱置顶)" },
-              { id: "name", label: "名称 (A-Z)" },
-              { id: "mods", label: "Mod 数量" },
-              { id: "enabled", label: "启用优先" },
-              { id: "rarity", label: "星级稀有度" }
-            ] as opt}
-              <button
-                class="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer {charSort === opt.id ? 'accent-fill accent-text font-semibold' : 'text-secondary hover:text-[var(--text)] hover:bg-black/5'}"
-                onclick={() => {
-                  charSort = opt.id as any;
-                  showSortMenu = false;
-                }}
-              >
-                <span>{opt.label}</span>
-                {#if charSort === opt.id}
-                  <span class="text-xs font-bold">✓</span>
-                {/if}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
+      <CustomSelect
+        bind:value={charSort}
+        options={[
+          { value: "default", label: "默认排序 (喜爱置顶)", icon: "💖" },
+          { value: "name", label: "名称 (A-Z)", icon: "🔤" },
+          { value: "mods", label: "Mod 数量", icon: "📦" },
+          { value: "enabled", label: "启用优先", icon: "⚡" },
+          { value: "rarity", label: "星级稀有度", icon: "⭐" },
+        ]}
+        size="sm"
+      />
     {:else if showSort}
       <!-- Mod 列表自定义排序下拉菜单 -->
-      <div class="relative">
-        <button
-          class="glass radius-pill h-8 px-3 text-xs font-medium flex items-center gap-1.5 cursor-pointer hover:text-[var(--text)] transition-all"
-          onclick={(e) => {
-            e.stopPropagation();
-            showSortMenu = !showSortMenu;
-          }}
-          aria-label="排序方式"
-          title="选择排序方式"
-        >
-          <span class="text-secondary">
-            {sort === "recent" ? "最近安装" :
-             sort === "name" ? "名称 (A-Z)" :
-             sort === "enabled" ? "启用优先" : "排序"}
-          </span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-60 transition-transform" class:rotate-180={showSortMenu}>
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-
-        {#if showSortMenu}
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <div
-            class="absolute right-0 top-full mt-1.5 w-36 p-1.5 radius-card shadow-2xl z-[100] flex flex-col gap-1 text-xs animate-in fade-in zoom-in-95 border border-[var(--glass-stroke)]"
-            style="background: var(--panel-bg); color: var(--text); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); box-shadow: var(--glass-floating-shadow); isolation: isolate;"
-            role="menu"
-            tabindex="-1"
-            onclick={(e) => e.stopPropagation()}
-            onkeydown={(e) => e.stopPropagation()}
-          >
-            {#each [
-              { id: "recent", label: "最近安装" },
-              { id: "name", label: "名称 (A-Z)" },
-              { id: "enabled", label: "启用优先" }
-            ] as opt}
-              <button
-                class="w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer {sort === opt.id ? 'accent-fill accent-text font-semibold' : 'text-secondary hover:text-[var(--text)] hover:bg-black/5'}"
-                onclick={() => {
-                  sort = opt.id as any;
-                  showSortMenu = false;
-                }}
-              >
-                <span>{opt.label}</span>
-                {#if sort === opt.id}
-                  <span class="text-xs font-bold">✓</span>
-                {/if}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
+      <CustomSelect
+        bind:value={sort}
+        options={[
+          { value: "recent", label: "最近安装", icon: "🕒" },
+          { value: "name", label: "名称 (A-Z)", icon: "🔤" },
+          { value: "enabled", label: "启用优先", icon: "⚡" },
+          { value: "size", label: "文件大小", icon: "📊" },
+        ]}
+        size="sm"
+      />
     {/if}
 
     <!-- 预设管理入口 -->

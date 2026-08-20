@@ -9,7 +9,9 @@
     selected = false,
     checked = false,
     isMultiSelectMode = false,
+    isDraggingThis = false,
     ontoggle,
+    ontogglefavorite,
     onrename,
     onuninstall,
     onopen,
@@ -17,13 +19,19 @@
     onselect,
     oncheck,
     onmenu,
+    ondragstart,
+    ondragover,
+    ondrop,
+    ondragend,
   }: {
     mod: ModDto;
     categories: CategoryDto[];
     selected?: boolean;
     checked?: boolean;
     isMultiSelectMode?: boolean;
+    isDraggingThis?: boolean;
     ontoggle: (next: boolean) => void;
+    ontogglefavorite?: () => void;
     onrename: (name: string) => Promise<boolean>;
     onuninstall: () => Promise<void>;
     onopen: () => void;
@@ -31,6 +39,10 @@
     onselect?: (e: MouseEvent) => void;
     oncheck?: (checked: boolean) => void;
     onmenu?: (e: MouseEvent, mod: ModDto) => void;
+    ondragstart?: (e: DragEvent) => void;
+    ondragover?: (e: DragEvent) => void;
+    ondrop?: (e: DragEvent) => void;
+    ondragend?: (e: DragEvent) => void;
   } = $props();
 
   let renaming = $state(false);
@@ -119,12 +131,18 @@
   role="listitem"
   tabindex="0"
   aria-label={mod.name}
-  class="group glass radius-card px-4 py-3.5 flex items-center gap-3 outline-none transition-all cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  draggable="true"
+  class="group glass radius-card px-3.5 py-3 flex items-center gap-2.5 outline-none transition-all cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
   class:selected-row={selected && !checked}
   class:checked-row={checked}
+  class:opacity-40={isDraggingThis}
   onclick={onRowClick}
   ondblclick={onopen}
   onkeydown={onRowKeydown}
+  {ondragstart}
+  {ondragover}
+  {ondrop}
+  {ondragend}
   oncontextmenu={(e) => {
     if (onmenu) {
       e.preventDefault();
@@ -156,6 +174,22 @@
       </div>
     </div>
   {:else}
+    <!-- 拖拽手柄图标 -->
+    <div
+      class="w-4 h-6 flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing text-secondary/40 hover:text-[var(--text)] transition-opacity opacity-0 group-hover:opacity-100"
+      title="拖拽排序"
+      aria-label="拖拽手柄"
+    >
+      <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+        <circle cx="2" cy="2" r="1.5"/>
+        <circle cx="8" cy="2" r="1.5"/>
+        <circle cx="2" cy="7" r="1.5"/>
+        <circle cx="8" cy="7" r="1.5"/>
+        <circle cx="2" cy="12" r="1.5"/>
+        <circle cx="8" cy="12" r="1.5"/>
+      </svg>
+    </div>
+
     <!-- 桌面级多选框 -->
     <button
       type="button"
@@ -170,6 +204,28 @@
       {#if checked}
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      {/if}
+    </button>
+
+    <!-- 💖 标为喜爱/置顶快捷按钮 -->
+    <button
+      type="button"
+      class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer {mod.is_favorite ? 'text-amber-400 opacity-100 scale-105' : 'text-secondary/50 hover:text-amber-400 opacity-0 group-hover:opacity-100 hover:scale-110'}"
+      onclick={(e) => {
+        e.stopPropagation();
+        ontogglefavorite?.();
+      }}
+      title={mod.is_favorite ? "已设为喜爱（置顶）" : "标为喜爱（置顶）"}
+      aria-label={mod.is_favorite ? "取消喜爱" : "标为喜爱"}
+    >
+      {#if mod.is_favorite}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+      {:else}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
         </svg>
       {/if}
     </button>
