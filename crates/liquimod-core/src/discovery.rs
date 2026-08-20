@@ -52,23 +52,35 @@ pub fn find_launcher_from_game_exe(game_exe: &Path) -> Option<PathBuf> {
     let game_dir = game_exe.parent()?;
     // 常见结构 1: .../Star Rail/Game/StarRail.exe -> .../Star Rail/launcher.exe
     if let Some(parent) = game_dir.parent() {
-        let l1 = parent.join("launcher.exe");
-        if l1.is_file() {
-            return Some(l1);
-        }
-        let l2 = parent.join("HYP.exe");
-        if l2.is_file() {
-            return Some(l2);
-        }
-        let l3 = parent.join("HoYoPlay.exe");
-        if l3.is_file() {
-            return Some(l3);
+        for name in &["launcher.exe", "HYP.exe", "HoYoPlay.exe"] {
+            let p = parent.join(name);
+            if p.is_file() {
+                return Some(p);
+            }
         }
     }
     // 常见结构 2: 同级目录
-    let l_same = game_dir.join("launcher.exe");
-    if l_same.is_file() {
-        return Some(l_same);
+    for name in &["launcher.exe", "HYP.exe", "HoYoPlay.exe"] {
+        let p = game_dir.join(name);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    // 常见结构 3: 游戏所在盘符下的 miHoYo Launcher 目录 (如 D:\miHoYo Launcher\launcher.exe)
+    if let Some(root) = game_dir.components().next() {
+        let root_path = PathBuf::from(root.as_os_str());
+        for rel in &[
+            r"miHoYo Launcher\launcher.exe",
+            r"miHoYo Launcher\HYP.exe",
+            r"Program Files\miHoYo Launcher\launcher.exe",
+            r"HoYoPlay\launcher.exe",
+            r"HoYoPlay\HYP.exe",
+        ] {
+            let p = root_path.join(rel);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
     }
     None
 }
@@ -82,16 +94,31 @@ pub fn auto_detect_official_launcher() -> Option<PathBuf> {
         }
     }
 
-    // 2. 常见官方安装路径探测
+    // 2. 常见官方安装路径启发式探测 (包含国服 miHoYo Launcher 与 HoYoPlay)
     let candidates = [
-        r"C:\Program Files\Star Rail\launcher.exe",
-        r"D:\Star Rail\launcher.exe",
-        r"E:\Star Rail\launcher.exe",
-        r"F:\Star Rail\launcher.exe",
+        // 国服米哈游启动器 (miHoYo Launcher)
+        r"D:\miHoYo Launcher\launcher.exe",
+        r"C:\miHoYo Launcher\launcher.exe",
+        r"E:\miHoYo Launcher\launcher.exe",
+        r"F:\miHoYo Launcher\launcher.exe",
+        r"D:\miHoYo Launcher\HYP.exe",
+        r"C:\miHoYo Launcher\HYP.exe",
+        r"C:\Program Files\miHoYo Launcher\launcher.exe",
+        r"D:\Program Files\miHoYo Launcher\launcher.exe",
+        // HoYoPlay 新版启动器
         r"C:\Program Files\HoYoPlay\launcher.exe",
         r"D:\Program Files\HoYoPlay\launcher.exe",
         r"C:\Program Files\HoYoPlay\HYP.exe",
         r"D:\Program Files\HoYoPlay\HYP.exe",
+        r"D:\HoYoPlay\launcher.exe",
+        r"E:\HoYoPlay\launcher.exe",
+        // 经典单游戏安装路径
+        r"C:\Program Files\Star Rail\launcher.exe",
+        r"D:\Star Rail\launcher.exe",
+        r"E:\Star Rail\launcher.exe",
+        r"F:\Star Rail\launcher.exe",
+        r"D:\Star Rail Games\launcher.exe",
+        r"E:\Star Rail Games\launcher.exe",
     ];
 
     for c in candidates {

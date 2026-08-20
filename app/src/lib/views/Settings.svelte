@@ -419,17 +419,17 @@
 </script>
 
 <div class="flex flex-col h-full min-h-0">
-  <div class="flex items-center gap-4 px-8 pt-3 pb-4 shrink-0">
+  <div class="flex items-center gap-3 px-8 pt-3 pb-4 shrink-0 max-w-3xl w-full mx-auto">
     <button
-      class="glass radius-pill pl-2.5 pr-3.5 h-8 text-sm flex items-center gap-1 cursor-pointer transition-transform hover:-translate-x-0.5"
+      class="glass radius-pill pl-2.5 pr-3.5 h-8 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-transform hover:-translate-x-0.5"
       onclick={onback}
     >
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
         <path d="M7 1L2.5 5L7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
-      返回
+      <span>返回</span>
     </button>
-    <h2 class="text-2xl font-bold tracking-tight">设置</h2>
+    <h2 class="text-2xl font-bold tracking-tight">偏好设置</h2>
   </div>
 
   <div class="flex flex-col gap-4 px-8 pb-10 overflow-y-auto flex-1 min-h-0 max-w-3xl w-full mx-auto">
@@ -495,7 +495,7 @@
         <p class="text-xs text-secondary leading-relaxed">智能嗅探国服路径、一键初始化或导入已有 3Dmigoto 套件</p>
       </div>
 
-      <!-- 快速向导操作卡片栏 -->
+      <!-- 快速向导操作卡片栏 (三大平行集成动作，统一优雅毛玻璃风格) -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <button
           class="glass radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95"
@@ -518,13 +518,13 @@
         </button>
 
         <button
-          class="radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] accent-fill active:scale-95"
-          style="box-shadow: inset 0 0 0 1px var(--accent)"
+          class="glass radius-card p-3.5 flex flex-col items-center justify-center text-center gap-1 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95"
+          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
           onclick={import3dMigoto}
         >
           <span class="text-xl">✨</span>
-          <span class="text-xs font-bold text-[var(--accent)]">识别外部目录</span>
-          <span class="text-[11px] text-[var(--accent)] opacity-80">智能绑定现有配置</span>
+          <span class="text-xs font-semibold text-[var(--text)]">识别外部目录</span>
+          <span class="text-[11px] text-secondary">智能绑定现有配置</span>
         </button>
       </div>
 

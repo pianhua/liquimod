@@ -8,12 +8,16 @@ export interface TooltipInfo {
   x: number;
   y: number;
   placement: "top" | "bottom";
+  align: "left" | "center" | "right";
 }
 
 let activeTarget: HTMLElement | null = null;
 let showTimer: number | null = null;
 let subscribers = new Set<(info: TooltipInfo | null) => void>();
 let currentInfo: TooltipInfo | null = null;
+
+// 使用 WeakMap 暂存元素原始 title，在移出时自动还原，保证 Svelte 响应式 title 变更不丢失
+const originalTitles = new WeakMap<HTMLElement, string>();
 
 export function subscribeTooltip(fn: (info: TooltipInfo | null) => void) {
   subscribers.add(fn);
@@ -30,7 +34,6 @@ function notify(info: TooltipInfo | null) {
 
 /**
  * 严格判断一段字符串是否为真正的键盘快捷键
- * 避免把普通中文说明（如“用于游戏大版本更新与修复”、“热重载 Mod”）误识别为快捷键
  */
 export function isKeyShortcut(str: string): boolean {
   const t = str.trim();
@@ -80,43 +83,67 @@ export function parseTooltipContent(raw: string): { main: string; shortcut?: str
 function findTooltipTarget(el: HTMLElement | null): { target: HTMLElement; text: string } | null {
   let curr = el;
   while (curr && curr !== document.body && curr !== document.documentElement) {
-    // 优先读取 data-liquimod-tip，其次读取原生 title 或 data-tooltip
+    // 动态检查当前最新的 title 或 data-liquimod-tip / data-tooltip
+    const nativeTitle = curr.getAttribute("title");
+    if (nativeTitle && nativeTitle.trim()) {
+      const text = nativeTitle.trim();
+      originalTitles.set(curr, text);
+      curr.setAttribute("data-liquimod-tip", text);
+      // 临时屏蔽原生 title 避免浏览器黑框
+      curr.removeAttribute("title");
+      return { target: curr, text };
+    }
+
     const tip = curr.getAttribute("data-liquimod-tip") || curr.getAttribute("data-tooltip");
     if (tip && tip.trim()) {
       return { target: curr, text: tip.trim() };
     }
-    const nativeTitle = curr.getAttribute("title");
-    if (nativeTitle && nativeTitle.trim()) {
-      const text = nativeTitle.trim();
-      // 将原生 title 移入 data-liquimod-tip，并清除 title 属性以屏蔽系统黑框
-      curr.setAttribute("data-liquimod-tip", text);
-      curr.removeAttribute("title");
-      return { target: curr, text };
-    }
+
     curr = curr.parentElement;
   }
   return null;
 }
 
-function calculatePosition(rect: DOMRect): { x: number; y: number; placement: "top" | "bottom" } {
+function calculatePosition(rect: DOMRect): { x: number; y: number; placement: "top" | "bottom"; align: "left" | "center" | "right" } {
   const gap = 8;
-  const centerX = rect.left + rect.width / 2;
-  // 视口安全边距
   const padding = 16;
-  const clampedX = Math.max(padding, Math.min(window.innerWidth - padding, centerX));
+  const viewportWidth = window.innerWidth;
+  const centerX = rect.left + rect.width / 2;
+
+  // 智能边缘对齐：靠近右边缘靠右对齐，靠近左边缘靠左对齐，中间居中
+  let align: "left" | "center" | "right" = "center";
+  let x = centerX;
+
+  if (rect.right > viewportWidth - 120) {
+    align = "right";
+    x = Math.min(viewportWidth - padding, rect.right);
+  } else if (rect.left < 120) {
+    align = "left";
+    x = Math.max(padding, rect.left);
+  } else {
+    align = "center";
+    x = Math.max(padding, Math.min(viewportWidth - padding, centerX));
+  }
 
   // 默认放置在下方，若下方空间不足（预估高度 48px）则翻转至上方
   const hasBottomSpace = rect.bottom + 52 <= window.innerHeight;
   const placement: "top" | "bottom" = hasBottomSpace ? "bottom" : "top";
   const y = placement === "bottom" ? rect.bottom + gap : rect.top - gap;
 
-  return { x: clampedX, y, placement };
+  return { x, y, placement, align };
 }
 
 function hideTooltip() {
   if (showTimer !== null) {
     clearTimeout(showTimer);
     showTimer = null;
+  }
+  if (activeTarget) {
+    // 鼠标离开时，若有暂存的 title 则恢复回原生属性，确保响应式更新顺畅
+    const saved = originalTitles.get(activeTarget);
+    if (saved && !activeTarget.hasAttribute("title")) {
+      activeTarget.setAttribute("title", saved);
+    }
   }
   activeTarget = null;
   if (currentInfo !== null) {
@@ -142,7 +169,7 @@ export function initGlobalTooltip(): () => void {
     hideTooltip();
     activeTarget = found.target;
 
-    // 180ms 触感延迟，避免高速掠过时闪烁
+    // 160ms 触感延迟，避免高速掠过时闪烁
     showTimer = window.setTimeout(() => {
       if (!activeTarget || !document.body.contains(activeTarget)) {
         hideTooltip();
@@ -158,8 +185,9 @@ export function initGlobalTooltip(): () => void {
         x: pos.x,
         y: pos.y,
         placement: pos.placement,
+        align: pos.align,
       });
-    }, 180);
+    }, 160);
   }
 
   function handlePointerOut(e: PointerEvent) {
