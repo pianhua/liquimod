@@ -158,7 +158,7 @@ impl super::GameAdapter for Hsr {
         // 此处利用 static 容器或 unsafe 切片转换（由 shared() 单例持有）
         unsafe {
             let guard = self.characters.read().unwrap();
-            let slice: &[CharacterInfo] = &*guard;
+            let slice: &[CharacterInfo] = &guard;
             std::mem::transmute(slice)
         }
     }

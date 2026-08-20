@@ -103,6 +103,12 @@ pub struct AssetSyncService {
     asset_root: PathBuf,
 }
 
+impl Default for AssetSyncService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AssetSyncService {
     pub fn new() -> Self {
         let asset_root = dirs::data_local_dir()
@@ -528,12 +534,11 @@ impl AssetSyncService {
                     if let Ok(bytes) = resp.bytes().await {
                         let h = xxh3_64(&bytes);
                         let hex = format!("{:016x}", h);
-                        if hex.eq_ignore_ascii_case(expected_hash) {
-                            if let Ok(_) = tokio::fs::write(tmp_path, &bytes).await {
-                                if let Ok(_) = tokio::fs::rename(tmp_path, target_path).await {
-                                    return Ok(());
-                                }
-                            }
+                        if hex.eq_ignore_ascii_case(expected_hash)
+                            && tokio::fs::write(tmp_path, &bytes).await.is_ok()
+                            && tokio::fs::rename(tmp_path, target_path).await.is_ok()
+                        {
+                            return Ok(());
                         }
                     }
                 }

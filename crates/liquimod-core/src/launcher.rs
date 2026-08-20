@@ -130,10 +130,9 @@ pub fn launch_with_mod(opts: &GameLaunchOptions) -> Result<LaunchResult> {
     // 2. 若存在 Loader 则先启动 Loader 进入注入准备状态 (支持提权)
     let mut loader_started = false;
     if let Some(loader) = &opts.loader_exe {
-        if loader.is_file() {
-            if spawn_program_with_uac(loader, &opts.migoto_dir, None, true).is_ok() {
-                loader_started = true;
-            }
+        if loader.is_file() && spawn_program_with_uac(loader, &opts.migoto_dir, None, true).is_ok()
+        {
+            loader_started = true;
         }
     }
 

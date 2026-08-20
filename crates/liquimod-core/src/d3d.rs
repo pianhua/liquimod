@@ -501,7 +501,7 @@ pub fn scan_mod_keys(mod_dir: &Path) -> Vec<ModKeyBinding> {
                 if trimmed.starts_with(';') || trimmed.starts_with('#') {
                     last_comment = Some(
                         trimmed
-                            .trim_start_matches(|c| c == ';' || c == '#' || c == ' ')
+                            .trim_start_matches([';', '#', ' '])
                             .trim()
                             .to_string(),
                     );
