@@ -27,7 +27,7 @@
 
 {#if selectedCount > 0}
   <div
-    class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 p-1.5 glass-floating radius-pill shadow-2xl animate-slide-up select-none border border-[var(--glass-floating-stroke)] backdrop-blur-2xl"
+    class="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 p-1.5 glass-floating radius-pill shadow-2xl animate-slide-up select-none border border-[var(--glass-floating-stroke)] backdrop-blur-2xl whitespace-nowrap"
     style="box-shadow: var(--glass-floating-shadow);"
     role="toolbar"
     aria-label="批量操作栏"

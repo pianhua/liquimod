@@ -314,24 +314,35 @@
     }
   }
 
+  let rafId: number | null = null;
+
   function handleMouseDown(e: MouseEvent) {
     if (e.button !== 0) return;
     if (zoom > 1) {
       isDragging = true;
       dragStart = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+
+      const onGlobalMouseMove = (moveEvent: MouseEvent) => {
+        if (!isDragging) return;
+        if (rafId !== null) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          pan = {
+            x: moveEvent.clientX - dragStart.x,
+            y: moveEvent.clientY - dragStart.y,
+          };
+        });
+      };
+
+      const onGlobalMouseUp = () => {
+        if (rafId !== null) cancelAnimationFrame(rafId);
+        isDragging = false;
+        window.removeEventListener("mousemove", onGlobalMouseMove);
+        window.removeEventListener("mouseup", onGlobalMouseUp);
+      };
+
+      window.addEventListener("mousemove", onGlobalMouseMove, { passive: true });
+      window.addEventListener("mouseup", onGlobalMouseUp, { once: true });
     }
-  }
-
-  function handleMouseMove(e: MouseEvent) {
-    if (!isDragging) return;
-    pan = {
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y,
-    };
-  }
-
-  function handleMouseUp() {
-    isDragging = false;
   }
 
   function handleLightboxKeydown(e: KeyboardEvent) {
@@ -837,8 +848,6 @@
       role="dialog"
       aria-modal="true"
       tabindex="-1"
-      onmousemove={handleMouseMove}
-      onmouseup={handleMouseUp}
     >
       <!-- 1. 顶部悬浮工具栏 -->
       <div class="relative z-30 flex items-center justify-between p-4 px-6 bg-gradient-to-b from-black/90 via-black/50 to-transparent">
@@ -986,8 +995,8 @@
         <img
           src={imgSrc}
           alt={currentImg?.filename || "大图预览"}
-          class="max-w-[92vw] max-h-[76vh] object-contain drop-shadow-2xl transition-transform duration-75 pointer-events-none select-none"
-          style="transform: translate({pan.x}px, {pan.y}px) scale({zoom}); transform-origin: center center;"
+          class="max-w-[92vw] max-h-[76vh] object-contain drop-shadow-2xl pointer-events-none select-none will-change-transform"
+          style="transform: translate3d({pan.x}px, {pan.y}px, 0) scale({zoom}); transform-origin: center center; transition: {isDragging ? 'none' : 'transform 0.15s cubic-bezier(0.2, 0, 0, 1)'};"
           draggable="false"
         />
       </div>

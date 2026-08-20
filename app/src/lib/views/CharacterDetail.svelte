@@ -10,7 +10,7 @@
     type CharacterSummary,
     type ModDto,
   } from "$lib/api";
-  import { filterMods, type EnabledFilter } from "$lib/view";
+  import { filterMods, sortMods, type EnabledFilter, type ModSort } from "$lib/view";
   import ModRow from "$lib/components/ModRow.svelte";
   import ModDetailPane from "$lib/components/ModDetailPane.svelte";
   import EnabledFilterChips from "$lib/components/EnabledFilterChips.svelte";
@@ -79,12 +79,13 @@
   let lastAnchorId = $state<number | null>(null);
   let error = $state("");
   let enabledFilter = $state<EnabledFilter>("all");
+  let sort = $state<ModSort>("recent");
   let selectedModId = $state<number | null>(null);
   let radioMode = $state(false);
   let detailWidth = $state(getInitialDetailWidth());
   let isDragging = $state(false);
 
-  let shown = $derived(filterMods(mods, query, enabledFilter));
+  let shown = $derived(sortMods(filterMods(mods, query, enabledFilter), sort));
   let selectedMod = $derived(
     shown.find((m) => m.id === selectedModId) ?? (shown.length > 0 ? shown[0] : null)
   );
@@ -497,6 +498,15 @@
     }
   });
 
+  $effect(() => {
+    if (checkedModIds.size > 0) {
+      return pushEscHandler(() => {
+        clearSelection();
+        return true;
+      });
+    }
+  });
+
   onMount(() => {
     function handleKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
@@ -715,17 +725,28 @@
   <!-- 主体区域：左右主从分栏 + 拖拽调节器 -->
   <div class="flex-1 min-h-0 flex flex-row px-8 pb-6 gap-0">
     <!-- 左侧列表区 -->
-    <div class="flex-1 min-w-[280px] flex flex-col min-h-0 pr-3">
-      <div class="flex items-center justify-between shrink-0 mb-3">
+    <div class="flex-1 min-w-[280px] flex flex-col min-h-0 pr-3 relative">
+      <div class="flex items-center justify-between shrink-0 mb-3 gap-2">
         <EnabledFilterChips bind:value={enabledFilter} />
-        <span class="text-xs text-secondary">{shown.length}/{mods.length} 个显示</span>
+        <div class="flex items-center gap-2">
+          <select
+            bind:value={sort}
+            aria-label="Mod 排序"
+            class="h-7 px-2.5 text-xs rounded-full bg-[var(--item-hover)] text-secondary hover:text-[var(--text)] border border-[var(--glass-stroke)] outline-none cursor-pointer transition-colors"
+          >
+            <option value="recent">最新安装</option>
+            <option value="name">按名称 A-Z</option>
+            <option value="enabled">启用状态置顶</option>
+          </select>
+          <span class="text-xs text-secondary shrink-0">{shown.length}/{mods.length}</span>
+        </div>
       </div>
 
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
       <div
         role="region"
         aria-label="Mod 列表"
-        class="flex flex-col gap-2.5 overflow-y-auto flex-1 min-h-0 pr-1 outline-none"
+        class="flex flex-col gap-2.5 overflow-y-auto flex-1 min-h-0 pr-1 outline-none pb-12"
         tabindex="0"
         onkeydown={onListKeydown}
       >
@@ -762,6 +783,20 @@
           </div>
         {/if}
       </div>
+
+      <!-- 底部悬浮批量操作栏（绝对居中在列表正下方，永不跨越到右侧详情面板） -->
+      <BatchActionBar
+        selectedCount={checkedModIds.size}
+        {categories}
+        onEnableAll={batchEnable}
+        onDisableAll={batchDisable}
+        onMoveCategory={batchMoveCategory}
+        onReassignCharacter={() => {
+          if (selectedMod) reassignTargetMod = selectedMod;
+        }}
+        onUninstallAll={batchUninstall}
+        onClearSelection={clearSelection}
+      />
     </div>
 
     <!-- 自由拖拽分栏手柄 (Splitter) -->
@@ -793,20 +828,6 @@
       />
     </div>
   </div>
-
-  <!-- 底部悬浮批量操作栏 -->
-  <BatchActionBar
-    selectedCount={checkedModIds.size}
-    {categories}
-    onEnableAll={batchEnable}
-    onDisableAll={batchDisable}
-    onMoveCategory={batchMoveCategory}
-    onReassignCharacter={() => {
-      if (selectedMod) reassignTargetMod = selectedMod;
-    }}
-    onUninstallAll={batchUninstall}
-    onClearSelection={clearSelection}
-  />
 
   {#if contextMenu}
     <ContextMenu

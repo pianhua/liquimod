@@ -60,12 +60,27 @@
     }
     delete pick[job.id];
   }
+
+  // ⏱️ 自动超时关闭已完成任务（3.5 秒后自动淡出消失，无需手动点击）
+  $effect(() => {
+    const doneJobs = jobs.filter((j) => j.stage === "done");
+    if (doneJobs.length > 0) {
+      const timers = doneJobs.map((j) =>
+        setTimeout(() => {
+          dismissInstall(j);
+        }, 3500)
+      );
+      return () => {
+        timers.forEach((t) => clearTimeout(t));
+      };
+    }
+  });
 </script>
 
 {#if jobs.length > 0}
-  <div class="install-overlay fixed bottom-6 inset-x-0 z-50 flex justify-center pointer-events-none px-4 animate-slide-up" aria-live="polite">
+  <div class="install-overlay fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2.5 pointer-events-none animate-slide-up" aria-live="polite">
     <div
-      class="glass-floating radius-panel pointer-events-auto w-[480px] max-w-[94vw] p-5 flex flex-col gap-3.5 max-h-[75vh] overflow-y-auto shadow-2xl border border-[var(--glass-floating-stroke)] select-none"
+      class="glass-floating radius-panel pointer-events-auto w-[460px] max-w-[92vw] p-5 flex flex-col gap-3.5 max-h-[75vh] overflow-y-auto shadow-2xl border border-[var(--glass-floating-stroke)] select-none"
       style="box-shadow: var(--glass-floating-shadow);"
     >
       {#each jobs as job (job.id)}
