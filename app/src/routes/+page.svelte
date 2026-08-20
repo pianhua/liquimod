@@ -582,68 +582,71 @@
       onnavigate={navigate}
     />
     <div bind:this={contentEl} class="relative flex flex-col flex-1 min-w-0 min-h-0" style="contain: layout style">
-      <Toolbar
-        {crumbs}
-        bind:query
-        bind:sort
-        bind:charSort
-        {isCharGrid}
-        {showSort}
-        {showSettings}
-        {conflicts}
-        workMode={config?.work_mode ?? "play"}
-        ontoggleworkmode={toggleWorkMode}
-        onlaunchmodgame={launchGame}
-        onlaunchnativegame={launchGameNative}
-        onlaunchofficial={launchOfficialLauncher}
-        onrefreshgame={refreshGame}
-        ontogglesettings={() => (showSettings ? closeSettings() : openSettings())}
-        onapplied={refresh}
-      />
-      {#if isCharGrid}
-        <header class="px-6 pt-1 pb-3 shrink-0">
-          <h1 class="text-2xl font-bold tracking-tight">{view.kind === "home" ? charCatName : view.name}</h1>
-          <p class="text-xs text-secondary mt-0.5">{characters.length} 位 · {charModTotal} 个 Mod</p>
-        </header>
-        <CharacterGrid
-          {characters}
-          {query}
-          sort={charSort}
-          onselect={(c) => onSelectCharacter(view, c)}
-          onmenu={handleCharacterContextMenu}
-          ontogglefavorite={refresh}
+      <!-- 正常工作区 (保活：通过 class:hidden 隐藏，杜绝 DOM 销毁与返回滚动抖动，同时彻底阻止透底重叠) -->
+      <div class="flex flex-col flex-1 min-w-0 min-h-0" class:hidden={showSettings}>
+        <Toolbar
+          {crumbs}
+          bind:query
+          bind:sort
+          bind:charSort
+          {isCharGrid}
+          {showSort}
+          {showSettings}
+          {conflicts}
+          workMode={config?.work_mode ?? "play"}
+          ontoggleworkmode={toggleWorkMode}
+          onlaunchmodgame={launchGame}
+          onlaunchnativegame={launchGameNative}
+          onlaunchofficial={launchOfficialLauncher}
+          onrefreshgame={refreshGame}
+          ontogglesettings={() => (showSettings ? closeSettings() : openSettings())}
+          onapplied={refresh}
         />
-      {:else if view.kind === "character" && selectedCharacter}
-        <CharacterDetail
-          character={selectedCharacter}
-          {categories}
-          categoryId={view.categoryId}
-          categoryName={view.categoryName}
-          modsDirConfigured={config?.mods_dir != null}
-          {query}
-          onback={() => onBackFromCharacter(view)}
-          onconfigured={refresh}
-        />
-      {:else if view.kind === "type"}
-        <ModCardGrid
-          mods={viewMods}
-          {categories}
-          {sort}
-          {query}
-          bind:enabledFilter
-          {catLabelOf}
-          ontoggle={toggleViewMod}
-          onrename={renameViewMod}
-          onuninstall={uninstallViewMod}
-          onopen={openViewMod}
-          onmove={moveViewMod}
-          onmenu={handleViewModContextMenu}
-        />
-      {/if}
+        {#if isCharGrid}
+          <header class="px-6 pt-1 pb-3 shrink-0">
+            <h1 class="text-2xl font-bold tracking-tight">{view.kind === "home" ? charCatName : view.name}</h1>
+            <p class="text-xs text-secondary mt-0.5">{characters.length} 位 · {charModTotal} 个 Mod</p>
+          </header>
+          <CharacterGrid
+            {characters}
+            {query}
+            sort={charSort}
+            onselect={(c) => onSelectCharacter(view, c)}
+            onmenu={handleCharacterContextMenu}
+            ontogglefavorite={refresh}
+          />
+        {:else if view.kind === "character" && selectedCharacter}
+          <CharacterDetail
+            character={selectedCharacter}
+            {categories}
+            categoryId={view.categoryId}
+            categoryName={view.categoryName}
+            modsDirConfigured={config?.mods_dir != null}
+            {query}
+            onback={() => onBackFromCharacter(view)}
+            onconfigured={refresh}
+          />
+        {:else if view.kind === "type"}
+          <ModCardGrid
+            mods={viewMods}
+            {categories}
+            {sort}
+            {query}
+            bind:enabledFilter
+            {catLabelOf}
+            ontoggle={toggleViewMod}
+            onrename={renameViewMod}
+            onuninstall={uninstallViewMod}
+            onopen={openViewMod}
+            onmove={moveViewMod}
+            onmenu={handleViewModContextMenu}
+          />
+        {/if}
+      </div>
 
-      <!-- 设置页作为平滑覆盖层 (保活底层 DOM 节点与滚动位置，彻底杜绝返回抖动) -->
+      <!-- 专属全屏设置视图 (独占工作区，0 重叠，完美适配亮暗主题) -->
       {#if showSettings}
-        <div class="absolute inset-0 z-30 flex flex-col bg-[var(--app-bg)] animate-in fade-in duration-200">
+        <div class="flex flex-col flex-1 min-w-0 min-h-0 view-transition">
           <Settings {config} onback={closeSettings} onchanged={refresh} />
         </div>
       {/if}
