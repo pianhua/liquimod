@@ -23,6 +23,7 @@
     onopen,
     onmove,
     onvariantchange,
+    onmodchange,
   }: {
     mod: ModDto | null;
     categories: CategoryDto[];
@@ -33,6 +34,7 @@
     onopen: () => void;
     onmove: (categoryId: number | null) => void;
     onvariantchange?: (variant: string | null) => Promise<void>;
+    onmodchange?: (patch: Partial<ModDto>) => void;
   } = $props();
 
   let renaming = $state(false);
@@ -63,7 +65,7 @@
     busy = true;
     try {
       await onvariantchange?.(value);
-      mod.active_variant = value;
+      onmodchange?.({ active_variant: value });
       toast(`已切换变体：${value || "默认资源"}`);
     } catch (e) {
       toast(String(e));
@@ -219,9 +221,7 @@
       if (typeof selected === "string") {
         busy = true;
         const newThumb = await api.setModCustomCover(mod.id, selected);
-        if (newThumb && mod) {
-          mod.thumb = newThumb;
-        }
+        if (newThumb) onmodchange?.({ thumb: newThumb });
         const updatedImgs = await api.getModImages(mod.id);
         images = updatedImgs;
         toast("已更换 Mod 封面");
@@ -238,9 +238,7 @@
     busy = true;
     try {
       const newThumb = await api.setModCoverFromInternal(mod.id, img.relative_path);
-      if (newThumb && mod) {
-        mod.thumb = newThumb;
-      }
+      if (newThumb) onmodchange?.({ thumb: newThumb });
       const updatedImgs = await api.getModImages(mod.id);
       images = updatedImgs;
       toast(`已将「${img.filename}」设为 Mod 封面`);
@@ -256,9 +254,7 @@
     busy = true;
     try {
       const newThumb = await api.resetModCover(mod.id);
-      if (mod) {
-        mod.thumb = newThumb;
-      }
+      onmodchange?.({ thumb: newThumb });
       const updatedImgs = await api.getModImages(mod.id);
       images = updatedImgs;
       toast("已恢复 Mod 默认封面");
@@ -417,7 +413,7 @@
     savingNote = true;
     try {
       await api.setModNote(mod.id, v || null);
-      mod.note = v || null;
+      onmodchange?.({ note: v || null });
     } catch {
       // 容错
     } finally {

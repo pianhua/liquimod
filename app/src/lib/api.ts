@@ -174,6 +174,22 @@ const mockPresets: PresetDto[] = [
 
 const mockPasswords: string[] = ["1234"];
 
+const mockConfig: ConfigDto = {
+  library_root: "C:/mock/Library",
+  mods_dir: null,
+  auto_enable: false,
+  theme: "auto",
+  character_category_name: "角色",
+  game_exe: null,
+  loader_exe: null,
+  favorite_characters: [],
+  work_mode: "play",
+  injection_delay_ms: 500,
+  github_token: "",
+  github_mirror: "",
+  migoto_version: null,
+};
+
 const mockCategories: CategoryDto[] = [
   { id: 1, name: "光锥", ord: 1, kind: "lightcone", mod_count: 0 },
   { id: 2, name: "立绘", ord: 2, kind: "portrait", mod_count: 0 },
@@ -189,7 +205,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       case "get_game_status":
         return { running: false } as T;
       case "get_config":
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
+        return structuredClone(mockConfig) as T;
       case "get_characters": {
         const cid = args?.categoryId == null ? null : Number(args.categoryId);
         return structuredClone(mockCharacters).map((c) => ({
@@ -222,6 +238,12 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       }
       case "uninstall_mod":
         return undefined as T;
+      case "set_mod_enabled": {
+        const m = mockMods.find((x) => x.id === Number(args?.id));
+        if (!m) throw "Mod 不存在";
+        m.enabled = Boolean(args?.enabled);
+        return undefined as T;
+      }
       case "set_mod_variant": {
         const m = mockMods.find((x) => x.id === Number(args?.id));
         if (m) m.active_variant = args?.variant == null ? null : String(args.variant);
@@ -269,13 +291,16 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return undefined as T;
       }
       case "set_auto_enable":
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: Boolean(args?.enabled), theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
+        mockConfig.auto_enable = Boolean(args?.enabled);
+        return structuredClone(mockConfig) as T;
       case "set_theme":
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: String(args?.theme ?? "auto"), character_category_name: "角色", game_exe: null, loader_exe: null } as T;
+        mockConfig.theme = String(args?.theme ?? "auto");
+        return structuredClone(mockConfig) as T;
       case "set_character_category_name": {
         const n = String(args?.name ?? "").trim();
         if (!n) throw "名称不能为空";
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: n, game_exe: null, loader_exe: null } as T;
+        mockConfig.character_category_name = n;
+        return structuredClone(mockConfig) as T;
       }
       case "list_categories":
         return structuredClone([...mockCategories].sort((a, b) => a.ord - b.ord)) as T;
@@ -370,8 +395,13 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       case "choose_loader_exe": {
         const p = String(args?.path ?? "");
         if (!p.toLowerCase().endsWith(".exe")) throw "请选择 .exe 可执行文件";
-        return { library_root: "C:/mock/Library", mods_dir: null, auto_enable: false, theme: "auto", character_category_name: "角色", game_exe: null, loader_exe: null } as T;
+        if (cmd === "choose_game_exe") mockConfig.game_exe = p;
+        else mockConfig.loader_exe = p;
+        return structuredClone(mockConfig) as T;
       }
+      case "choose_mods_dir":
+        mockConfig.mods_dir = String(args?.path ?? "");
+        return structuredClone(mockConfig) as T;
       case "launch_game":
       case "launch_game_native":
       case "launch_official_launcher":
@@ -416,6 +446,12 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return [] as T;
       case "get_active_variable_conflicts":
         return [] as T;
+      case "get_local_asset_version":
+        return "2026.08.18" as T;
+      case "check_game_assets_update":
+        return { has_update: false, remote_version: "2026.08.18", local_version: "2026.08.18" } as T;
+      case "sync_game_assets":
+        return { success: true, message: "已是最新版本", version: "2026.08.18", downloaded_count: 0, deleted_count: 0 } as T;
       case "get_mod_images":
         return [
           {
@@ -487,6 +523,37 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         return undefined as T;
       case "open_webview2_download":
         return undefined as T;
+      case "auto_detect_game_exe":
+        return null as T;
+      case "switch_to_managed_migoto":
+        return structuredClone(mockConfig) as T;
+      case "check_migoto_update":
+        return {
+          tag_name: "v1.0.0-mock",
+          name: "3DMigoto Mock Release",
+          body: "Browser preview release",
+          published_at: "2026-08-18T00:00:00Z",
+          download_url: "https://example.invalid/liquimod-mock.zip",
+          asset_name: "3DMigoto-mock.zip",
+          size_bytes: 1024,
+        } as T;
+      case "install_migoto_update":
+        mockConfig.migoto_version = String(args?.versionTag ?? "v1.0.0-mock");
+        return structuredClone(mockConfig) as T;
+      case "migrate_mods_from_old_migoto":
+        return { total_found: 0, migrated_count: 0, failed_count: 0, errors: [] } as T;
+      case "set_work_mode":
+        mockConfig.work_mode = args?.mode === "dev" ? "dev" : "play";
+        return structuredClone(mockConfig) as T;
+      case "set_injection_delay":
+        mockConfig.injection_delay_ms = Math.max(0, Number(args?.delayMs ?? 500));
+        return structuredClone(mockConfig) as T;
+      case "set_github_token":
+        mockConfig.github_token = String(args?.token ?? "");
+        return structuredClone(mockConfig) as T;
+      case "set_github_mirror":
+        mockConfig.github_mirror = String(args?.mirror ?? "");
+        return structuredClone(mockConfig) as T;
       default:
         return undefined as T;
     }

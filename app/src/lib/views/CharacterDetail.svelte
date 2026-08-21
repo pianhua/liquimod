@@ -378,6 +378,11 @@
     }
   }
 
+  function updateSelectedMod(patch: Partial<ModDto>) {
+    if (selectedModId == null) return;
+    mods = mods.map((m) => (m.id === selectedModId ? { ...m, ...patch } : m));
+  }
+
   async function moveCategory(mod: ModDto, categoryId: number | null) {
     error = "";
     try {
@@ -1009,6 +1014,7 @@
         onopen={() => selectedMod && openModDir(selectedMod)}
         onmove={(cid) => selectedMod && moveCategory(selectedMod, cid)}
         onvariantchange={(variant) => selectedMod ? changeVariant(selectedMod, variant) : Promise.resolve()}
+        onmodchange={updateSelectedMod}
       />
     </div>
   </div>
