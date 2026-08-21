@@ -747,8 +747,11 @@
         <!-- 3Dmigoto 加载器 -->
         <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium">3Dmigoto 加载器</p>
-            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.loader_exe ?? "未配置"}>{config?.loader_exe ?? "未配置"}</p>
+            <div class="flex items-center gap-2">
+              <p class="text-sm font-medium">3Dmigoto 加载器</p>
+              <span class="text-[10px] px-1.5 py-0.5 radius-pill bg-[var(--surface-sunken)] text-secondary">内置原生 Hook 注入</span>
+            </div>
+            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.loader_exe ?? "默认使用内置原生无感注入"}>{config?.loader_exe ?? "默认使用内置原生无感注入 (无需外部 Loader)"}</p>
           </div>
           <div class="flex items-center justify-end gap-1.5 shrink-0">
             {#if config?.loader_exe}
@@ -761,7 +764,7 @@
               </button>
             {/if}
             <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("loader")}>
-              选择…
+              自定义…
             </button>
           </div>
         </div>

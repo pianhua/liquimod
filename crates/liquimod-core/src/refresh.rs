@@ -79,6 +79,37 @@ impl RefreshClient {
             )))
         }
     }
+
+    /// 通知 helper 以 3DMigoto Hook 一键启动游戏
+    pub fn launch_game(
+        &mut self,
+        game_exe: &Path,
+        work_dir: Option<&Path>,
+        d3d11_dll: Option<&Path>,
+        loader_dll: Option<&Path>,
+    ) -> Result<()> {
+        let exe_str = game_exe.to_string_lossy();
+        let dir_str = work_dir.map(|p| p.to_string_lossy()).unwrap_or_default();
+        let d3d_str = d3d11_dll.map(|p| p.to_string_lossy()).unwrap_or_default();
+        let loader_str = loader_dll.map(|p| p.to_string_lossy()).unwrap_or_default();
+
+        let cmd = format!(
+            "LAUNCH|{}|{}|{}|{}\n",
+            exe_str, dir_str, d3d_str, loader_str
+        );
+        self.pipe.write_all(cmd.as_bytes())?;
+        self.pipe.flush()?;
+        wait_for_pipe_reply(&self.pipe, Duration::from_secs(15))?;
+        let mut ack = [0u8; 2];
+        self.pipe.read_exact(&mut ack)?;
+        if &ack == b"L1" {
+            Ok(())
+        } else {
+            Err(LiquiModError::Io(std::io::Error::other(
+                "游戏启动或 3DMigoto 注入失败",
+            )))
+        }
+    }
 }
 
 #[cfg(windows)]

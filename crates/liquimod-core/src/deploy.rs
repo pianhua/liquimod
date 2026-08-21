@@ -1,4 +1,3 @@
-use crate::d3d;
 use crate::error::Result;
 use crate::filesystem::{choose_strategy, DeployStrategy};
 use crate::library::Library;
@@ -41,9 +40,8 @@ impl<'a> Deployer<'a> {
         reuse_existing_runtime: bool,
     ) -> Result<PathBuf> {
         let root = self.library.entry_source_dir(entry)?;
-        let needs_runtime =
-            !variants::detect_variants(&root).is_empty() || d3d::has_ini_variables(&root);
-        if !needs_runtime {
+        let has_variants = !variants::detect_variants(&root).is_empty();
+        if !has_variants {
             return Ok(root);
         }
         let runtime = self.library.layout.runtime_mod_dir(entry.id);
@@ -51,7 +49,6 @@ impl<'a> Deployer<'a> {
             return Ok(runtime);
         }
         variants::materialize(&root, entry.active_variant.as_deref(), &runtime)?;
-        d3d::isolate_ini_variables(&runtime, entry.id)?;
         Ok(runtime)
     }
 

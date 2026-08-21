@@ -274,6 +274,7 @@ pub fn run() {
             commands::set_mod_custom_cover,
             commands::get_active_conflicts,
             commands::get_active_variable_conflicts,
+            commands::get_mod_conflicts,
             commands::open_mod_folder,
             commands::open_path_in_explorer,
             commands::trigger_refresh_game,

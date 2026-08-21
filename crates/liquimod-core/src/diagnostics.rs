@@ -33,6 +33,7 @@ pub fn collect_checks(
     vec![
         check_path("library", "LiquiMod 仓库", library_root, true),
         check_mods_dir(mods_dir),
+        check_srmi_core(mods_dir),
         check_webview2(),
         check_vc_runtime(),
         check_d3d11(mods_dir, game_exe, loader_exe),
@@ -93,6 +94,50 @@ fn check_mods_dir(mods_dir: Option<&Path>) -> DiagnosticCheck {
             detail: "尚未配置 Mods 部署目录".to_owned(),
             remediation: Some("请在设置中选择 3Dmigoto 的 Mods 目录。".to_owned()),
         },
+    }
+}
+
+fn check_srmi_core(mods_dir: Option<&Path>) -> DiagnosticCheck {
+    let Some(mods) = mods_dir else {
+        return warn(
+            "srmi_core",
+            "SRMI 骨骼蒙皮套件",
+            "尚未配置 Mods 目录，无法检测 SRMI 渲染套件",
+        );
+    };
+    let root = mods.parent().unwrap_or(mods);
+    let srmi_pose = root.join("Core").join("SRMI").join("BatchedPose.ini");
+    let srmi_main = root.join("Core").join("SRMI").join("main.ini");
+    let d3dx_ini = root.join("d3dx.ini");
+
+    if srmi_pose.is_file() && srmi_main.is_file() && d3dx_ini.is_file() {
+        let content = std::fs::read_to_string(&d3dx_ini).unwrap_or_default();
+        if content.contains("[Include]") && content.contains("$costume_mods") {
+            pass(
+                "srmi_core",
+                "SRMI 骨骼蒙皮套件",
+                "SRMI Compute Shader 蒙皮套件与标准 d3dx.ini 配置完整就绪",
+            )
+        } else {
+            DiagnosticCheck {
+                id: "srmi_core".to_owned(),
+                label: "SRMI 骨骼蒙皮套件".to_owned(),
+                state: CheckState::Warn,
+                detail: "d3dx.ini 缺少 SRMI 必需的 [Include] 递归加载或 costume_mods 开关，高精模型可能隐形".to_owned(),
+                remediation: Some("请在设置中点击「下载/更新 3DMigoto」以覆写修复标准模板。".to_owned()),
+            }
+        }
+    } else {
+        DiagnosticCheck {
+            id: "srmi_core".to_owned(),
+            label: "SRMI 骨骼蒙皮套件".to_owned(),
+            state: CheckState::Warn,
+            detail: "未检测到完整的 Core/SRMI 蒙皮套件（飞霄等高精 Mod 可能仅显示悬空头颅）"
+                .to_owned(),
+            remediation: Some(
+                "请在设置中点击「下载/更新 3DMigoto」以一键补齐 SRMI 核心着色器套件。".to_owned(),
+            ),
+        }
     }
 }
 
