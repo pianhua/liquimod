@@ -191,7 +191,7 @@
     <!-- 桌面级多选框 -->
     <button
       type="button"
-      class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-all cursor-pointer {checked ? 'bg-[var(--accent)] text-white shadow-sm' : 'border border-[var(--glass-stroke)] hover:border-[var(--accent)] bg-[var(--item-hover)] opacity-0 group-hover:opacity-100'} {isMultiSelectMode ? '!opacity-100' : ''}"
+      class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-all cursor-pointer focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--accent)] {checked ? 'bg-[var(--accent)] text-white shadow-sm' : 'border border-[var(--glass-stroke)] hover:border-[var(--accent)] bg-[var(--item-hover)] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'} {isMultiSelectMode ? '!opacity-100' : ''}"
       onclick={(e) => {
         e.stopPropagation();
         oncheck?.(!checked);
@@ -209,7 +209,7 @@
     <!-- 💖 标为喜爱/置顶快捷按钮 (精密星标) -->
     <button
       type="button"
-      class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer {mod.is_favorite ? 'text-amber-400 opacity-100 scale-105' : 'text-secondary/50 hover:text-amber-400 opacity-0 group-hover:opacity-100 hover:scale-110'}"
+      class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--accent)] {mod.is_favorite ? 'text-amber-400 opacity-100 scale-105' : 'text-secondary/50 hover:text-amber-400 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:scale-110'}"
       onclick={(e) => {
         e.stopPropagation();
         ontogglefavorite?.();

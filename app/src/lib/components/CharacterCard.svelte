@@ -72,7 +72,7 @@
 >
   <!-- 右上角：喜爱置顶按钮 -->
   <button
-    class="absolute top-2.5 right-2.5 z-20 w-8 h-8 glass radius-pill flex items-center justify-center backdrop-blur-md transition-all cursor-pointer {character.is_favorite ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 hover:scale-110'}"
+    class="absolute top-2.5 right-2.5 z-20 w-8 h-8 glass radius-pill flex items-center justify-center backdrop-blur-md transition-all cursor-pointer focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--accent)] group-focus-within:opacity-100 {character.is_favorite ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100 hover:scale-110'}"
     style={character.is_favorite
       ? "background: rgba(255, 45, 85, 0.85); color: #fff; box-shadow: 0 2px 8px rgba(255, 45, 85, 0.4)"
       : "color: rgba(255,255,255,0.9)"}

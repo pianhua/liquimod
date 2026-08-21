@@ -146,6 +146,10 @@
   }
 
   async function import3dMigoto() {
+    if (!isTauri()) {
+      toast("浏览器预览不支持原生目录选择，请在桌面版操作");
+      return;
+    }
     try {
       const path = await open({ directory: true, title: "选择 3Dmigoto 根目录（包含 d3dx.ini）" });
       if (typeof path === "string") {
@@ -160,6 +164,10 @@
   }
 
   async function pickModsDir() {
+    if (!isTauri()) {
+      toast("浏览器预览不支持原生目录选择，请在桌面版操作");
+      return;
+    }
     try {
       const path = await open({ directory: true, title: "选择 3Dmigoto Mods 目录" });
       if (typeof path === "string") {
@@ -174,6 +182,10 @@
   }
 
   async function pickExe(which: "game" | "loader") {
+    if (!isTauri()) {
+      toast("浏览器预览不支持原生文件选择，请在桌面版操作");
+      return;
+    }
     try {
       const path = await open({
         directory: false,
@@ -405,6 +417,10 @@
   }
 
   async function handleMigrateOldMigoto() {
+    if (!isTauri()) {
+      toast("浏览器预览不支持原生目录选择，请在桌面版操作");
+      return;
+    }
     try {
       const oldDir = await open({
         directory: true,
