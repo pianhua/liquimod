@@ -49,6 +49,32 @@ fn send_refresh_game(refresh: &Mutex<Option<RefreshClient>>) -> Result<(), Strin
     Ok(())
 }
 
+/// 通过游戏伴侣助手一键无感拉起游戏并挂钩注入 3DMigoto
+fn launch_game_with_helper(
+    refresh: &Mutex<Option<RefreshClient>>,
+    game_exe: &Path,
+    work_dir: Option<&Path>,
+    d3d11_dll: Option<&Path>,
+    loader_dll: Option<&Path>,
+) -> Result<(), String> {
+    let Some(helper) = refresh_helper_path() else {
+        return Err("未找到游戏原生助手 helper".to_string());
+    };
+    let mut guard = refresh.lock().unwrap();
+    if guard.is_none() {
+        let client = RefreshClient::connect_or_launch(&helper)
+            .map_err(|e| format!("游戏助手启动失败：{e}"))?;
+        *guard = Some(client);
+    }
+    if let Some(client) = guard.as_mut() {
+        if let Err(error) = client.launch_game(game_exe, work_dir, d3d11_dll, loader_dll) {
+            *guard = None;
+            return Err(format!("游戏拉起注入失败：{error}"));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ConfigDto {
     pub storage_root: String,
@@ -2008,6 +2034,24 @@ pub fn set_github_mirror(
     Ok(config_dto(&config))
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ModConflictsDto {
+    pub hash_conflicts: Vec<liquimod_core::d3d::ModConflict>,
+    pub variable_conflicts: Vec<liquimod_core::d3d::VariableConflict>,
+}
+
+#[tauri::command]
+pub fn get_mod_conflicts(state: tauri::State<AppState>) -> Result<ModConflictsDto, String> {
+    let lib = state.library.lock().unwrap();
+    let hash_conflicts = liquimod_core::d3d::detect_conflicts(&lib).map_err(|e| e.to_string())?;
+    let variable_conflicts =
+        liquimod_core::d3d::detect_variable_conflicts(&lib).map_err(|e| e.to_string())?;
+    Ok(ModConflictsDto {
+        hash_conflicts,
+        variable_conflicts,
+    })
+}
+
 #[tauri::command]
 pub fn launch_game(
     state: tauri::State<AppState>,
@@ -2040,6 +2084,41 @@ pub fn launch_game(
         "dev" => liquimod_core::d3d::MigotoWorkMode::Dev,
         _ => liquimod_core::d3d::MigotoWorkMode::Play,
     };
+
+    // 同步更新 d3dx.ini
+    if migoto_dir.is_dir() {
+        let ini_path = migoto_dir.join("d3dx.ini");
+        if ini_path.is_file() {
+            let _ = liquimod_core::d3d::update_d3dx_ini_mode(&ini_path, work_mode);
+            let _ = liquimod_core::d3d::update_d3dx_ini_target(&ini_path, &game_path);
+        }
+    }
+
+    let d3d11 = migoto_dir.join("d3d11.dll");
+    let loader_dll = migoto_dir.join("3dmloader.dll");
+    let loader_opt = if loader_dll.is_file() {
+        Some(loader_dll.as_path())
+    } else {
+        None
+    };
+    let game_dir = game_path.parent();
+
+    // 优先使用 Helper 执行原生无感 Hook 注入启动
+    if d3d11.is_file() && refresh_helper_path().is_some() {
+        if let Ok(()) = launch_game_with_helper(
+            &state.refresh,
+            &game_path,
+            game_dir,
+            Some(&d3d11),
+            loader_opt,
+        ) {
+            return Ok(liquimod_core::launcher::LaunchResult {
+                success: true,
+                message: "✨ 已无感加载 3DMigoto 并拉起游戏！".to_string(),
+                pid: None,
+            });
+        }
+    }
 
     let opts = liquimod_core::launcher::GameLaunchOptions {
         game_exe: game_path,

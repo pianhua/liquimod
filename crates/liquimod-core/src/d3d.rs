@@ -751,7 +751,7 @@ pub fn detect_conflicts(lib: &crate::library::Library) -> crate::error::Result<V
     Ok(conflicts)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VariableConflict {
     pub variable: String,
     pub conflicting_mods: Vec<ConflictModInfo>,
@@ -833,63 +833,6 @@ pub fn scan_ini_variables(mod_dir: &Path) -> Vec<String> {
 
 pub fn has_ini_variables(mod_dir: &Path) -> bool {
     !scan_ini_variables(mod_dir).is_empty()
-}
-
-fn namespaced_variable(mod_id: i64, original: &str) -> String {
-    let clean = original.trim_start_matches('$');
-    let hash = xxhash_rust::xxh3::xxh3_64(original.as_bytes());
-    format!("$lm_{}_{}_{:x}", mod_id, clean, hash & 0xffff)
-}
-
-fn replace_variable_tokens(text: &str, replacements: &HashMap<String, String>) -> String {
-    let mut out = String::with_capacity(text.len());
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'$'
-            && i + 1 < bytes.len()
-            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
-        {
-            let start = i;
-            i += 2;
-            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
-                i += 1;
-            }
-            let token = &text[start..i];
-            if let Some(replacement) = replacements.get(token) {
-                out.push_str(replacement);
-            } else {
-                out.push_str(token);
-            }
-        } else {
-            let next = i + text[i..].chars().next().unwrap().len_utf8();
-            out.push_str(&text[i..next]);
-            i = next;
-        }
-    }
-    out
-}
-
-/// 对运行副本中的 INI 变量做 Mod ID 隔离，不修改仓库原始文件。
-pub fn isolate_ini_variables(runtime_dir: &Path, mod_id: i64) -> Result<bool> {
-    let vars = scan_ini_variables(runtime_dir);
-    if vars.is_empty() {
-        return Ok(false);
-    }
-    let replacements: HashMap<String, String> = vars
-        .iter()
-        .map(|v| (v.clone(), namespaced_variable(mod_id, v)))
-        .collect();
-    let mut files = Vec::new();
-    collect_ini_files_recursive(runtime_dir, &mut files);
-    for path in files {
-        let content = std::fs::read_to_string(&path)?;
-        let updated = replace_variable_tokens(&content, &replacements);
-        if updated != content {
-            std::fs::write(path, updated)?;
-        }
-    }
-    Ok(true)
 }
 
 pub fn detect_variable_conflicts(
@@ -1128,22 +1071,17 @@ $weapon = 0,1
     }
 
     #[test]
-    fn isolates_constants_variables_in_runtime_copy_only() {
+    fn scans_constants_variables_for_diagnostics() {
         let temp = tempfile::tempdir().unwrap();
-        let source = temp.path().join("source");
-        let runtime = temp.path().join("runtime");
-        std::fs::create_dir_all(&source).unwrap();
-        std::fs::create_dir_all(&runtime).unwrap();
-        let ini = "[Constants]\n$active = 0\n[KeySwap]\ncondition = $active == 1\n";
-        std::fs::write(source.join("mod.ini"), ini).unwrap();
-        std::fs::copy(source.join("mod.ini"), runtime.join("mod.ini")).unwrap();
+        let dir = temp.path().join("mod");
+        std::fs::create_dir_all(&dir).unwrap();
+        let ini =
+            "[Constants]\n$active = 0\n$costume_mods = 1\n[KeySwap]\ncondition = $active == 1\n";
+        std::fs::write(dir.join("mod.ini"), ini).unwrap();
 
-        assert!(isolate_ini_variables(&runtime, 42).unwrap());
-        let original = std::fs::read_to_string(source.join("mod.ini")).unwrap();
-        let rewritten = std::fs::read_to_string(runtime.join("mod.ini")).unwrap();
-        assert_eq!(original, ini);
-        assert!(rewritten.contains("$lm_42_active_"));
-        assert!(!rewritten.contains("$active"));
+        let vars = scan_ini_variables(&dir);
+        assert_eq!(vars, vec!["$active", "$costume_mods"]);
+        assert!(has_ini_variables(&dir));
     }
 
     #[test]
