@@ -53,14 +53,14 @@ jobs:
       - name: Rust Format Check
         run: cargo fmt --all -- --check
 
+      - name: Prepare Bundled Refresh Helper
+        run: cargo build --release -p liquimod-refresh-helper
+
       - name: Rust Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust Tests
         run: cargo test --workspace
-
-      - name: Build Refresh Helper Release
-        run: cargo build --release -p liquimod-refresh-helper
 
       - name: Build LiquiMod App Release
         run: cargo build --release --features tauri/custom-protocol --manifest-path app/src-tauri/Cargo.toml
