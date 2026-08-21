@@ -1,30 +1,43 @@
 # LiquiMod 正式交接说明
 
-> 交接版本：v0.4.0
+> 交接版本：v0.5.0
 >
-> 交接日期：2026-08-21
+> 交接日期：2026-08-22
 >
 > 当前主线：main
 >
-> 当前发布提交：4150809（Release v0.4.0）
+> 当前发布提交：430ad2b（Release v0.5.0）
 
 本文件是本阶段工作的正式交接记录。交接后，后续开发者或 Agent 应以仓库代码、测试、CI 和本文件为现状依据；更早版本的交接文档仅作历史参考。
 
 ## 1. 交接状态
 
-- v0.4.0 已合并到 main。
-- PR：[pianhua/liquimod#4](https://github.com/pianhua/liquimod/pull/4)
-- GitHub Release：[v0.4.0](https://github.com/pianhua/liquimod/releases/tag/v0.4.0)
+- v0.5.0 已合并到 main。
+- PR：[pianhua/liquimod#11](https://github.com/pianhua/liquimod/pull/11)
+- GitHub Release：[v0.5.0](https://github.com/pianhua/liquimod/releases/tag/v0.5.0)
 - 发布工作流已完成前端检查、Rust 格式、刷新助手、Clippy、Rust 测试、主程序构建、NSIS、便携包、校验文件和 Release 上传。
-- 交接时应保持 main 与 origin/main 对齐，工作区干净，版本标签为 v0.4.0。
+- 交接时应保持 main 与 origin/main 对齐，工作区干净，版本标签为 v0.5.0。
 
 发行资产：
 
-- [LiquiMod-Windows-x64-setup.exe](https://github.com/pianhua/liquimod/releases/download/v0.4.0/LiquiMod-Windows-x64-setup.exe)
-- [LiquiMod-Windows-x64.zip](https://github.com/pianhua/liquimod/releases/download/v0.4.0/LiquiMod-Windows-x64.zip)
+- [LiquiMod-Windows-x64-setup.exe](https://github.com/pianhua/liquimod/releases/download/v0.5.0/LiquiMod-Windows-x64-setup.exe)
+- [LiquiMod-Windows-x64.zip](https://github.com/pianhua/liquimod/releases/download/v0.5.0/LiquiMod-Windows-x64.zip)
 - 安装器和 ZIP 各自带有 .sha256 校验文件。
 
-## 2. v0.4.0 已完成内容
+## 2. v0.5.0 已完成内容
+
+### 2.1 SRMI 骨骼蒙皮套件与 3DMigoto 渲染
+- 内置开箱即用的 1071 行标准 `d3dx.ini` 模板，启用 `[Include]` 递归加载、`[Rendering]` (ini_params = 120, allow_buffer_resize = 1) 与 `global $costume_mods = 1`。
+- 内置 `Core/SRMI/` 全套蒙皮着色器（`BatchedPose.ini`、`SingleSkinning.hlsl`、`MultiSkinning.hlsl`），彻底解决高精 Mod（如飞霄）身体隐形问题。
+- 重构 3DMigoto 双包流式下载与智能配置合并（并行拉取 DLLs 与 Core 套件，保留用户自定义参数）。
+
+### 2.2 原生无感启动与 Win32 Hook 注入
+- 升级 `liquimod-refresh-helper` 为游戏原生伴侣，封装 `3dmloader.dll` / Win32 Hook API。
+- 用户在 LiquiMod 点击启动游戏一气呵成完成拉起与注入，无需第三方 Loader.exe 弹窗与黑框。
+
+### 2.3 存储与变量安全性
+- 移除破坏性的 `isolate_ini_variables`，依托 3Dmigoto 原生路径命名空间与目录隔离，保障 Mod 差分按键与 SRMI 握手通信。
+- 提供 Hash 碰撞与变量冲突只读诊断面板。
 
 ### 2.1 存储架构
 

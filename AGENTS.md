@@ -1,6 +1,6 @@
 # LiquiMod 开发与 Agent 协作守则
 
-> 当前基线：v0.4.0（Windows 10/11 x64）
+> 当前基线：v0.5.0（Windows 10/11 x64）
 >
 > 技术栈：Rust workspace + Tauri 2 + Svelte 5 + Tailwind CSS v4 + SQLite + WebView2
 >
