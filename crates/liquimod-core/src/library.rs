@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::error::Result;
-use crate::models::ModEntry;
+use crate::models::{ModEntry, ModStorageKind};
 use crate::paths::{is_valid_segment, LibraryLayout};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
@@ -101,6 +101,13 @@ impl Library {
 
         // 统一写入数据库
         for item in &results {
+            if self
+                .db
+                .find_mod(&item.character, &item.name)?
+                .is_some_and(|entry| entry.storage_kind == ModStorageKind::External)
+            {
+                continue;
+            }
             let rel = format!("mods/{}/{}", item.character, item.name);
             let id = self.db.upsert_mod(&item.character, &item.name, &rel)?;
             if (item.size, item.count) != (-1, -1) {
@@ -117,6 +124,17 @@ impl Library {
         }
 
         for m in self.db.list_mods()? {
+            if m.storage_kind == ModStorageKind::External {
+                if let Ok(root) = self.entry_source_dir(&m) {
+                    refresh_stats(&self.db, m.id, &root)?;
+                    let active =
+                        crate::variants::active_variant_name(&root, m.active_variant.as_deref());
+                    if active != m.active_variant {
+                        self.db.set_active_variant(m.id, active.as_deref())?;
+                    }
+                }
+                continue;
+            }
             if !seen.contains(&(m.character.clone(), m.name.clone())) {
                 self.db.remove_mod(m.id)?;
                 crate::thumbs::remove_thumbnail(&self.layout.root, m.id);
@@ -155,6 +173,83 @@ impl Library {
         self.db.get_mod(id)
     }
 
+    /// 连接外部 Mod，不复制也不取得源目录所有权。
+    pub fn add_external_folder(&self, src: &Path, character: &str, name: &str) -> Result<ModEntry> {
+        if !is_valid_segment(character) {
+            return Err(crate::error::LiquiModError::InvalidName(character.into()));
+        }
+        if !is_valid_segment(name) {
+            return Err(crate::error::LiquiModError::InvalidName(name.into()));
+        }
+        if !src.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("external mod folder missing: {}", src.display()),
+            )
+            .into());
+        }
+        let source = src.canonicalize()?;
+        let library = self.layout.root.canonicalize()?;
+        if source.starts_with(&library) || library.starts_with(&source) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "external mod folder overlaps the managed library",
+            )
+            .into());
+        }
+        if self.db.name_taken(character, name, -1)? {
+            return Err(crate::error::LiquiModError::DestinationExists {
+                character: character.into(),
+                name: name.into(),
+            });
+        }
+        let source_text = source
+            .to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .to_string();
+        if self.db.external_path_taken(&source_text)? {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "external mod folder is already connected",
+            )
+            .into());
+        }
+        let id = self.db.insert_external_mod(character, name, &source_text)?;
+        refresh_stats(&self.db, id, &source)?;
+        let active = crate::variants::active_variant_name(&source, None);
+        self.db.set_active_variant(id, active.as_deref())?;
+        self.db.get_mod(id)
+    }
+
+    pub fn entry_source_dir(&self, entry: &ModEntry) -> Result<PathBuf> {
+        match entry.storage_kind {
+            ModStorageKind::Managed => {
+                let path = self.layout.root.join(&entry.rel_path);
+                if path.is_dir() {
+                    Ok(path)
+                } else {
+                    Err(crate::error::LiquiModError::ModNotFound(
+                        path.display().to_string(),
+                    ))
+                }
+            }
+            ModStorageKind::External => {
+                let path = entry
+                    .source_path
+                    .as_deref()
+                    .map(PathBuf::from)
+                    .filter(|path| path.is_dir())
+                    .ok_or_else(|| {
+                        crate::error::LiquiModError::ModNotFound(format!(
+                            "external source unavailable: {}",
+                            entry.source_path.as_deref().unwrap_or("unknown")
+                        ))
+                    })?;
+                Ok(path.canonicalize().unwrap_or(path))
+            }
+        }
+    }
+
     /// 重命名仓库内 Mod（只动文件系统与 DB；Junction 重建由调用方负责）。
     /// 校验失败/冲突时目录保持原样。
     pub fn rename_mod(&self, id: i64, new_name: &str) -> Result<ModEntry> {
@@ -170,6 +265,10 @@ impl Library {
                 character: entry.character.clone(),
                 name: new_name.into(),
             });
+        }
+        if entry.storage_kind == ModStorageKind::External {
+            self.db.rename_mod(id, new_name, &entry.rel_path)?;
+            return self.db.get_mod(id);
         }
         let old_dir = self.layout.root.join(&entry.rel_path);
         let new_rel = format!("mods/{}/{}", entry.character, new_name);
@@ -199,6 +298,11 @@ impl Library {
                 character: new_character.into(),
                 name: entry.name.clone(),
             });
+        }
+        if entry.storage_kind == ModStorageKind::External {
+            self.db
+                .reassign_character(id, new_character, &entry.rel_path)?;
+            return self.db.get_mod(id);
         }
         let old_dir = self.layout.root.join(&entry.rel_path);
         let new_rel = format!("mods/{}/{}", new_character, entry.name);
@@ -671,5 +775,47 @@ mod tests {
         assert!((m.size_bytes, m.file_count) != (-1, -1));
         let got = lib.db.get_mod(m.id).unwrap();
         assert!((got.size_bytes, got.file_count) != (-1, -1));
+    }
+
+    #[test]
+    fn external_folder_is_not_copied_and_survives_offline_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source_parent = tempfile::tempdir().unwrap();
+        let source = source_parent.path().join("SummerExternal");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("mod.ini"), b"[Constants]").unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let entry = lib
+            .add_external_folder(&source, "Firefly", "SummerExternal")
+            .unwrap();
+        assert_eq!(entry.storage_kind, ModStorageKind::External);
+        assert_eq!(
+            lib.entry_source_dir(&entry).unwrap(),
+            source.canonicalize().unwrap()
+        );
+        assert!(!lib.layout.mod_dir("Firefly", "SummerExternal").exists());
+
+        std::fs::remove_dir_all(&source).unwrap();
+        lib.scan().unwrap();
+        let offline = lib.db.get_mod(entry.id).unwrap();
+        assert_eq!(offline.storage_kind, ModStorageKind::External);
+        assert!(lib.entry_source_dir(&offline).is_err());
+    }
+
+    #[test]
+    fn external_rename_and_reassign_only_change_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("mod.ini"), b"x").unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let entry = lib
+            .add_external_folder(source.path(), "Others", "External")
+            .unwrap();
+        let renamed = lib.rename_mod(entry.id, "External Renamed").unwrap();
+        let reassigned = lib.reassign_character(entry.id, "Kafka").unwrap();
+        assert_eq!(renamed.source_path, reassigned.source_path);
+        assert_eq!(reassigned.character, "Kafka");
+        assert_eq!(reassigned.name, "External Renamed");
+        assert!(source.path().join("mod.ini").is_file());
     }
 }

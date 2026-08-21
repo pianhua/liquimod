@@ -47,22 +47,9 @@ describe("Toolbar", () => {
     expect(screen.queryByLabelText("排序方式")).toBeNull();
   });
 
-  it("存在冲突时展示冲突诊断徽章并可点击查看", async () => {
-    const mockConflicts = [
-      {
-        hash: "9de39691",
-        section: "TextureOverrideBody",
-        conflicting_mods: [
-          { id: 1, character: "Acheron", name: "ModA" },
-          { id: 2, character: "Acheron", name: "ModB" },
-        ],
-      },
-    ];
-    render(Toolbar, { props: props({ conflicts: mockConflicts }) });
-    const badge = screen.getByText("1 处冲突");
-    expect(badge).toBeTruthy();
-    await fireEvent.click(badge);
-    expect(screen.getByText("Mod 覆盖冲突诊断 (1)")).toBeTruthy();
-    expect(screen.getByText("Hash: 9de39691")).toBeTruthy();
+  it("游戏运行时显示状态并保留手动热重载", () => {
+    render(Toolbar, { props: props({ gameRunning: true }) });
+    expect(screen.getByText("游戏运行中")).toBeTruthy();
+    expect(screen.getByText("热重载")).toBeTruthy();
   });
 });

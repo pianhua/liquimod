@@ -3,11 +3,13 @@
 
   let {
     character,
+    warnMultipleEnabled = true,
     onclick,
     onmenu,
     ontogglefavorite,
   }: {
     character: CharacterSummary;
+    warnMultipleEnabled?: boolean;
     onclick: () => void;
     onmenu?: (e: MouseEvent, character: CharacterSummary) => void;
     ontogglefavorite?: (character: CharacterSummary) => void;
@@ -36,8 +38,10 @@
   let dot = $derived(
     character.enabled === 1
       ? { color: "#34c759", glow: "0 0 6px rgba(52,199,89,0.9)" }
-      : character.enabled >= 2
+      : character.enabled >= 2 && warnMultipleEnabled
         ? { color: "#ffd60a", glow: "0 0 6px rgba(255,214,10,0.9)" }
+        : character.enabled >= 1
+          ? { color: "#34c759", glow: "0 0 6px rgba(52,199,89,0.9)" }
         : { color: "#9b9ba2", glow: "none" },
   );
 

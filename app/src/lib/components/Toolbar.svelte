@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ModSort } from "$lib/view";
-  import type { ConflictReportDto, VariableConflictDto, CharacterSortOption } from "$lib/api";
+  import type { CharacterSortOption } from "$lib/api";
   import PresetMenu from "./PresetMenu.svelte";
   import CustomSelect from "./CustomSelect.svelte";
   import IconGamepad from "./icons/IconGamepad.svelte";
@@ -21,8 +21,6 @@
     isCharGrid = false,
     showSort,
     showSettings = false,
-    conflicts = [],
-    variableConflicts = [],
     gameRunning = false,
     workMode = "play",
     ontoggleworkmode,
@@ -40,8 +38,6 @@
     isCharGrid?: boolean;
     showSort: boolean;
     showSettings?: boolean;
-    conflicts?: ConflictReportDto[];
-    variableConflicts?: VariableConflictDto[];
     gameRunning?: boolean;
     workMode?: "play" | "dev";
     ontoggleworkmode?: () => void;
@@ -53,11 +49,9 @@
     onapplied: () => void;
   } = $props();
 
-  let conflictModalOpen = $state(false);
   let showDevKeyHelp = $state(false);
   let showSortMenu = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
-  let conflictCount = $derived(conflicts.length + variableConflicts.length);
 
   function handleWindowClick() {
     showSortMenu = false;
@@ -142,24 +136,11 @@
 
   <!-- 右侧：全局核心操作组 -->
   <div class="flex items-center gap-2 shrink-0">
-    <!-- 冲突预警 Badge -->
-    {#if conflictCount > 0}
-      <button
-        class="radius-pill h-8 px-3 text-xs font-semibold flex items-center gap-1.5 cursor-pointer backdrop-blur-md transition-transform hover:scale-105"
-        style="background: rgba(239, 68, 68, 0.16); color: #ef4444; box-shadow: inset 0 0 0 0.5px rgba(239, 68, 68, 0.4)"
-        title={`发现 ${conflictCount} 处 Mod 冲突！点击查看`}
-        onclick={() => (conflictModalOpen = true)}
-      >
-        <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
-        <span>{conflictCount} 处冲突</span>
-      </button>
-    {/if}
-
     {#if gameRunning}
       <div
         class="h-8 px-2.5 radius-pill flex items-center gap-1.5 text-xs font-semibold shrink-0"
         style="background: var(--accent-fill); color: var(--accent); box-shadow: inset 0 0 0 0.5px var(--accent);"
-        title="游戏正在运行，Mod 物理变更已锁定"
+        title="支持 Junction Mod 热切换；修改后请手动热重载"
         aria-label="游戏运行中"
       >
         <span class="w-1.5 h-1.5 radius-pill animate-pulse" style="background: var(--accent);"></span>
@@ -194,7 +175,7 @@
     {/if}
 
     <!-- 预设管理入口 -->
-    <PresetMenu {onapplied} />
+    <PresetMenu {onapplied} applyDisabled={gameRunning} />
 
     <!-- 工作模式切换胶囊 (Play / Dev) -->
     <div class="relative flex items-center h-8 glass radius-pill px-1 gap-1">
@@ -359,88 +340,3 @@
     </button>
   </div>
 </header>
-
-<!-- 冲突诊断对话框 -->
-{#if conflictModalOpen}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    class="fixed inset-0 z-50 bg-black/60 backdrop-blur-md grid place-items-center p-6"
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-    onclick={() => (conflictModalOpen = false)}
-    onkeydown={(e) => e.key === "Escape" && (conflictModalOpen = false)}
-  >
-    <div
-      class="glass radius-panel p-6 max-w-lg w-full flex flex-col gap-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
-      role="document"
-      tabindex="-1"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
-    >
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2 text-red-500 font-bold">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          <h3>Mod 覆盖冲突诊断 ({conflictCount})</h3>
-        </div>
-        <button
-          class="glass radius-pill w-7 h-7 grid place-items-center cursor-pointer text-secondary"
-          aria-label="关闭"
-          onclick={() => (conflictModalOpen = false)}
-        >
-          ✕
-        </button>
-      </div>
-
-      <p class="text-xs text-secondary">
-        以下已启用的 Mod 存在资源 Hash 覆盖或 INI 全局变量重名，可能导致游戏内闪烁、模型撕裂或按键状态互相污染。
-      </p>
-
-      <div class="flex flex-col gap-3 max-h-80 overflow-y-auto pr-1">
-        {#each conflicts as c (c.hash)}
-          <div class="p-3 radius-card flex flex-col gap-2" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2)">
-            <div class="flex items-center justify-between text-xs">
-              <span class="font-mono font-bold text-red-500">Hash: {c.hash}</span>
-              <span class="text-secondary text-[11px] font-mono">{c.section}</span>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              {#each c.conflicting_mods as mod (mod.id)}
-                <div class="flex items-center justify-between text-xs py-1 px-2 rounded bg-[var(--input-bg)]">
-                  <span class="font-medium truncate">{mod.character} · {mod.name}</span>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/each}
-        {#each variableConflicts as c (c.variable)}
-          <div class="p-3 radius-card flex flex-col gap-2" style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25)">
-            <div class="flex items-center justify-between text-xs">
-              <span class="font-mono font-bold text-amber-500">变量重名: {c.variable}</span>
-              <span class="text-secondary text-[11px]">INI Constants</span>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              {#each c.conflicting_mods as mod (mod.id)}
-                <div class="flex items-center justify-between text-xs py-1 px-2 rounded bg-[var(--input-bg)]">
-                  <span class="font-medium truncate">{mod.character} · {mod.name}</span>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/each}
-      </div>
-
-      <div class="flex justify-end pt-2 border-t border-[var(--glass-stroke)]">
-        <button
-          class="glass radius-pill h-8 px-4 text-xs font-semibold cursor-pointer"
-          onclick={() => (conflictModalOpen = false)}
-        >
-          知道了
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}

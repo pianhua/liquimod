@@ -1517,6 +1517,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "fsevent-sys"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2724,7 +2734,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "liquimod-app"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -2749,7 +2759,7 @@ dependencies = [
 
 [[package]]
 name = "liquimod-cli"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "clap",
  "liquimod-core",
@@ -2758,9 +2768,10 @@ dependencies = [
 
 [[package]]
 name = "liquimod-core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "dirs",
+ "fs2",
  "futures-util",
  "image",
  "junction",
@@ -2784,8 +2795,9 @@ dependencies = [
 
 [[package]]
 name = "liquimod-refresh-helper"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
+ "sysinfo",
  "windows 0.61.3",
 ]
 

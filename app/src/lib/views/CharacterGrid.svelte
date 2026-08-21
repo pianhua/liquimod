@@ -12,6 +12,7 @@
     characters,
     query,
     sort = "default",
+    warnMultipleEnabled = true,
     onselect,
     onmenu,
     ontogglefavorite,
@@ -19,6 +20,7 @@
     characters: CharacterSummary[];
     query: string;
     sort?: CharacterSortOption;
+    warnMultipleEnabled?: boolean;
     onselect: (c: CharacterSummary) => void;
     onmenu?: (e: MouseEvent, c: CharacterSummary) => void;
     ontogglefavorite?: (c: CharacterSummary) => void;
@@ -76,6 +78,7 @@
     {#each filtered as c (c.internal_name)}
       <CharacterCard
         character={c}
+        {warnMultipleEnabled}
         onclick={() => onselect(c)}
         {onmenu}
         ontogglefavorite={() => handleToggleFavorite(c)}

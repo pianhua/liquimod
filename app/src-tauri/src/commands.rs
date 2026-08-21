@@ -10,54 +10,53 @@ use liquimod_core::error::LiquiModError;
 use liquimod_core::games::hsr::Hsr;
 use liquimod_core::games::{CharacterInfo, Game};
 use liquimod_core::library::Library;
+use liquimod_core::models::ModStorageKind;
 use liquimod_core::refresh::{is_game_running, RefreshClient, HELPER_EXE};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::{atomic::Ordering, Mutex};
 use tauri::Emitter;
 
-/// 游戏运行中则通知 helper 发 F10；失败只 toast 不阻断。
+fn refresh_helper_path() -> Option<PathBuf> {
+    let current_exe = std::env::current_exe().ok()?;
+    let parent = current_exe.parent()?;
+    [
+        parent.join(HELPER_EXE),
+        parent.join("resources").join(HELPER_EXE),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
+}
+
+/// 用户主动请求时通知 helper 发 F10。
 /// 阻塞（UAC 弹窗 + 最多 5s 管道轮询）：必须在 spawn_blocking 工作线程内调用。
-fn maybe_refresh_game(app: &tauri::AppHandle, refresh: &Mutex<Option<RefreshClient>>) {
-    if !is_game_running(Hsr::shared().process_names()) {
-        return;
-    }
-    let helper = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join(HELPER_EXE)));
-    let Some(helper) = helper.filter(|p| p.exists()) else {
-        let _ = app.emit(
-            "liquimod-toast",
-            "未找到刷新 helper，跳过游戏内刷新".to_string(),
-        );
-        return;
+fn send_refresh_game(refresh: &Mutex<Option<RefreshClient>>) -> Result<(), String> {
+    let Some(helper) = refresh_helper_path() else {
+        return Err("未找到刷新 helper，无法发送 F10".to_string());
     };
     let mut guard = refresh.lock().unwrap();
     if guard.is_none() {
-        match RefreshClient::connect_or_launch(&helper) {
-            Ok(c) => *guard = Some(c),
-            Err(e) => {
-                let _ = app.emit("liquimod-toast", format!("刷新 helper 启动失败：{e}"));
-                return;
-            }
-        }
+        let client = RefreshClient::connect_or_launch(&helper)
+            .map_err(|e| format!("刷新 helper 启动失败：{e}"))?;
+        *guard = Some(client);
     }
     if let Some(client) = guard.as_mut() {
-        if client.poke().is_err() {
+        if let Err(error) = client.poke() {
             *guard = None; // helper 死了，下次重连
-            let _ = app.emit(
-                "liquimod-toast",
-                "刷新 helper 连接断开，下次操作将重试".to_string(),
-            );
+            return Err(format!("F10 发送失败：{error}"));
         }
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ConfigDto {
+    pub storage_root: String,
     pub library_root: String,
+    pub previous_library_root: Option<String>,
     pub mods_dir: Option<String>,
     pub auto_enable: bool,
+    pub warn_multiple_mods: bool,
     pub theme: String,
     pub character_category_name: String,
     pub game_exe: Option<String>,
@@ -96,7 +95,7 @@ pub fn configured_game_process_names(config: &Config) -> Vec<String> {
     names
 }
 
-/// 游戏运行期间阻止会改动物理部署状态或删除库文件的操作。
+/// 游戏运行期间阻止 Junction 启停之外的文件变更操作。
 fn ensure_game_stopped(state: &AppState, operation: &str) -> Result<(), String> {
     if state.game_running.load(Ordering::Relaxed) {
         return Err(format!(
@@ -161,6 +160,8 @@ pub struct ModDto {
     pub sort_order: i64,
     pub active_variant: Option<String>,
     pub variants: Vec<VariantDto>,
+    pub storage_kind: String,
+    pub source_available: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -230,9 +231,15 @@ pub struct ModImageDto {
 
 pub fn config_dto(c: &Config) -> ConfigDto {
     ConfigDto {
+        storage_root: c.data_root().display().to_string(),
         library_root: c.library_root.display().to_string(),
+        previous_library_root: c
+            .previous_library_root
+            .as_ref()
+            .map(|p| p.display().to_string()),
         mods_dir: c.mods_dir.as_ref().map(|p| p.display().to_string()),
         auto_enable: c.auto_enable,
+        warn_multiple_mods: c.warn_multiple_mods,
         theme: c.theme.clone(),
         character_category_name: c.character_category_name.clone(),
         game_exe: c.game_exe.as_ref().map(|p| p.display().to_string()),
@@ -243,6 +250,27 @@ pub fn config_dto(c: &Config) -> ConfigDto {
         github_mirror: c.github_mirror.clone(),
         migoto_version: c.migoto_version.clone(),
     }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct StorageInfoDto {
+    pub storage_root: String,
+    pub library_root: String,
+    pub previous_library_root: Option<String>,
+    pub files: u64,
+    pub bytes: u64,
+    pub available_bytes: Option<u64>,
+    pub recommended_root: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct StorageMigrationDto {
+    pub storage_root: String,
+    pub library_root: String,
+    pub copied_files: u64,
+    pub copied_bytes: u64,
+    pub managed_migoto_migrated: bool,
+    pub deployment_warning: Option<String>,
 }
 
 /// 角色网格汇总：支持指定分类（如光锥/立绘/默认皮肤等）。
@@ -404,7 +432,13 @@ fn collect_rows_where(
         .into_iter()
         .filter(|m| pred(m))
         .map(|m| {
-            let dir = lib.layout.mod_dir(&m.character, &m.name);
+            let dir = lib.entry_source_dir(&m).unwrap_or_else(|_| {
+                m.source_path
+                    .as_deref()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| lib.layout.root.join(&m.rel_path))
+            });
+            let source_available = dir.is_dir();
             ModRow {
                 id: m.id,
                 name: m.name,
@@ -418,10 +452,16 @@ fn collect_rows_where(
                 is_favorite: m.is_favorite,
                 sort_order: m.sort_order,
                 active_variant: m.active_variant.clone(),
-                variants: liquimod_core::variants::detect_variants(&dir)
-                    .into_iter()
-                    .map(|v| VariantDto { name: v.name })
-                    .collect(),
+                variants: if source_available {
+                    liquimod_core::variants::detect_variants(&dir)
+                        .into_iter()
+                        .map(|v| VariantDto { name: v.name })
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                storage_kind: m.storage_kind.as_str().to_string(),
+                source_available,
                 dir,
             }
         })
@@ -455,6 +495,8 @@ fn rows_to_dtos(root: &Path, rows: Vec<ModRow>) -> Vec<ModDto> {
                 sort_order: m.sort_order,
                 active_variant: m.active_variant,
                 variants: m.variants,
+                storage_kind: m.storage_kind,
+                source_available: m.source_available,
             }
         })
         .collect()
@@ -474,6 +516,8 @@ struct ModRow {
     sort_order: i64,
     active_variant: Option<String>,
     variants: Vec<VariantDto>,
+    storage_kind: String,
+    source_available: bool,
     dir: PathBuf,
 }
 
@@ -638,11 +682,13 @@ pub fn remove_entry(lib: &Library, mods_dir: Option<&Path>, id: i64) -> Result<(
             .disable(id)
             .map_err(|e| e.to_string())?;
     }
-    let dir = lib.layout.root.join(&entry.rel_path);
-    match std::fs::remove_dir_all(&dir) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => return Err("删除 Mod 文件失败，可能有文件被占用".to_string()),
+    if entry.storage_kind == ModStorageKind::Managed {
+        let dir = lib.layout.root.join(&entry.rel_path);
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("删除 Mod 文件失败，可能有文件被占用".to_string()),
+        }
     }
     lib.db.remove_mod(id).map_err(|e| e.to_string())?;
     liquimod_core::thumbs::remove_thumbnail(&lib.layout.root, id);
@@ -793,6 +839,156 @@ pub fn choose_mods_dir(
 }
 
 #[tauri::command]
+pub async fn get_storage_info(state: tauri::State<'_, AppState>) -> Result<StorageInfoDto, String> {
+    let (library_root, previous_library_root, storage_root) = {
+        let config = state.config.lock().unwrap();
+        (
+            config.library_root.clone(),
+            config.previous_library_root.clone(),
+            config.data_root(),
+        )
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let stats = liquimod_core::storage::storage_stats(&library_root)
+            .map_err(|e| format!("统计仓库失败：{e}"))?;
+        Ok(StorageInfoDto {
+            storage_root: storage_root.display().to_string(),
+            library_root: library_root.display().to_string(),
+            previous_library_root: previous_library_root.map(|p| p.display().to_string()),
+            files: stats.files,
+            bytes: stats.bytes,
+            available_bytes: stats.available_bytes,
+            recommended_root: Config::preferred_data_root().display().to_string(),
+        })
+    })
+    .await
+    .map_err(|e| format!("统计仓库任务失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn migrate_storage(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    target_root: String,
+) -> Result<StorageMigrationDto, String> {
+    ensure_game_stopped(state.inner(), "迁移数据仓库")?;
+    let target_root = PathBuf::from(target_root.trim());
+    if target_root.as_os_str().is_empty() {
+        return Err("请选择新的数据存储目录".to_string());
+    }
+
+    let old_watcher = state.watcher.lock().unwrap().take();
+    drop(old_watcher);
+    let library = std::sync::Arc::clone(&state.library);
+    let config = std::sync::Arc::clone(&state.config);
+    let config_path = state.config_path.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let old_config = config.lock().unwrap().clone();
+        let old_library_root = old_config.library_root.clone();
+        let old_managed_migoto = old_config.managed_migoto_dir();
+        let managed_migoto = old_config
+            .mods_dir
+            .as_deref()
+            .and_then(Path::parent)
+            .is_some_and(|parent| parent == old_managed_migoto);
+
+        let mut library_guard = library.lock().unwrap();
+        let report = liquimod_core::storage::migrate_library(&library_guard, &target_root)
+            .map_err(|e| format!("仓库迁移失败：{e}"))?;
+        let new_managed_migoto = target_root.join("3DMigoto");
+        if managed_migoto {
+            if let Err(error) = liquimod_core::storage::copy_managed_directory(
+                &old_managed_migoto,
+                &new_managed_migoto,
+            ) {
+                let _ = std::fs::remove_dir_all(&report.library_root);
+                return Err(format!("3DMigoto 迁移失败：{error}"));
+            }
+            liquimod_core::migoto_sync::init_migoto_workspace(&new_managed_migoto)
+                .map_err(|e| format!("初始化迁移后的 3DMigoto 失败：{e}"))?;
+        }
+
+        let new_library = Library::open(&report.library_root)
+            .map_err(|e| format!("无法打开迁移后的仓库：{e}"))?;
+        new_library
+            .db
+            .verify_integrity()
+            .map_err(|e| format!("迁移后的数据库校验失败：{e}"))?;
+
+        let mut next_config = old_config.clone();
+        next_config.previous_library_root = Some(old_library_root);
+        next_config.library_root = report.library_root.clone();
+        if managed_migoto {
+            next_config.mods_dir = Some(new_managed_migoto.join("Mods"));
+            if let Some(loader) = old_config.loader_exe.as_deref() {
+                if let Ok(relative) = loader.strip_prefix(&old_managed_migoto) {
+                    next_config.loader_exe = Some(new_managed_migoto.join(relative));
+                }
+            }
+        }
+        if let Err(error) = next_config.save_to(&config_path) {
+            let _ = std::fs::remove_dir_all(&report.library_root);
+            if managed_migoto {
+                let _ = std::fs::remove_dir_all(&new_managed_migoto);
+            }
+            return Err(format!("保存新存储配置失败：{error}"));
+        }
+
+        *library_guard = new_library;
+        *config.lock().unwrap() = next_config.clone();
+        let deployment_warning = next_config.mods_dir.as_deref().and_then(|mods_dir| {
+            Deployer::new(&library_guard, mods_dir)
+                .reconcile()
+                .err()
+                .map(|e| format!("仓库已迁移，但部署对账需要稍后重试：{e}"))
+        });
+        Ok(StorageMigrationDto {
+            storage_root: target_root.display().to_string(),
+            library_root: report.library_root.display().to_string(),
+            copied_files: report.copied_files,
+            copied_bytes: report.copied_bytes,
+            managed_migoto_migrated: managed_migoto,
+            deployment_warning,
+        })
+    })
+    .await
+    .map_err(|e| format!("仓库迁移任务失败：{e}"))?;
+    crate::start_watcher(&app, state.inner());
+    result
+}
+
+#[tauri::command]
+pub async fn cleanup_previous_library(state: tauri::State<'_, AppState>) -> Result<u64, String> {
+    ensure_game_stopped(state.inner(), "清理旧仓库")?;
+    let config = std::sync::Arc::clone(&state.config);
+    let config_path = state.config_path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut config = config.lock().unwrap();
+        let previous = config
+            .previous_library_root
+            .clone()
+            .ok_or_else(|| "没有可清理的旧仓库".to_string())?;
+        if previous == config.library_root
+            || previous.file_name().and_then(|name| name.to_str()) != Some("Library")
+            || !previous.join("liquimod.db").is_file()
+        {
+            return Err("旧仓库路径校验失败，已阻止删除".to_string());
+        }
+        let stats = liquimod_core::storage::storage_stats(&previous)
+            .map_err(|e| format!("统计旧仓库失败：{e}"))?;
+        std::fs::remove_dir_all(&previous)
+            .map_err(|e| format!("删除旧仓库失败，可能仍有文件被占用：{e}"))?;
+        config.previous_library_root = None;
+        config
+            .save_to(&config_path)
+            .map_err(|e| format!("保存清理状态失败：{e}"))?;
+        Ok(stats.bytes)
+    })
+    .await
+    .map_err(|e| format!("旧仓库清理任务失败：{e}"))?
+}
+
+#[tauri::command]
 pub async fn get_characters(
     state: tauri::State<'_, AppState>,
     category_id: Option<i64>,
@@ -886,25 +1082,51 @@ pub async fn list_mods(
 
 #[tauri::command]
 pub async fn set_mod_enabled(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: i64,
     enabled: bool,
 ) -> Result<(), String> {
-    ensure_game_stopped(state.inner(), "切换 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
-    let refresh = std::sync::Arc::clone(&state.refresh);
+    let deferred_runtime_cleanup = std::sync::Arc::clone(&state.deferred_runtime_cleanup);
+    let game_running = state.game_running.load(Ordering::Relaxed);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-    let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
-        let result = set_enabled(&lib, mods_dir.as_deref(), id, enabled);
-        if result.is_ok() {
-            tracing::info!("set mod {id} enabled={enabled}");
-            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
-            maybe_refresh_game(&app2, &refresh);
+        let mods_dir = mods_dir
+            .as_deref()
+            .ok_or("未配置 3Dmigoto Mods 目录，请先选择目录")?;
+        if !mods_dir.is_dir() {
+            return Err(format!("Mods 目录不存在：{}", mods_dir.display()));
         }
-        result
+        let deployer = Deployer::new(&lib, mods_dir);
+        if game_running
+            && !matches!(
+                deployer.strategy(),
+                liquimod_core::filesystem::DeployStrategy::Junction
+            )
+        {
+            return Err(
+                "游戏运行期间仅支持同卷 NTFS/ReFS Junction 热切换；复制兼容模式请退出游戏后操作"
+                    .to_string(),
+            );
+        }
+
+        if game_running && enabled {
+            deployer
+                .enable_reusing_runtime(id)
+                .map_err(|e| e.to_string())?;
+            deferred_runtime_cleanup.lock().unwrap().remove(&id);
+        } else if game_running {
+            deployer
+                .disable_preserving_runtime(id)
+                .map_err(|e| e.to_string())?;
+            deferred_runtime_cleanup.lock().unwrap().insert(id);
+        } else {
+            set_enabled(&lib, Some(mods_dir), id, enabled)?;
+            deferred_runtime_cleanup.lock().unwrap().remove(&id);
+        }
+        tracing::info!("set mod {id} enabled={enabled} game_running={game_running}");
+        Ok(())
     })
     .await
     .map_err(|e| format!("切换 Mod 失败：{e}"))?
@@ -912,7 +1134,6 @@ pub async fn set_mod_enabled(
 
 #[tauri::command]
 pub async fn set_mod_variant(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: i64,
     variant: Option<String>,
@@ -920,11 +1141,10 @@ pub async fn set_mod_variant(
     ensure_game_stopped(state.inner(), "切换 Mod 变体")?;
     let library = std::sync::Arc::clone(&state.library);
     let config = std::sync::Arc::clone(&state.config);
-    let refresh = std::sync::Arc::clone(&state.refresh);
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
         let entry = lib.db.get_mod(id).map_err(|e| e.to_string())?;
-        let root = lib.layout.root.join(&entry.rel_path);
+        let root = lib.entry_source_dir(&entry).map_err(|e| e.to_string())?;
         let available = liquimod_core::variants::detect_variants(&root);
         let requested = variant.filter(|v| !v.trim().is_empty());
         if let Some(ref value) = requested {
@@ -945,7 +1165,6 @@ pub async fn set_mod_variant(
             Deployer::new(&lib, &mods_dir)
                 .refresh(id)
                 .map_err(|e| e.to_string())?;
-            maybe_refresh_game(&app, &refresh);
         }
         Ok(())
     })
@@ -960,10 +1179,9 @@ pub async fn install_mod(
     character: Option<String>,
     password: Option<String>,
 ) -> Result<InstallResultDto, String> {
+    ensure_game_stopped(state.inner(), "安装 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
-    let refresh = std::sync::Arc::clone(&state.refresh);
     let config_arc = std::sync::Arc::clone(&state.config);
-    let game_running = std::sync::Arc::clone(&state.game_running);
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
@@ -977,16 +1195,8 @@ pub async fn install_mod(
         if let Ok(InstallResultDto::Installed { mod_id, .. }) = &result {
             let mod_id = *mod_id;
             let cfg = config_arc.lock().unwrap().clone();
-            if cfg.auto_enable && game_running.load(std::sync::atomic::Ordering::Relaxed) {
-                let message = "游戏正在运行中，已完成安装但暂不自动启用；请退出游戏后手动启用";
-                tracing::warn!("auto-enable skipped for mod {mod_id}: game is running");
-                let _ = app2.emit("liquimod-toast", message);
-            } else {
-                maybe_auto_enable(&lib, &cfg, mod_id, Some(&app2));
-            }
+            maybe_auto_enable(&lib, &cfg, mod_id, Some(&app2));
             tracing::info!("installed mod {mod_id}");
-            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
-            maybe_refresh_game(&app2, &refresh);
         }
         result
     })
@@ -995,23 +1205,75 @@ pub async fn install_mod(
 }
 
 #[tauri::command]
-pub async fn uninstall_mod(
+pub async fn connect_external_mod(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-    id: i64,
-) -> Result<(), String> {
+    path: String,
+    character: Option<String>,
+) -> Result<InstallResultDto, String> {
+    ensure_game_stopped(state.inner(), "连接外部 Mod")?;
+    let library = std::sync::Arc::clone(&state.library);
+    let config = std::sync::Arc::clone(&state.config);
+    let source = PathBuf::from(path);
+    let app_for_task = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        if !source.is_dir() {
+            return Err(format!("外部 Mod 目录不存在：{}", source.display()));
+        }
+        let source_canonical = source
+            .canonicalize()
+            .map_err(|e| format!("无法读取外部 Mod 目录：{e}"))?;
+        let cfg = config.lock().unwrap().clone();
+        if let Some(mods_dir) = cfg.mods_dir.as_deref() {
+            if let Ok(mods_canonical) = mods_dir.canonicalize() {
+                if source_canonical.starts_with(&mods_canonical)
+                    || mods_canonical.starts_with(&source_canonical)
+                {
+                    return Err(
+                        "不能连接 3DMigoto Mods 部署目录内的文件夹；请使用旧版本迁移功能导入"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+        let name = source
+            .file_name()
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| "无法从目录名识别 Mod 名称".to_string())?
+            .to_string();
+        let character = character
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| liquimod_core::games::infer_character(&source_canonical, Hsr::shared()))
+            .unwrap_or_else(|| "Others".to_string());
+        let lib = library.lock().unwrap();
+        let entry = lib
+            .add_external_folder(&source_canonical, &character, &name)
+            .map_err(|e| humanize_install_error(&e))?;
+        maybe_auto_enable(&lib, &cfg, entry.id, Some(&app_for_task));
+        Ok(InstallResultDto::Installed {
+            mod_id: entry.id,
+            name,
+            character,
+            warnings: vec!["已连接外部源目录；断开连接不会删除原文件".to_string()],
+        })
+    })
+    .await
+    .map_err(|e| format!("连接外部 Mod 任务失败：{e}"))?;
+    crate::start_watcher(&app, state.inner());
+    result
+}
+
+#[tauri::command]
+pub async fn uninstall_mod(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
     ensure_game_stopped(state.inner(), "卸载 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
-    let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-    let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
         let result = remove_entry(&lib, mods_dir.as_deref(), id);
         if result.is_ok() {
             tracing::info!("uninstalled mod {id}");
-            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
-            maybe_refresh_game(&app2, &refresh);
         }
         result
     })
@@ -1058,7 +1320,6 @@ pub async fn apply_preset(
 ) -> Result<ApplyResultDto, String> {
     ensure_game_stopped(state.inner(), "应用预设")?;
     let library = std::sync::Arc::clone(&state.library);
-    let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -1066,7 +1327,7 @@ pub async fn apply_preset(
         let result = apply_preset_by_id(&lib, mods_dir.as_deref(), id);
         if let Ok(r) = &result {
             tracing::info!("applied preset {id}（{name}）");
-            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
+            drop(lib);
             let _ = app2.emit(
                 "liquimod-toast",
                 format!(
@@ -1074,7 +1335,6 @@ pub async fn apply_preset(
                     r.enabled, r.disabled
                 ),
             );
-            maybe_refresh_game(&app2, &refresh);
         }
         result
     })
@@ -1135,24 +1395,16 @@ pub async fn remove_password(
 
 #[tauri::command]
 pub async fn rename_mod(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: i64,
     name: String,
 ) -> Result<(), String> {
     ensure_game_stopped(state.inner(), "重命名 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
-    let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-    let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
-        let result = rename_entry(&lib, mods_dir.as_deref(), id, &name);
-        if result.is_ok() {
-            drop(lib); // 先释放库锁，maybe_refresh_game 可能阻塞数分钟（UAC）
-            maybe_refresh_game(&app2, &refresh);
-        }
-        result
+        rename_entry(&lib, mods_dir.as_deref(), id, &name)
     })
     .await
     .map_err(|e| format!("重命名任务失败：{e}"))?
@@ -1160,24 +1412,16 @@ pub async fn rename_mod(
 
 #[tauri::command]
 pub async fn reassign_mod(
-    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: i64,
     target_character: String,
 ) -> Result<(), String> {
     ensure_game_stopped(state.inner(), "移动 Mod")?;
     let library = std::sync::Arc::clone(&state.library);
-    let refresh = std::sync::Arc::clone(&state.refresh);
     let mods_dir = state.config.lock().unwrap().mods_dir.clone();
-    let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
-        let result = reassign_entry(&lib, mods_dir.as_deref(), id, &target_character);
-        if result.is_ok() {
-            drop(lib);
-            maybe_refresh_game(&app2, &refresh);
-        }
-        result
+        reassign_entry(&lib, mods_dir.as_deref(), id, &target_character)
     })
     .await
     .map_err(|e| format!("角色重分配失败：{e}"))?
@@ -1191,6 +1435,20 @@ pub fn set_auto_enable(state: tauri::State<AppState>, enabled: bool) -> Result<C
         .save_to(&state.config_path)
         .map_err(|e| format!("配置保存失败：{e}"))?;
     tracing::info!("auto_enable = {enabled}");
+    Ok(config_dto(&config))
+}
+
+#[tauri::command]
+pub fn set_warn_multiple_mods(
+    state: tauri::State<AppState>,
+    enabled: bool,
+) -> Result<ConfigDto, String> {
+    let mut config = state.config.lock().unwrap();
+    config.warn_multiple_mods = enabled;
+    config
+        .save_to(&state.config_path)
+        .map_err(|e| format!("配置保存失败：{e}"))?;
+    tracing::info!("warn_multiple_mods = {enabled}");
     Ok(config_dto(&config))
 }
 
@@ -1498,9 +1756,9 @@ pub async fn install_migoto_update(
         let target = if let Some(mods) = &config.mods_dir {
             mods.parent()
                 .map(|p| p.to_path_buf())
-                .unwrap_or_else(liquimod_core::migoto_sync::default_managed_migoto_dir)
+                .unwrap_or_else(|| config.managed_migoto_dir())
         } else {
-            let def = liquimod_core::migoto_sync::default_managed_migoto_dir();
+            let def = config.managed_migoto_dir();
             config.mods_dir = Some(def.join("Mods"));
             def
         };
@@ -1569,7 +1827,7 @@ pub fn switch_to_managed_migoto(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConfigDto, String> {
-    let def_dir = liquimod_core::migoto_sync::default_managed_migoto_dir();
+    let def_dir = state.config.lock().unwrap().managed_migoto_dir();
     let _ = liquimod_core::migoto_sync::init_migoto_workspace(&def_dir)
         .map_err(|e| format!("初始化内置 3Dmigoto 失败：{e}"))?;
 
@@ -1884,7 +2142,7 @@ pub fn get_mod_keys(
 ) -> Result<Vec<ModKeyBindingDto>, String> {
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
-    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    let mod_dir = lib.entry_source_dir(&row).map_err(|e| e.to_string())?;
     let keys = liquimod_core::d3d::scan_mod_keys(&mod_dir);
     Ok(keys
         .into_iter()
@@ -1914,7 +2172,10 @@ pub fn set_mod_custom_cover(
     }
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
-    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    if row.storage_kind == ModStorageKind::External {
+        return Err("外部连接 Mod 保持源目录只读，请从其现有图片中选择封面".to_string());
+    }
+    let mod_dir = lib.entry_source_dir(&row).map_err(|e| e.to_string())?;
 
     let ext = src
         .extension()
@@ -1942,7 +2203,7 @@ pub fn set_mod_cover_from_internal(
 ) -> Result<String, String> {
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
-    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    let mod_dir = lib.entry_source_dir(&row).map_err(|e| e.to_string())?;
 
     // 安全防御 (LM-P1-004): 严禁利用 .. 越界逃出 Mod 文件夹
     let safe_rel = liquimod_core::safe_path::sanitize_relative_path(Path::new(&relative_path))
@@ -1970,7 +2231,7 @@ pub fn set_mod_cover_from_internal(
 pub fn reset_mod_cover(state: tauri::State<AppState>, id: i64) -> Result<Option<String>, String> {
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
-    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    let mod_dir = lib.entry_source_dir(&row).map_err(|e| e.to_string())?;
 
     lib.db
         .set_mod_cover_image(id, None)
@@ -1988,7 +2249,7 @@ pub fn get_mod_cover_image(
 ) -> Result<Option<String>, String> {
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
-    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    let mod_dir = lib.entry_source_dir(&row).map_err(|e| e.to_string())?;
 
     let Some(src) = liquimod_core::thumbs::find_preview_image(&mod_dir, row.cover_image.as_deref())
     else {
@@ -2098,7 +2359,7 @@ fn open_in_explorer(path: &Path) -> Result<(), String> {
 pub fn open_mod_folder(state: tauri::State<AppState>, id: i64) -> Result<(), String> {
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
-    let path = lib.layout.mod_dir(&row.character, &row.name);
+    let path = lib.entry_source_dir(&row).map_err(|e| e.to_string())?;
     open_in_explorer(&path)
 }
 
@@ -2108,25 +2369,31 @@ pub fn open_path_in_explorer(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn trigger_refresh_game(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn trigger_refresh_game(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let refresh = std::sync::Arc::clone(&state.refresh);
-    let app2 = app.clone();
+    let process_names = {
+        let config = state.config.lock().unwrap();
+        configured_game_process_names(&config)
+    };
     tauri::async_runtime::spawn_blocking(move || {
-        maybe_refresh_game(&app2, &refresh);
+        let process_name_refs = process_names.iter().map(String::as_str).collect::<Vec<_>>();
+        if !is_game_running(&process_name_refs) {
+            return Err("未检测到游戏进程，无法发送 F10".to_string());
+        }
+        send_refresh_game(&refresh)
     })
     .await
-    .map_err(|e| format!("刷新任务失败：{e}"))?;
-    Ok(())
+    .map_err(|e| format!("刷新任务失败：{e}"))?
 }
 
 #[tauri::command]
 pub fn get_mod_images(state: tauri::State<AppState>, id: i64) -> Result<Vec<ModImageDto>, String> {
     let lib = state.library.lock().unwrap();
     let row = lib.db.get_mod(id).map_err(|e| e.to_string())?;
-    let mod_dir = lib.layout.mod_dir(&row.character, &row.name);
+    let mod_dir = match lib.entry_source_dir(&row) {
+        Ok(path) => path,
+        Err(_) => return Ok(Vec::new()),
+    };
     if !mod_dir.is_dir() {
         return Ok(Vec::new());
     }
@@ -2303,11 +2570,7 @@ pub fn get_diagnostic_status(state: tauri::State<AppState>) -> DiagnosticStatusD
             config.loader_exe.clone(),
         )
     };
-    let helper_ready = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("liquimod-refresh-helper.exe")))
-        .map(|p| p.exists())
-        .unwrap_or(false);
+    let helper_ready = refresh_helper_path().is_some();
     let checks = liquimod_core::diagnostics::collect_checks(
         &library_root,
         mods_dir.as_deref(),
@@ -2615,8 +2878,10 @@ mod tests {
     fn set_mods_dir_rejects_missing() {
         let mut c = Config {
             library_root: PathBuf::from("x"),
+            previous_library_root: None,
             mods_dir: None,
             auto_enable: false,
+            warn_multiple_mods: true,
             theme: "auto".into(),
             character_category_name: "角色".into(),
             game_exe: None,
@@ -2750,6 +3015,19 @@ mod tests {
     fn remove_entry_missing_id_errors() {
         let (_d, lib) = temp_lib();
         assert!(remove_entry(&lib, None, 99999).is_err());
+    }
+
+    #[test]
+    fn remove_external_entry_disconnects_without_deleting_source() {
+        let (_d, lib) = temp_lib();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("mod.ini"), b"x").unwrap();
+        let entry = lib
+            .add_external_folder(source.path(), "Kafka", "External")
+            .unwrap();
+        remove_entry(&lib, None, entry.id).unwrap();
+        assert!(source.path().join("mod.ini").is_file());
+        assert!(lib.db.get_mod(entry.id).is_err());
     }
 
     #[test]
@@ -2935,8 +3213,10 @@ mod tests {
         let mods = tempfile::tempdir().unwrap();
         let mut c = Config {
             library_root: tmp.path().to_path_buf(),
+            previous_library_root: None,
             mods_dir: Some(mods.path().to_path_buf()),
             auto_enable: false,
+            warn_multiple_mods: true,
             theme: "auto".into(),
             character_category_name: "角色".into(),
             game_exe: None,

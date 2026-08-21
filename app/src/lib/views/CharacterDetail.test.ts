@@ -105,4 +105,40 @@ describe("CharacterDetail", () => {
     await waitFor(() => expect(screen.getAllByText("Winter Coat").length).toBeGreaterThanOrEqual(1));
     expect(screen.queryByText("Summer Bikini")).toBeNull();
   });
+
+  it("多个 Mod 启用时显示风险提示且不再提供互斥模式", async () => {
+    mockedInvoke.mockResolvedValue([
+      { id: 21, name: "Mod A", enabled: true, installed_at: 1 },
+      { id: 22, name: "Mod B", enabled: true, installed_at: 2 },
+    ]);
+    render(CharacterDetail, {
+      character,
+      categories: [],
+      modsDirConfigured: true,
+      warnMultipleEnabled: true,
+      onback: () => {},
+      onconfigured: () => {},
+    });
+    await waitFor(() => expect(screen.getByText(/2 个 Mod 同时启用/)).toBeTruthy());
+    expect(screen.queryByText("单选互斥换装")).toBeNull();
+  });
+
+  it("游戏运行期间保留启停但禁用文件变更操作", async () => {
+    mockedInvoke.mockResolvedValue([
+      { id: 31, name: "Runtime Mod", enabled: false, installed_at: 1 },
+    ]);
+    render(CharacterDetail, {
+      character,
+      categories: [],
+      modsDirConfigured: true,
+      gameRunning: true,
+      onback: () => {},
+      onconfigured: () => {},
+    });
+    await waitFor(() => expect(screen.getAllByRole("switch").length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: "导入压缩包" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getAllByRole("switch")[0].hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "重命名 Runtime Mod" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "卸载 Runtime Mod" }).hasAttribute("disabled")).toBe(true);
+  });
 });

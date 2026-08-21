@@ -30,6 +30,8 @@
 
   let open = $state(false);
   let focusedIndex = $state(-1);
+  let hoveredIndex = $state(-1);
+  let focusSource = $state<"keyboard" | "pointer" | "none">("none");
   let rootEl: HTMLDivElement | null = $state(null);
 
   let currentOption = $derived(options.find((o) => o.value === value));
@@ -38,6 +40,8 @@
     if (open) {
       const idx = options.findIndex((o) => o.value === value);
       focusedIndex = idx >= 0 ? idx : 0;
+      hoveredIndex = -1;
+      focusSource = "none";
       return pushEscHandler(() => {
         open = false;
         return true;
@@ -54,6 +58,8 @@
     if (e) e.stopPropagation();
     value = opt.value;
     open = false;
+    hoveredIndex = -1;
+    focusSource = "none";
     onChange?.(opt.value);
   }
 
@@ -69,9 +75,13 @@
     if (e.key === "ArrowDown") {
       e.preventDefault();
       focusedIndex = (focusedIndex + 1) % options.length;
+      focusSource = "keyboard";
+      hoveredIndex = -1;
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       focusedIndex = (focusedIndex - 1 + options.length) % options.length;
+      focusSource = "keyboard";
+      hoveredIndex = -1;
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       if (focusedIndex >= 0 && focusedIndex < options.length) {
@@ -157,22 +167,32 @@
       id="custom-select-listbox"
       class="absolute top-full left-0 mt-1.5 min-w-[130px] max-h-60 overflow-y-auto glass-floating radius-card p-1 z-50 flex flex-col gap-0.5 shadow-2xl border border-[var(--glass-floating-stroke)] animate-slide-up"
       role="listbox"
+      tabindex="-1"
       style="box-shadow: var(--glass-floating-shadow);"
+      onmouseleave={() => {
+        hoveredIndex = -1;
+        if (focusSource === "pointer") focusSource = "none";
+      }}
     >
       {#each options as opt, idx (opt.value ?? idx)}
         {@const isSelected = opt.value === value}
-        {@const isFocused = idx === focusedIndex}
+        {@const isFocused = idx === focusedIndex && focusSource === "keyboard"}
+        {@const isHovered = idx === hoveredIndex}
         <button
           type="button"
           role="option"
           aria-selected={isSelected}
           class="flex items-center justify-between w-full px-2.5 py-1.5 radius-pill text-xs text-left cursor-pointer transition-colors {isSelected
             ? 'bg-[var(--accent)]/15 text-[var(--accent)] font-semibold'
-            : isFocused
+            : isFocused || isHovered
             ? 'bg-[var(--item-hover)] text-[var(--text)]'
             : 'text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]'}"
           onclick={(e) => selectOption(opt, e)}
-          onmouseenter={() => (focusedIndex = idx)}
+          onmouseenter={() => {
+            hoveredIndex = idx;
+            focusedIndex = idx;
+            focusSource = "pointer";
+          }}
         >
           <div class="flex items-center gap-2 truncate">
             {#if opt.icon}

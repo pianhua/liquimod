@@ -1,3 +1,26 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModStorageKind {
+    Managed,
+    External,
+}
+
+impl ModStorageKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Managed => "managed",
+            Self::External => "external",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        if value.eq_ignore_ascii_case("external") {
+            Self::External
+        } else {
+            Self::Managed
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModEntry {
     pub id: i64,
@@ -22,6 +45,9 @@ pub struct ModEntry {
     pub sort_order: i64,
     /// 当前选择的变体目录；无变体时为 None
     pub active_variant: Option<String>,
+    /// 托管 Mod 位于 Library 内；外部 Mod 仅保存绝对源路径。
+    pub storage_kind: ModStorageKind,
+    pub source_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

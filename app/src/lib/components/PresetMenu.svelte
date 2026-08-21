@@ -2,7 +2,15 @@
   import { api, type PresetDto } from "$lib/api";
   import { toast } from "$lib/toast.svelte";
 
-  let { onapplied, block = false }: { onapplied: () => void; block?: boolean } = $props();
+  let {
+    onapplied,
+    block = false,
+    applyDisabled = false,
+  }: {
+    onapplied: () => void;
+    block?: boolean;
+    applyDisabled?: boolean;
+  } = $props();
 
   let open = $state(false);
   let presets = $state<PresetDto[]>([]);
@@ -39,7 +47,7 @@
   }
 
   async function apply(p: PresetDto) {
-    if (busy) return;
+    if (busy || applyDisabled) return;
     busy = true;
     try {
       await api.applyPreset(p.id, p.name);
@@ -114,7 +122,8 @@
         <div class="flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-[var(--glass-stroke)]">
           <button
             class="flex-1 text-left text-sm px-1.5 py-1 cursor-pointer truncate disabled:opacity-50"
-            disabled={busy}
+            disabled={busy || applyDisabled}
+            title={applyDisabled ? "游戏运行期间暂不支持应用预设" : `应用预设 ${p.name}`}
             onclick={() => apply(p)}
           >
             {p.name}

@@ -16,6 +16,7 @@ pub mod paths;
 pub mod preset;
 pub mod refresh;
 pub mod safe_path;
+pub mod storage;
 pub mod thumbs;
 pub mod variants;
 pub mod watch;

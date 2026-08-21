@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterMods, sortMods, viewKey, type View } from "./view";
+import { filterMods, mergeVisibleOrder, sortMods, viewKey, type View } from "./view";
 import type { ModDto } from "./api";
 
 function mod(id: number, name: string, enabled: boolean, installed_at: number): ModDto {
@@ -62,5 +62,11 @@ describe("sortMods", () => {
   it("不改变原数组", () => {
     sortMods(mods, "recent");
     expect(mods.map((m) => m.id)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("mergeVisibleOrder", () => {
+  it("只重排筛选可见项并保留隐藏项槽位", () => {
+    expect(mergeVisibleOrder([1, 2, 3, 4, 5], [5, 3, 1])).toEqual([5, 2, 3, 4, 1]);
   });
 });

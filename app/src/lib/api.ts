@@ -1,9 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export interface ConfigDto {
+  storage_root: string;
   library_root: string;
+  previous_library_root: string | null;
   mods_dir: string | null;
   auto_enable: boolean;
+  warn_multiple_mods: boolean;
   theme: string;
   character_category_name: string;
   game_exe: string | null;
@@ -85,6 +88,27 @@ export interface ModDto {
   sort_order?: number;
   active_variant?: string | null;
   variants?: ModVariantDto[];
+  storage_kind?: "managed" | "external";
+  source_available?: boolean;
+}
+
+export interface StorageInfoDto {
+  storage_root: string;
+  library_root: string;
+  previous_library_root: string | null;
+  files: number;
+  bytes: number;
+  available_bytes: number | null;
+  recommended_root: string;
+}
+
+export interface StorageMigrationDto {
+  storage_root: string;
+  library_root: string;
+  copied_files: number;
+  copied_bytes: number;
+  managed_migoto_migrated: boolean;
+  deployment_warning: string | null;
 }
 
 export interface ModKeyBindingDto {
@@ -175,9 +199,12 @@ const mockPresets: PresetDto[] = [
 const mockPasswords: string[] = ["1234"];
 
 const mockConfig: ConfigDto = {
+  storage_root: "C:/mock",
   library_root: "C:/mock/Library",
+  previous_library_root: null,
   mods_dir: null,
   auto_enable: false,
+  warn_multiple_mods: true,
   theme: "auto",
   character_category_name: "角色",
   game_exe: null,
@@ -236,6 +263,33 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
           warnings: [],
         } as T;
       }
+      case "connect_external_mod": {
+        const p = String(args?.path ?? "C:/External/Linked Mod");
+        const name = p.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? "Linked Mod";
+        const id = Math.max(...mockMods.map((mod) => mod.id), 0) + 1;
+        mockMods.push({
+          id,
+          name,
+          enabled: false,
+          installed_at: Math.floor(Date.now() / 1000),
+          thumb: null,
+          size_bytes: 0,
+          file_count: 0,
+          path: p,
+          category_id: null,
+          note: null,
+          cover_image: null,
+          storage_kind: "external",
+          source_available: true,
+        });
+        return {
+          status: "installed",
+          mod_id: id,
+          name,
+          character: String(args?.character ?? "Others"),
+          warnings: ["已连接外部源目录；断开连接不会删除原文件"],
+        } as T;
+      }
       case "uninstall_mod":
         return undefined as T;
       case "set_mod_enabled": {
@@ -292,6 +346,9 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       }
       case "set_auto_enable":
         mockConfig.auto_enable = Boolean(args?.enabled);
+        return structuredClone(mockConfig) as T;
+      case "set_warn_multiple_mods":
+        mockConfig.warn_multiple_mods = Boolean(args?.enabled);
         return structuredClone(mockConfig) as T;
       case "set_theme":
         mockConfig.theme = String(args?.theme ?? "auto");
@@ -402,6 +459,33 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       case "choose_mods_dir":
         mockConfig.mods_dir = String(args?.path ?? "");
         return structuredClone(mockConfig) as T;
+      case "get_storage_info":
+        return {
+          storage_root: mockConfig.storage_root,
+          library_root: mockConfig.library_root,
+          previous_library_root: mockConfig.previous_library_root,
+          files: 84,
+          bytes: 24_691_356,
+          available_bytes: 512_000_000_000,
+          recommended_root: "D:/LiquiModData",
+        } as T;
+      case "migrate_storage": {
+        const root = String(args?.targetRoot ?? "D:/LiquiModData").replace(/[\\/]+$/, "");
+        mockConfig.previous_library_root = mockConfig.library_root;
+        mockConfig.storage_root = root;
+        mockConfig.library_root = `${root}/Library`;
+        return {
+          storage_root: root,
+          library_root: mockConfig.library_root,
+          copied_files: 84,
+          copied_bytes: 24_691_356,
+          managed_migoto_migrated: false,
+          deployment_warning: null,
+        } as T;
+      }
+      case "cleanup_previous_library":
+        mockConfig.previous_library_root = null;
+        return 24_691_356 as T;
       case "launch_game":
       case "launch_game_native":
       case "launch_official_launcher":
@@ -418,9 +502,12 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         } as T;
       case "import_3dmigoto_dir":
         return {
+          storage_root: "C:/mock",
           library_root: "C:/mock/Library",
+          previous_library_root: null,
           mods_dir: `${String(args?.path ?? "")}/Mods`,
           auto_enable: false,
+          warn_multiple_mods: true,
           theme: "auto",
           character_category_name: "角色",
           game_exe: "D:/Games/Star Rail/Game/StarRail.exe",
@@ -564,6 +651,10 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 export const api = {
   getConfig: () => call<ConfigDto>("get_config"),
   chooseModsDir: (path: string) => call<ConfigDto>("choose_mods_dir", { path }),
+  getStorageInfo: () => call<StorageInfoDto>("get_storage_info"),
+  migrateStorage: (targetRoot: string) =>
+    call<StorageMigrationDto>("migrate_storage", { targetRoot }),
+  cleanupPreviousLibrary: () => call<number>("cleanup_previous_library"),
   getCharacters: (categoryId?: number | null) =>
     call<CharacterSummary[]>("get_characters", { categoryId: categoryId ?? null }),
   listMods: (character: string, categoryId?: number | null) =>
@@ -574,6 +665,8 @@ export const api = {
     call<void>("set_mod_variant", { id, variant }),
   installMod: (path: string, character?: string | null, password?: string | null) =>
     call<InstallResult>("install_mod", { path, character: character ?? null, password: password ?? null }),
+  connectExternalMod: (path: string, character?: string | null) =>
+    call<InstallResult>("connect_external_mod", { path, character: character ?? null }),
   uninstallMod: (id: number) => call<void>("uninstall_mod", { id }),
   listPresets: () => call<PresetDto[]>("list_presets"),
   savePreset: (name: string) => call<PresetDto>("save_preset", { name }),
@@ -587,6 +680,8 @@ export const api = {
   reassignMod: (id: number, targetCharacter: string) =>
     call<void>("reassign_mod", { id, targetCharacter }),
   setAutoEnable: (enabled: boolean) => call<ConfigDto>("set_auto_enable", { enabled }),
+  setWarnMultipleMods: (enabled: boolean) =>
+    call<ConfigDto>("set_warn_multiple_mods", { enabled }),
   setTheme: (theme: string) => call<ConfigDto>("set_theme", { theme }),
   setCharacterCategoryName: (name: string) => call<ConfigDto>("set_character_category_name", { name }),
   listCategories: () => call<CategoryDto[]>("list_categories"),

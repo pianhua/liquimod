@@ -19,6 +19,12 @@ describe("CharacterCard 信号灯", () => {
     const { container } = render(CharacterCard, { props: { character: c(2), onclick: () => {} } });
     expect(container.querySelector("span[title]")!.getAttribute("style")).toContain("rgb(255, 214, 10)");
   });
+  it("关闭风险提示后多个启用仍显示绿灯", () => {
+    const { container } = render(CharacterCard, {
+      props: { character: c(3), warnMultipleEnabled: false, onclick: () => {} },
+    });
+    expect(container.querySelector("span[title]")!.getAttribute("style")).toContain("rgb(52, 199, 89)");
+  });
   it("0 个 = 灰灯", () => {
     const { container } = render(CharacterCard, { props: { character: c(0, 0), onclick: () => {} } });
     const dot = container.querySelector("span[title]")!;

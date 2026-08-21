@@ -716,7 +716,9 @@ pub fn detect_conflicts(lib: &crate::library::Library) -> crate::error::Result<V
     let mut hash_map: HashMap<String, (String, Vec<ConflictModInfo>)> = HashMap::new();
 
     for m in &enabled_mods {
-        let mod_dir = lib.layout.mod_dir(&m.character, &m.name);
+        let Ok(mod_dir) = lib.entry_source_dir(m) else {
+            continue;
+        };
         let entries = scan_mod_hashes(&mod_dir);
         let info = ConflictModInfo {
             id: m.id,
@@ -895,7 +897,9 @@ pub fn detect_variable_conflicts(
 ) -> crate::error::Result<Vec<VariableConflict>> {
     let mut by_variable: HashMap<String, Vec<ConflictModInfo>> = HashMap::new();
     for m in lib.db.list_mods()?.into_iter().filter(|m| m.enabled) {
-        let path = lib.layout.mod_dir(&m.character, &m.name);
+        let Ok(path) = lib.entry_source_dir(&m) else {
+            continue;
+        };
         let info = ConflictModInfo {
             id: m.id,
             character: m.character,

@@ -35,37 +35,54 @@ impl<'a> Deployer<'a> {
         format!("{}__{}__{}", entry.character, entry.name, entry.id)
     }
 
-    fn source_dir(&self, entry: &ModEntry) -> Result<PathBuf> {
-        let root = self.library.layout.root.join(&entry.rel_path);
-        if !root.is_dir() {
-            return Err(crate::error::LiquiModError::ModNotFound(format!(
-                "library folder missing: {}",
-                root.display()
-            )));
-        }
+    fn source_dir_with_runtime_reuse(
+        &self,
+        entry: &ModEntry,
+        reuse_existing_runtime: bool,
+    ) -> Result<PathBuf> {
+        let root = self.library.entry_source_dir(entry)?;
         let needs_runtime =
             !variants::detect_variants(&root).is_empty() || d3d::has_ini_variables(&root);
         if !needs_runtime {
             return Ok(root);
         }
         let runtime = self.library.layout.runtime_mod_dir(entry.id);
+        if reuse_existing_runtime && runtime.is_dir() {
+            return Ok(runtime);
+        }
         variants::materialize(&root, entry.active_variant.as_deref(), &runtime)?;
         d3d::isolate_ini_variables(&runtime, entry.id)?;
         Ok(runtime)
     }
 
+    fn source_dir(&self, entry: &ModEntry) -> Result<PathBuf> {
+        self.source_dir_with_runtime_reuse(entry, false)
+    }
+
     pub fn enable(&self, id: i64) -> Result<()> {
+        self.enable_with_runtime_reuse(id, false)
+    }
+
+    /// 游戏运行期重新启用：复用先前保留的运行副本，避免删除仍被 3Dmigoto 引用的文件。
+    pub fn enable_reusing_runtime(&self, id: i64) -> Result<()> {
+        self.enable_with_runtime_reuse(id, true)
+    }
+
+    fn enable_with_runtime_reuse(&self, id: i64, reuse_existing_runtime: bool) -> Result<()> {
         let entry = self.library.db.get_mod(id)?;
         if entry.enabled {
             return Ok(());
         }
-        let source = self.source_dir(&entry)?;
+        let runtime_existed = self.library.layout.runtime_mod_dir(id).is_dir();
+        let source = self.source_dir_with_runtime_reuse(&entry, reuse_existing_runtime)?;
         let link = self.mods_dir.join(Self::link_name(&entry));
         let op = self.library.db.op_begin("enable", &id.to_string())?;
         self.deploy_path(&source, &link)?;
         if let Err(e) = self.library.db.set_enabled(id, true) {
             let _ = Self::remove_deployed_path(&link, self.strategy());
-            let _ = self.cleanup_runtime(id);
+            if !(reuse_existing_runtime && runtime_existed) {
+                let _ = self.cleanup_runtime(id);
+            }
             return Err(e);
         }
         self.library.db.op_finish(op)
@@ -85,6 +102,15 @@ impl<'a> Deployer<'a> {
     }
 
     pub fn disable(&self, id: i64) -> Result<()> {
+        self.disable_with_runtime_cleanup(id, true)
+    }
+
+    /// 游戏运行期禁用：只拆部署入口，运行副本延迟到游戏退出后清理。
+    pub fn disable_preserving_runtime(&self, id: i64) -> Result<()> {
+        self.disable_with_runtime_cleanup(id, false)
+    }
+
+    fn disable_with_runtime_cleanup(&self, id: i64, cleanup_runtime: bool) -> Result<()> {
         let entry = self.library.db.get_mod(id)?;
         let link = self.mods_dir.join(Self::link_name(&entry));
         if !entry.enabled {
@@ -98,7 +124,9 @@ impl<'a> Deployer<'a> {
         let op = self.library.db.op_begin("disable", &id.to_string())?;
         Self::remove_deployed_path(&link, self.strategy())?;
         self.library.db.set_enabled(id, false)?;
-        self.cleanup_runtime(id)?;
+        if cleanup_runtime {
+            self.cleanup_runtime(id)?;
+        }
         self.library.db.op_finish(op)
     }
 
@@ -340,5 +368,23 @@ mod tests {
             .unwrap();
         d.refresh(entry.id).unwrap();
         assert_eq!(fs::read_to_string(runtime.join("choice.ini")).unwrap(), "b");
+    }
+
+    #[test]
+    fn live_disable_preserves_and_reuses_variant_runtime() {
+        let (_t, lib, mods_dir) = setup();
+        let root = lib.layout.mod_dir("Firefly", "LiveSwap");
+        fs::create_dir_all(root.join("Option A")).unwrap();
+        fs::write(root.join("Option A").join("choice.ini"), "a").unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let deployer = Deployer::new(&lib, &mods_dir);
+        deployer.enable(entry.id).unwrap();
+        let runtime = lib.layout.runtime_mod_dir(entry.id);
+        fs::write(runtime.join("runtime-sentinel.txt"), "keep").unwrap();
+
+        deployer.disable_preserving_runtime(entry.id).unwrap();
+        assert!(runtime.join("runtime-sentinel.txt").is_file());
+        deployer.enable_reusing_runtime(entry.id).unwrap();
+        assert!(runtime.join("runtime-sentinel.txt").is_file());
     }
 }

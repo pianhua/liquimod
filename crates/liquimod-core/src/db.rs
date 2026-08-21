@@ -1,5 +1,5 @@
 use crate::error::{LiquiModError, Result};
-use crate::models::{Category, ModEntry, Preset};
+use crate::models::{Category, ModEntry, ModStorageKind, Preset};
 use rusqlite::Connection;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,6 +23,23 @@ impl Database {
 
     pub fn open_in_memory() -> Result<Self> {
         Self::init(Connection::open_in_memory()?)
+    }
+
+    pub fn checkpoint(&self) -> Result<()> {
+        self.conn
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    }
+
+    pub fn verify_integrity(&self) -> Result<()> {
+        let result: String = self
+            .conn
+            .query_row("PRAGMA integrity_check;", [], |row| row.get(0))?;
+        if result.eq_ignore_ascii_case("ok") {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(format!("SQLite integrity check failed: {result}")).into())
+        }
     }
 
     fn init(conn: Connection) -> Result<Self> {
@@ -76,6 +93,8 @@ impl Database {
             "ALTER TABLE mods ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE mods ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE mods ADD COLUMN active_variant TEXT",
+            "ALTER TABLE mods ADD COLUMN storage_kind TEXT NOT NULL DEFAULT 'managed'",
+            "ALTER TABLE mods ADD COLUMN source_path TEXT",
         ] {
             match conn.execute_batch(sql) {
                 Ok(()) => {}
@@ -102,6 +121,40 @@ impl Database {
             |r| r.get(0),
         )?;
         Ok(id)
+    }
+
+    pub fn insert_external_mod(
+        &self,
+        character: &str,
+        name: &str,
+        source_path: &str,
+    ) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO mods (character, name, rel_path, installed_at, storage_kind, source_path)
+             VALUES (?1, ?2, '', ?3, 'external', ?4)",
+            rusqlite::params![character, name, now_unix(), source_path],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn external_path_taken(&self, source_path: &str) -> Result<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM mods WHERE storage_kind = 'external' AND source_path = ?1",
+            [source_path],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn find_mod(&self, character: &str, name: &str) -> Result<Option<ModEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order, active_variant, storage_kind, source_path FROM mods WHERE character = ?1 AND name = ?2",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![character, name])?;
+        rows.next()?
+            .map(Self::row_to_entry)
+            .transpose()
+            .map_err(Into::into)
     }
 
     pub fn set_active_variant(&self, id: i64, variant: Option<&str>) -> Result<()> {
@@ -194,12 +247,14 @@ impl Database {
             is_favorite: r.get::<_, i64>(11)? != 0,
             sort_order: r.get(12)?,
             active_variant: r.get(13)?,
+            storage_kind: ModStorageKind::from_db(&r.get::<_, String>(14)?),
+            source_path: r.get(15)?,
         })
     }
 
     pub fn list_mods(&self) -> Result<Vec<ModEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order, active_variant FROM mods ORDER BY is_favorite DESC, sort_order ASC, character, name",
+            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order, active_variant, storage_kind, source_path FROM mods ORDER BY is_favorite DESC, sort_order ASC, character, name",
         )?;
         let rows = stmt.query_map([], Self::row_to_entry)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -208,7 +263,7 @@ impl Database {
     pub fn get_mod(&self, id: i64) -> Result<ModEntry> {
         self.conn
             .query_row(
-                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order, active_variant FROM mods WHERE id = ?1",
+                "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order, active_variant, storage_kind, source_path FROM mods WHERE id = ?1",
                 rusqlite::params![id],
                 Self::row_to_entry,
             )

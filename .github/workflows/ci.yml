@@ -58,6 +58,9 @@ jobs:
       - name: Rust Format Check
         run: cargo fmt --all -- --check
 
+      - name: Prepare Bundled Refresh Helper
+        run: cargo build --release -p liquimod-refresh-helper
+
       - name: Rust Clippy Lints
         run: cargo clippy --workspace --all-targets -- -D warnings
 

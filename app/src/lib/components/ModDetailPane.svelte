@@ -17,6 +17,8 @@
     mod,
     categories,
     character,
+    variantLocked = false,
+    mutationLocked = false,
     ontoggle,
     onrename,
     onuninstall,
@@ -28,6 +30,8 @@
     mod: ModDto | null;
     categories: CategoryDto[];
     character?: CharacterSummary;
+    variantLocked?: boolean;
+    mutationLocked?: boolean;
     ontoggle: (next: boolean) => void;
     onrename: (name: string) => Promise<boolean>;
     onuninstall: () => Promise<void>;
@@ -42,6 +46,8 @@
   let confirming = $state(false);
   let busy = $state(false);
   let cancelled = $state(false);
+  let isExternal = $derived(mod?.storage_kind === "external");
+  let sourceOffline = $derived(isExternal && mod?.source_available === false);
 
   // 🖼️ 现代化大图画廊与 Lightbox 状态
   let lightboxOpen = $state(false);
@@ -61,7 +67,11 @@
   let savingNote = $state(false);
 
   async function selectVariant(value: string | null) {
-    if (!mod || busy || value === (mod.active_variant ?? null)) return;
+    if (!mod || busy || variantLocked || value === (mod.active_variant ?? null)) return;
+    if (isExternal) {
+      toast("外部 Mod 为只读来源，不能在库内改写文件变体");
+      return;
+    }
     busy = true;
     try {
       await onvariantchange?.(value);
@@ -152,7 +162,7 @@
   }
 
   function startRename() {
-    if (!mod) return;
+    if (!mod || mutationLocked) return;
     draft = mod.name;
     renaming = true;
   }
@@ -190,7 +200,7 @@
   }
 
   async function confirmUninstall() {
-    if (!mod || busy) return;
+    if (!mod || busy || mutationLocked) return;
     busy = true;
     try {
       await onuninstall();
@@ -202,6 +212,10 @@
 
   async function openModFolder() {
     if (!mod) return;
+    if (sourceOffline) {
+      toast("外部 Mod 源目录当前不可访问");
+      return;
+    }
     try {
       onopen();
       await api.openModFolder(mod.id);
@@ -212,6 +226,10 @@
 
   async function pickCustomCover() {
     if (!mod || busy) return;
+    if (isExternal) {
+      toast("外部 Mod 为只读来源，不能写入自定义封面");
+      return;
+    }
     try {
       const selected = await open({
         multiple: false,
@@ -235,6 +253,10 @@
 
   async function setCoverFromGallery(img: ModImageDto) {
     if (!mod || busy) return;
+    if (isExternal) {
+      toast("外部 Mod 为只读来源，不能写入封面");
+      return;
+    }
     busy = true;
     try {
       const newThumb = await api.setModCoverFromInternal(mod.id, img.relative_path);
@@ -251,6 +273,10 @@
 
   async function resetCover() {
     if (!mod || busy) return;
+    if (isExternal) {
+      toast("外部 Mod 为只读来源，不能修改封面");
+      return;
+    }
     busy = true;
     try {
       const newThumb = await api.resetModCover(mod.id);
@@ -500,6 +526,7 @@
           class="h-7 px-2.5 radius-pill text-xs font-medium backdrop-blur-md cursor-pointer flex items-center gap-1 shadow-sm transition-all hover:scale-105"
           style="background: rgba(0,0,0,0.75); color: #fff"
           title="从本地选择图片更换封面"
+          disabled={isExternal}
           onclick={pickCustomCover}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -514,6 +541,7 @@
             class="h-7 px-2.5 radius-pill text-xs font-medium backdrop-blur-md cursor-pointer flex items-center gap-1 shadow-sm transition-all hover:scale-105"
             style="background: rgba(0,0,0,0.75); color: #fff"
             title="恢复默认封面探测"
+            disabled={isExternal}
             onclick={resetCover}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -552,14 +580,26 @@
             </button>
           </div>
         {:else}
-          <div class="flex items-center gap-2 group/title">
+          <div class="flex items-center gap-2 group/title min-w-0">
             <h2 class="text-xl font-bold tracking-tight truncate select-text" title={mod.name}>
               {mod.name}
             </h2>
+            {#if isExternal}
+              <span
+                class="h-5 px-1.5 radius-pill inline-flex items-center shrink-0 text-[10px] font-semibold"
+                class:text-amber-500={sourceOffline}
+                class:text-[var(--accent)]={!sourceOffline}
+                style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+                title={sourceOffline ? "外部源目录当前不可访问" : "直接连接外部文件夹，LiquiMod 不会复制或删除源文件"}
+              >
+                {sourceOffline ? "源离线" : "外部"}
+              </span>
+            {/if}
             <button
               class="glass radius-pill w-8 h-8 grid place-items-center opacity-0 group-hover/title:opacity-100 transition-opacity text-secondary hover:text-[var(--text)] cursor-pointer shrink-0"
-              title="重命名"
+              title={mutationLocked ? "游戏运行期间暂不支持重命名" : "重命名"}
               aria-label="重命名"
+              disabled={mutationLocked}
               onclick={startRename}
             >
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -574,6 +614,7 @@
             <button
               class="glass radius-pill h-5 px-2 text-[10px] text-secondary hover:text-[var(--text)] flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
               title="在 Windows 资源管理器中打开此文件夹"
+              disabled={sourceOffline}
               onclick={openModFolder}
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -590,11 +631,22 @@
       <div class="shrink-0 flex items-center gap-2">
         <Toggle
           checked={mod.enabled}
+          disabled={sourceOffline}
           ariaLabel={`启用 ${mod.name}`}
           onchange={(next) => ontoggle(next)}
         />
       </div>
     </div>
+
+    {#if sourceOffline}
+      <div class="flex items-start gap-2 p-3 radius-card text-xs text-amber-600 dark:text-amber-300" style="background: color-mix(in srgb, var(--warning) 12%, transparent); box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--warning) 40%, transparent)">
+        <span class="text-sm leading-none">⚠</span>
+        <div class="min-w-0">
+          <p class="font-semibold">外部源目录暂时不可访问</p>
+          <p class="mt-0.5 opacity-85 break-all">恢复该目录或盘符后，Mod 才能再次启用。</p>
+        </div>
+      </div>
+    {/if}
 
     {#if mod.variants && mod.variants.length > 0}
       <div class="flex flex-col gap-2 p-3 radius-card shrink-0" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)">
@@ -608,17 +660,27 @@
               type="button"
               role="radio"
               aria-checked={(mod.active_variant ?? mod.variants[0]?.name) === variant.name}
-              disabled={busy || mod.enabled}
+              disabled={busy || mod.enabled || variantLocked || isExternal}
               class="radius-pill px-3 py-1.5 text-xs font-medium cursor-pointer transition-all disabled:cursor-not-allowed disabled:opacity-60"
               style={(mod.active_variant ?? mod.variants[0]?.name) === variant.name
                 ? "background: var(--accent-fill); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent)"
                 : "background: var(--glass-tint); color: var(--text-secondary); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"}
-              title={mod.enabled ? "请先禁用 Mod 后切换变体" : `切换到 ${variant.name}`}
+              title={variantLocked
+                ? "游戏运行期间暂不支持切换 LiquiMod 文件变体"
+                : isExternal
+                  ? "外部 Mod 为只读来源，不能在库内改写文件变体"
+                : mod.enabled
+                  ? "请先禁用 Mod 后切换变体"
+                  : `切换到 ${variant.name}`}
               onclick={() => selectVariant(variant.name)}
             >{variant.name}</button>
           {/each}
         </div>
-        {#if mod.enabled}
+        {#if variantLocked}
+          <span class="text-[10px] text-secondary">游戏运行期间暂不可切换文件变体；Mod 内部按键与 ModUI 不受影响。</span>
+        {:else if isExternal}
+          <span class="text-[10px] text-secondary">外部 Mod 为只读来源；变体请在源目录或游戏内 ModUI 中处理。</span>
+        {:else if mod.enabled}
           <span class="text-[10px] text-secondary">已启用时暂不可切换，请先禁用后修改。</span>
         {/if}
       </div>
@@ -727,7 +789,7 @@
                   {:else}
                     <span></span>
                   {/if}
-                  {#if !img.is_cover}
+                  {#if !img.is_cover && !isExternal}
                     <button
                       class="radius-pill text-[9px] py-0.5 px-1.5 bg-white text-black font-semibold shadow hover:scale-105 transition-transform"
                       onclick={(e) => {
@@ -748,6 +810,7 @@
           <p class="text-xs">该 Mod 目录内暂无其他图片</p>
           <button
             class="text-[11px] text-[var(--accent)] hover:underline cursor-pointer"
+            disabled={isExternal}
             onclick={pickCustomCover}
           >
             从本地选择一张封面
@@ -822,7 +885,7 @@
     <div class="flex flex-col gap-2 mt-auto pt-4 border-t border-[var(--glass-stroke)] shrink-0">
       {#if confirming}
         <div class="p-3 rounded-xl flex flex-col gap-2" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3)">
-          <p class="text-xs text-red-500 font-medium">确定要彻底卸载此 Mod 吗？所有相关文件将被物理删除。</p>
+          <p class="text-xs text-red-500 font-medium">{isExternal ? "确定要断开此外部 Mod 吗？源文件不会被删除。" : "确定要彻底卸载此 Mod 吗？所有相关文件将被物理删除。"}</p>
           <div class="flex items-center gap-2 justify-end">
             <button
               class="radius-pill h-8 px-3.5 text-xs font-medium text-white cursor-pointer disabled:opacity-50"
@@ -830,7 +893,7 @@
               disabled={busy}
               onclick={confirmUninstall}
             >
-              确定删除
+              {isExternal ? "确认断开" : "确定删除"}
             </button>
             <button
               class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer"
@@ -847,6 +910,7 @@
             <button
               class="glass radius-pill h-8 px-3 text-xs text-secondary hover:text-[var(--text)] cursor-pointer flex items-center gap-1.5 transition-colors"
               title="在文件资源管理器中打开"
+              disabled={sourceOffline}
               onclick={openModFolder}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -857,10 +921,11 @@
           </div>
           <button
             class="radius-pill h-8 px-3 text-xs font-medium text-red-500 hover:bg-red-500/10 cursor-pointer transition-colors"
-            title="彻底删除此 Mod"
+            title={mutationLocked ? `游戏运行期间暂不支持${isExternal ? "断开连接" : "卸载"}` : (isExternal ? "断开外部连接（不删除源文件）" : "彻底删除此 Mod")}
+            disabled={mutationLocked}
             onclick={() => (confirming = true)}
           >
-            卸载
+            {isExternal ? "断开连接" : "卸载"}
           </button>
         </div>
       {/if}
@@ -958,14 +1023,14 @@
 
         <!-- 右侧操作栏 -->
         <div class="flex items-center gap-2">
-          {#if currentImg && !currentImg.is_cover}
+          {#if currentImg && !currentImg.is_cover && !isExternal}
             <button
               class="h-8 px-3.5 radius-pill text-xs font-semibold bg-white text-black hover:bg-white/90 cursor-pointer flex items-center gap-1 shadow-lg transition-transform hover:scale-105"
               onclick={() => setCoverFromGallery(currentImg)}
             >
               ★ 设为封面
             </button>
-          {:else if mod?.cover_image}
+          {:else if mod?.cover_image && !isExternal}
             <button
               class="h-8 px-3.5 radius-pill text-xs font-medium bg-neutral-900/90 border border-white/15 text-white hover:bg-neutral-800 cursor-pointer flex items-center gap-1 transition-transform hover:scale-105"
               onclick={resetCover}
