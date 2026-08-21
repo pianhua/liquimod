@@ -59,4 +59,19 @@ describe("ModDetailPane", () => {
     setup({ mod: null });
     expect(screen.getByText("未选中 Mod")).toBeTruthy();
   });
+
+  it("游戏运行期间锁定 LiquiMod 文件变体", () => {
+    setup({
+      mod: {
+        ...mockMod,
+        enabled: false,
+        variants: [{ name: "Option A" }],
+        active_variant: "Option A",
+      },
+      variantLocked: true,
+      onvariantchange: vi.fn(async () => {}),
+    });
+    expect(screen.getByRole("radio", { name: "Option A" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/游戏运行期间暂不可切换文件变体/)).toBeTruthy();
+  });
 });

@@ -108,7 +108,7 @@ fn check_helper(helper_ready: bool) -> DiagnosticCheck {
         detail: if helper_ready {
             "刷新助手已就绪".to_owned()
         } else {
-            "未找到刷新助手，启用/安装仍可使用，但不会自动发送 F10".to_owned()
+            "未找到刷新助手，Mod 管理仍可使用，但无法手动发送 F10".to_owned()
         },
         remediation: (!helper_ready)
             .then_some("重新安装或修复 LiquiMod 发布包中的 refresh-helper。".to_owned()),

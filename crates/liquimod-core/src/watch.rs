@@ -44,6 +44,7 @@ fn is_self_write(library_root: &std::path::Path, p: &std::path::Path) -> bool {
 pub fn start(
     library_root: PathBuf,
     mods_dir: Option<PathBuf>,
+    external_sources: Vec<PathBuf>,
     on_change: impl Fn() + Send + 'static,
 ) -> Result<LibraryWatcher> {
     let (tx, rx) = mpsc::channel::<()>();
@@ -86,6 +87,13 @@ pub fn start(
                 .map_err(|e| crate::error::LiquiModError::Io(std::io::Error::other(e)))?;
         }
     }
+    for dir in external_sources {
+        if dir.is_dir() {
+            watcher
+                .watch(&dir, RecursiveMode::Recursive)
+                .map_err(|e| crate::error::LiquiModError::Io(std::io::Error::other(e)))?;
+        }
+    }
     let debouncer = std::thread::spawn(move || {
         // 收第一个信号后清空 DEBOUNCE 窗口内的后续信号，回调一次。
         while rx.recv().is_ok() {
@@ -110,7 +118,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let hits = Arc::new(AtomicUsize::new(0));
         let hits2 = Arc::clone(&hits);
-        let _w = start(dir.path().to_path_buf(), None, move || {
+        let _w = start(dir.path().to_path_buf(), None, Vec::new(), move || {
             hits2.fetch_add(1, Ordering::SeqCst);
         })
         .unwrap();
@@ -133,7 +141,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let hits = Arc::new(AtomicUsize::new(0));
         let hits2 = Arc::clone(&hits);
-        let _w = start(dir.path().to_path_buf(), None, move || {
+        let _w = start(dir.path().to_path_buf(), None, Vec::new(), move || {
             hits2.fetch_add(1, Ordering::SeqCst);
         })
         .unwrap();

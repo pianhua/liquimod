@@ -3,7 +3,7 @@
 
 use crate::error::{LiquiModError, Result};
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -26,7 +26,7 @@ pub fn is_game_running(process_names: &[&str]) -> bool {
     })
 }
 
-/// 持有管道写端 = app 生命周期；Drop 即断开，helper 随之退出。
+/// 持有管道双工端 = app 生命周期；Drop 即断开，helper 随之退出。
 pub struct RefreshClient {
     pipe: File,
 }
@@ -59,18 +59,56 @@ impl RefreshClient {
     }
 
     fn try_connect() -> std::io::Result<File> {
-        OpenOptions::new().write(true).open(PIPE_NAME)
+        OpenOptions::new().read(true).write(true).open(PIPE_NAME)
     }
 
     /// 通知 helper 发一次 F10。
     ///
-    /// 同一 read 批次内到达的多次 poke 会合并为单次 F10（helper 按"批次含 b'1'"触发）：
-    /// 属故意的突发去重，契合"一次变更爆发只刷新一次"的语义。
+    /// 同一 read 批次内到达的多次 poke 会合并为单次 F10（helper 按"批次含 b'1'"触发）。
     pub fn poke(&mut self) -> Result<()> {
         self.pipe.write_all(b"1")?;
         self.pipe.flush()?;
-        Ok(())
+        wait_for_pipe_reply(&self.pipe, Duration::from_secs(2))?;
+        let mut ack = [0u8; 1];
+        self.pipe.read_exact(&mut ack)?;
+        if ack[0] == b'1' {
+            Ok(())
+        } else {
+            Err(LiquiModError::Io(std::io::Error::other(
+                "未找到或无法聚焦游戏窗口，F10 未发送",
+            )))
+        }
     }
+}
+
+#[cfg(windows)]
+fn wait_for_pipe_reply(pipe: &File, timeout: Duration) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Pipes::PeekNamedPipe;
+
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let mut available = 0;
+        let handle = HANDLE(pipe.as_raw_handle());
+        unsafe { PeekNamedPipe(handle, None, 0, None, Some(&mut available), None) }
+            .map_err(std::io::Error::other)?;
+        if available > 0 {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "刷新 helper 响应超时",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[cfg(not(windows))]
+fn wait_for_pipe_reply(_pipe: &File, _timeout: Duration) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// 启动外部可执行文件：

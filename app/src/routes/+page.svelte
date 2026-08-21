@@ -37,8 +37,6 @@
   let showSettings = $state(false);
   let error = $state("");
   let dragHover = $state(false);
-  let conflicts = $state<import("$lib/api").ConflictReportDto[]>([]);
-  let variableConflicts = $state<import("$lib/api").VariableConflictDto[]>([]);
   let gameRunning = $state(false);
 
   let charCatName = $derived(config?.character_category_name ?? "角色");
@@ -130,8 +128,6 @@
       await loadViewMods();
       if (seq !== refreshSeq) return;
 
-      conflicts = await api.getActiveConflicts().catch(() => []);
-      variableConflicts = await api.getActiveVariableConflicts().catch(() => []);
     } catch (e) {
       if (seq === refreshSeq) {
         error = String(e);
@@ -628,8 +624,6 @@
           {isCharGrid}
           {showSort}
           {showSettings}
-          {conflicts}
-          {variableConflicts}
           {gameRunning}
           workMode={config?.work_mode ?? "play"}
           ontoggleworkmode={toggleWorkMode}
@@ -649,6 +643,7 @@
             {characters}
             {query}
             sort={charSort}
+            warnMultipleEnabled={config?.warn_multiple_mods ?? true}
             onselect={(c) => onSelectCharacter(view, c)}
             onmenu={handleCharacterContextMenu}
             ontogglefavorite={refresh}
@@ -660,6 +655,8 @@
             categoryId={view.categoryId}
             categoryName={view.categoryName}
             modsDirConfigured={config?.mods_dir != null}
+            warnMultipleEnabled={config?.warn_multiple_mods ?? true}
+            {gameRunning}
             {query}
             onback={() => onBackFromCharacter(view)}
             onconfigured={refresh}

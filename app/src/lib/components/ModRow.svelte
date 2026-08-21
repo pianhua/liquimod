@@ -11,9 +11,9 @@
     selected = false,
     checked = false,
     isMultiSelectMode = false,
-    isDragging = false,
-    dragOffsetY = 0,
-    slotShiftY = 0,
+    dragPreview = false,
+    dragPlaceholder = false,
+    mutationLocked = false,
     ontoggle,
     ontogglefavorite,
     onrename,
@@ -30,9 +30,9 @@
     selected?: boolean;
     checked?: boolean;
     isMultiSelectMode?: boolean;
-    isDragging?: boolean;
-    dragOffsetY?: number;
-    slotShiftY?: number;
+    dragPreview?: boolean;
+    dragPlaceholder?: boolean;
+    mutationLocked?: boolean;
     ontoggle: (next: boolean) => void;
     ontogglefavorite?: () => void;
     onrename: (name: string) => Promise<boolean>;
@@ -51,6 +51,8 @@
   let busy = $state(false);
   let cancelled = $state(false);
   let imgError = $state(false);
+  let isExternal = $derived(mod.storage_kind === "external");
+  let sourceOffline = $derived(isExternal && mod.source_available === false);
 
   function fmtSize(b: number): string {
     if (b < 0) return "—";
@@ -66,6 +68,7 @@
   }
 
   function startRename() {
+    if (mutationLocked) return;
     draft = mod.name;
     renaming = true;
   }
@@ -90,7 +93,7 @@
   }
 
   async function confirmUninstall() {
-    if (busy) return;
+    if (busy || mutationLocked) return;
     busy = true;
     try {
       await onuninstall();
@@ -111,7 +114,7 @@
     if (target?.closest("button, input, [role='switch']")) return;
     if (e.key === " ") {
       e.preventDefault();
-      ontoggle(!mod.enabled);
+      if (!sourceOffline) ontoggle(!mod.enabled);
     } else if (e.key === "Enter") {
       e.preventDefault();
       onselect?.(e as unknown as MouseEvent);
@@ -129,17 +132,19 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <div
   role="listitem"
-  tabindex="0"
+  tabindex={dragPreview || dragPlaceholder ? -1 : 0}
+  aria-hidden={dragPreview || dragPlaceholder}
+  data-mod-id={mod.id}
   aria-label={mod.name}
   class="group glass radius-card px-3.5 py-3 flex items-center gap-2.5 outline-none transition-colors cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
-  class:selected-row={selected && !checked && !isDragging}
-  class:checked-row={checked && !isDragging}
-  class:dragging-active={isDragging}
-  style={isDragging
-    ? `transform: translateY(${dragOffsetY}px); z-index: 50; position: relative; border-radius: var(--radius-card, 16px); box-shadow: 0 20px 40px -8px rgba(0,0,0,0.38), 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1.5px var(--accent), 0 0 20px -2px var(--accent-glow); background: var(--panel-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); pointer-events: none; overflow: hidden;`
-    : slotShiftY
-    ? `transform: translateY(${slotShiftY}px); transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);`
-    : "transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);"}
+  class:selected-row={selected && !checked && !dragPreview && !dragPlaceholder}
+  class:checked-row={checked && !dragPreview && !dragPlaceholder}
+  class:dragging-active={dragPreview}
+  style={dragPlaceholder
+    ? "visibility: hidden; pointer-events: none; transition: none;"
+    : dragPreview
+      ? "height: 100%; border-radius: var(--radius-card, 16px); box-shadow: 0 20px 40px -8px rgba(0,0,0,0.38), 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1.5px var(--accent), 0 0 20px -2px var(--accent-glow); background: var(--panel-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); pointer-events: none; overflow: hidden; transition: none;"
+      : ""}
   onclick={onRowClick}
   ondblclick={onopen}
   onkeydown={onRowKeydown}
@@ -154,7 +159,7 @@
   {#if confirming}
     <div class="flex-1 flex items-center justify-between gap-3 min-w-0">
       <p class="text-sm truncate">
-        确认卸载 <span class="font-medium">{mod.name}</span>？文件将被删除
+        {isExternal ? "确认断开" : "确认卸载"} <span class="font-medium">{mod.name}</span>？{isExternal ? "源文件不会被删除" : "文件将被删除"}
       </p>
       <div class="flex items-center gap-2 shrink-0">
         <button
@@ -163,7 +168,7 @@
           disabled={busy}
           onclick={confirmUninstall}
         >
-          确认卸载
+          {isExternal ? "确认断开" : "确认卸载"}
         </button>
         <button
           class="glass radius-pill h-8 px-3.5 text-sm cursor-pointer"
@@ -177,7 +182,7 @@
     <!-- 拖拽手柄 (Pointer 物理抓手) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="w-5 h-7 flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing text-secondary/50 hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-md transition-all touch-none select-none {isDragging ? '!opacity-100 !text-[var(--accent)]' : ''}"
+      class="w-5 h-7 flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing text-secondary/50 hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-md transition-all touch-none select-none {dragPreview ? '!opacity-100 !text-[var(--accent)]' : ''}"
       title="按住拖拽排序"
       aria-label="拖拽手柄"
       onpointerdown={(e) => {
@@ -257,7 +262,20 @@
           use:focusOn
         />
       {:else}
-        <p class="font-semibold truncate text-[15px] text-[var(--text)] leading-snug" title={mod.name}>{mod.name}</p>
+        <div class="flex items-center gap-1.5 min-w-0">
+          <p class="font-semibold truncate text-[15px] text-[var(--text)] leading-snug" title={mod.name}>{mod.name}</p>
+          {#if isExternal}
+            <span
+              class="h-5 px-1.5 radius-pill inline-flex items-center shrink-0 text-[10px] font-semibold"
+              class:text-amber-500={sourceOffline}
+              class:text-[var(--accent)]={!sourceOffline}
+              style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
+              title={sourceOffline ? "外部源目录当前不可访问" : "直接连接外部文件夹，LiquiMod 不会复制或删除源文件"}
+            >
+              {sourceOffline ? "源离线" : "外部"}
+            </span>
+          {/if}
+        </div>
         <p class="text-[13px] text-secondary mt-0.5 truncate leading-tight">
           {fmtSize(mod.size_bytes)} · {mod.file_count < 0 ? "—" : mod.file_count} 文件 · {fmtDate(mod.installed_at)}
         </p>
@@ -288,7 +306,8 @@
         <button
           class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer"
           aria-label={`打开目录 ${mod.name}`}
-          title="打开目录"
+          title={sourceOffline ? "外部源目录当前不可访问" : "打开目录"}
+          disabled={sourceOffline}
           onclick={onopen}
         >
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -298,7 +317,8 @@
         <button
           class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer"
           aria-label={`重命名 ${mod.name}`}
-          title="重命名"
+          title={mutationLocked ? "游戏运行期间暂不支持重命名" : "重命名"}
+          disabled={mutationLocked}
           onclick={startRename}
         >
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -313,8 +333,9 @@
         />
         <button
           class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer transition-colors hover:text-white hover:bg-[var(--danger)]"
-          aria-label={`卸载 ${mod.name}`}
-          title="卸载"
+          aria-label={`${isExternal ? "断开连接" : "卸载"} ${mod.name}`}
+          title={mutationLocked ? `游戏运行期间暂不支持${isExternal ? "断开连接" : "卸载"}` : (isExternal ? "断开连接（不删除源文件）" : "卸载")}
+          disabled={mutationLocked}
           onclick={() => (confirming = true)}
         >
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -326,6 +347,7 @@
 
     <Toggle
       checked={mod.enabled}
+      disabled={sourceOffline}
       ariaLabel={`启用 ${mod.name}`}
       onchange={(next) => ontoggle(next)}
     />

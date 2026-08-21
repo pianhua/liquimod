@@ -24,6 +24,7 @@ const presets: PresetDto[] = [
 
 describe("PresetMenu", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(api.listPresets).mockResolvedValue(presets);
     vi.mocked(api.savePreset).mockResolvedValue({ id: 3, name: "新", created_at: 3 });
     vi.mocked(api.applyPreset).mockResolvedValue({ enabled: 2, disabled: 1 });
@@ -55,6 +56,15 @@ describe("PresetMenu", () => {
     await fireEvent.click(screen.getByText("日常出战"));
     expect(api.applyPreset).toHaveBeenCalledWith(1, "日常出战");
     await waitFor(() => expect(onapplied).toHaveBeenCalled());
+  });
+
+  it("游戏运行期间禁用应用但仍可查看预设", async () => {
+    render(PresetMenu, { props: { onapplied: () => {}, applyDisabled: true } });
+    await fireEvent.click(screen.getByRole("button", { name: "预设" }));
+    const preset = await screen.findByText("日常出战");
+    expect(preset.closest("button")?.disabled).toBe(true);
+    await fireEvent.click(preset);
+    expect(api.applyPreset).not.toHaveBeenCalled();
   });
 
   it("应用失败也回调 onapplied（部分应用后刷新列表）", async () => {

@@ -4,6 +4,7 @@
   let {
     selectedCount,
     categories,
+    destructiveLocked = false,
     onEnableAll,
     onDisableAll,
     onMoveCategory,
@@ -13,6 +14,7 @@
   }: {
     selectedCount: number;
     categories: CategoryDto[];
+    destructiveLocked?: boolean;
     onEnableAll: () => void;
     onDisableAll: () => void;
     onMoveCategory: (categoryId: number | null) => void;
@@ -118,7 +120,8 @@
     <button
       type="button"
       class="h-8 px-3 text-xs font-medium rounded-full cursor-pointer flex items-center gap-1.5 transition-all hover:bg-[var(--item-hover)] text-secondary hover:text-[var(--text)] active:scale-95"
-      title="批量重新分配所属角色"
+      title={destructiveLocked ? "游戏运行期间暂不支持重新分配角色" : "批量重新分配所属角色"}
+      disabled={destructiveLocked}
       onclick={onReassignCharacter}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -155,7 +158,8 @@
       <button
         type="button"
         class="h-8 px-3 text-xs font-medium rounded-full cursor-pointer flex items-center gap-1.5 transition-all hover:bg-red-500/10 text-red-400 active:scale-95"
-        title="批量卸载所有选中的 Mod"
+        title={destructiveLocked ? "游戏运行期间暂不支持卸载" : "批量卸载所有选中的 Mod"}
+        disabled={destructiveLocked}
         onclick={() => (isConfirmingDelete = true)}
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

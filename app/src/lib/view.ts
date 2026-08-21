@@ -60,3 +60,12 @@ export function sortMods(mods: ModDto[], sort: ModSort): ModDto[] {
     }
   });
 }
+
+export function mergeVisibleOrder(fullIds: number[], visibleIds: number[]): number[] {
+  const visibleSet = new Set(visibleIds);
+  let visibleIndex = 0;
+  return fullIds.map((id) => {
+    if (!visibleSet.has(id)) return id;
+    return visibleIds[visibleIndex++] ?? id;
+  });
+}

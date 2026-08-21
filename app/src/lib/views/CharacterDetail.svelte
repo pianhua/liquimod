@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     api,
     isTauri,
@@ -10,7 +10,13 @@
     type CharacterSummary,
     type ModDto,
   } from "$lib/api";
-  import { filterMods, sortMods, type EnabledFilter, type ModSort } from "$lib/view";
+  import {
+    filterMods,
+    mergeVisibleOrder,
+    sortMods,
+    type EnabledFilter,
+    type ModSort,
+  } from "$lib/view";
   import ModRow from "$lib/components/ModRow.svelte";
   import ModDetailPane from "$lib/components/ModDetailPane.svelte";
   import EnabledFilterChips from "$lib/components/EnabledFilterChips.svelte";
@@ -33,6 +39,8 @@
     categoryId = null,
     categoryName = undefined,
     modsDirConfigured,
+    warnMultipleEnabled = true,
+    gameRunning = false,
     query = "",
     onback,
     onconfigured,
@@ -42,6 +50,8 @@
     categoryId?: number | null;
     categoryName?: string;
     modsDirConfigured: boolean;
+    warnMultipleEnabled?: boolean;
+    gameRunning?: boolean;
     query?: string;
     onback: () => void;
     onconfigured: () => void;
@@ -87,11 +97,11 @@
   let enabledFilter = $state<EnabledFilter>("all");
   let sort = $state<ModSort>("recent");
   let selectedModId = $state<number | null>(null);
-  let radioMode = $state(false);
   let detailWidth = $state(getInitialDetailWidth());
   let isDragging = $state(false);
 
   let shown = $derived(sortMods(filterMods(mods, query, enabledFilter), sort));
+  let enabledCount = $derived(mods.filter((mod) => mod.enabled).length);
   let selectedMod = $derived(
     shown.find((m) => m.id === selectedModId) ?? (shown.length > 0 ? shown[0] : null)
   );
@@ -261,24 +271,8 @@
   async function toggle(mod: ModDto, next: boolean) {
     error = "";
     try {
-      if (next && radioMode) {
-        // 单选互斥模式：开启当前 Mod 时，自动关闭同角色的其余所有已启用 Mod
-        const others = mods.filter((m) => m.id !== mod.id && m.enabled);
-        await api.setModEnabled(mod.id, true);
-        mod.enabled = true;
-        for (const other of others) {
-          try {
-            await api.setModEnabled(other.id, false);
-            other.enabled = false;
-          } catch {
-            // 忽略非关键单项错误
-          }
-        }
-        toast(`已启用「${mod.name}」（互斥模式已关闭同角色其他外观）`);
-      } else {
-        await api.setModEnabled(mod.id, next);
-        mod.enabled = next;
-      }
+      await api.setModEnabled(mod.id, next);
+      mod.enabled = next;
       onconfigured();
     } catch (e) {
       error = String(e);
@@ -365,6 +359,7 @@
         selectedModId = remaining.length > 0 ? remaining[0].id : null;
       }
       onconfigured();
+      toast(mod.storage_kind === "external" ? "已断开外部 Mod，源文件保持不变" : "Mod 已卸载");
     } catch (e) {
       error = String(e);
     }
@@ -457,6 +452,7 @@
             label: `批量卸载 (${count} 项)`,
             icon: "🗑️",
             danger: true,
+            disabled: gameRunning,
             action: () => {
               if (window.confirm(`确定要批量卸载选中的 ${count} 个 Mod 吗？`)) {
                 batchUninstall();
@@ -515,6 +511,7 @@
           id: "reassign",
           label: "重新分配角色…",
           icon: "🎯",
+          disabled: gameRunning,
           action: () => {
             reassignTargetMod = mod;
           },
@@ -529,6 +526,7 @@
           id: "rename",
           label: "重命名…",
           icon: "✏️",
+          disabled: gameRunning,
           action: () => {
             const newName = window.prompt("请输入新 Mod 名称：", mod.name);
             if (newName && newName.trim() && newName.trim() !== mod.name) {
@@ -539,9 +537,10 @@
         { id: "d1", label: "", divider: true },
         {
           id: "uninstall",
-          label: "卸载此 Mod",
+          label: mod.storage_kind === "external" ? "断开外部连接" : "卸载此 Mod",
           icon: "🗑️",
           danger: true,
+          disabled: gameRunning,
           shortcut: "Del",
           action: () => uninstallMod(mod),
         },
@@ -550,12 +549,22 @@
   }
 
   let draggingModId = $state<number | null>(null);
-  let dragOffsetY = $state(0);
-  let targetIndex = $state<number | null>(null);
-  let startIndex = 0;
-  let startY = 0;
-  let rowHeights: number[] = [];
+  let dragOrderIds = $state<number[] | null>(null);
+  let dragPreviewRect = $state<{ left: number; width: number; height: number } | null>(null);
+  let dragPreviewTop = $state(0);
+  let dragPointerOffsetY = 0;
   let listContainerEl: HTMLElement | null = $state(null);
+  let dragOverlayHostEl: HTMLElement | null = $state(null);
+  let displayedMods = $derived(
+    dragOrderIds
+      ? dragOrderIds
+          .map((id) => shown.find((mod) => mod.id === id))
+          .filter((mod): mod is ModDto => mod != null)
+      : shown,
+  );
+  let draggedMod = $derived(
+    draggingModId == null ? null : mods.find((mod) => mod.id === draggingModId) ?? null,
+  );
 
   async function toggleFavoriteMod(mod: ModDto) {
     try {
@@ -571,87 +580,88 @@
     if (e.button !== 0) return;
     e.preventDefault();
 
-    const idx = shown.findIndex((m) => m.id === mod.id);
-    if (idx === -1) return;
+    const row = (e.currentTarget as HTMLElement | null)?.closest<HTMLElement>('[role="listitem"]');
+    if (!row || !dragOverlayHostEl || !shown.some((item) => item.id === mod.id)) return;
+    const rect = row.getBoundingClientRect();
+    const hostRect = dragOverlayHostEl.getBoundingClientRect();
 
     draggingModId = mod.id;
-    startIndex = idx;
-    targetIndex = idx;
-    startY = e.clientY;
-    dragOffsetY = 0;
-
-    if (listContainerEl) {
-      const rows = Array.from(listContainerEl.querySelectorAll<HTMLElement>('div[role="listitem"]'));
-      rowHeights = rows.map((r) => r.offsetHeight + 10);
-    }
+    dragOrderIds = shown.map((item) => item.id);
+    dragPreviewRect = {
+      left: rect.left - hostRect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+    dragPointerOffsetY = e.clientY - rect.top;
+    dragPreviewTop = rect.top - hostRect.top;
+    document.body.style.userSelect = "none";
 
     function onPointerMove(ev: PointerEvent) {
-      if (draggingModId == null) return;
-      dragOffsetY = ev.clientY - startY;
+      if (draggingModId == null || !dragOrderIds || !listContainerEl || !dragOverlayHostEl) return;
+      ev.preventDefault();
+      dragPreviewTop =
+        ev.clientY - dragPointerOffsetY - dragOverlayHostEl.getBoundingClientRect().top;
 
-      const approxRowH = rowHeights[startIndex] || 68;
-      const shiftSteps = Math.round(dragOffsetY / approxRowH);
-      targetIndex = Math.max(0, Math.min(shown.length - 1, startIndex + shiftSteps));
+      const listRect = listContainerEl.getBoundingClientRect();
+      const edge = 44;
+      if (ev.clientY < listRect.top + edge) {
+        listContainerEl.scrollTop -= Math.ceil((listRect.top + edge - ev.clientY) / 6);
+      } else if (ev.clientY > listRect.bottom - edge) {
+        listContainerEl.scrollTop += Math.ceil((ev.clientY - (listRect.bottom - edge)) / 6);
+      }
+
+      const rows = Array.from(listContainerEl.querySelectorAll<HTMLElement>('[data-mod-id]'))
+        .filter((item) => Number(item.dataset.modId) !== draggingModId);
+      let insertionIndex = 0;
+      for (const item of rows) {
+        const itemRect = item.getBoundingClientRect();
+        if (ev.clientY > itemRect.top + itemRect.height / 2) insertionIndex++;
+      }
+
+      const nextOrder = dragOrderIds.filter((id) => id !== draggingModId);
+      nextOrder.splice(insertionIndex, 0, draggingModId);
+      if (nextOrder.some((id, index) => id !== dragOrderIds?.[index])) {
+        dragOrderIds = nextOrder;
+      }
     }
 
-    async function onPointerUp(_ev: PointerEvent) {
+    async function onPointerUp() {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
+      document.body.style.userSelect = "";
 
-      const finalModId = draggingModId;
-      const finalTarget = targetIndex;
-      const initialIndex = startIndex;
-
-      draggingModId = null;
-      dragOffsetY = 0;
-      targetIndex = null;
-
-      if (finalModId == null || finalTarget == null || finalTarget === initialIndex) {
-        return;
-      }
-
-      // 重排当前 shown 数组
-      const currentShown = [...shown];
-      const [moved] = currentShown.splice(initialIndex, 1);
-      currentShown.splice(finalTarget, 0, moved);
-
-      // 更新所有 mods 的 sort_order
-      const nextMods = [...mods];
-      currentShown.forEach((m, i) => {
-        m.sort_order = i;
-        const exist = nextMods.find((x) => x.id === m.id);
-        if (exist) exist.sort_order = i;
-      });
-
-      mods = nextMods;
-      sort = "custom";
-
-      try {
-        await api.reorderMods(currentShown.map((m) => m.id));
-        toast("已更新 Mod 自定义排序");
-      } catch (err) {
-        toast(String(err));
+      const visibleIds = dragOrderIds;
+      const orderChanged = visibleIds?.some((id, index) => id !== shown[index]?.id) ?? false;
+      if (orderChanged && visibleIds) {
+        const fullIds = mergeVisibleOrder(
+          sortMods(mods, sort).map((item) => item.id),
+          visibleIds,
+        );
+        const positions = new Map(fullIds.map((id, index) => [id, index]));
+        mods = mods.map((item) => ({ ...item, sort_order: positions.get(item.id) ?? item.sort_order }));
+        sort = "custom";
+        await tick();
+        draggingModId = null;
+        dragOrderIds = null;
+        dragPreviewRect = null;
+        try {
+          await api.reorderMods(fullIds);
+          toast("已更新 Mod 自定义排序");
+        } catch (err) {
+          toast(String(err));
+          await refreshMods();
+        }
+      } else {
+        draggingModId = null;
+        dragOrderIds = null;
+        dragPreviewRect = null;
       }
     }
 
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
-  }
-
-  function getItemSlotShift(idx: number): number {
-    if (draggingModId == null || targetIndex == null || startIndex === targetIndex) return 0;
-    if (idx === startIndex) return 0;
-
-    const rowHeight = rowHeights[startIndex] || 68;
-    if (startIndex < targetIndex && idx > startIndex && idx <= targetIndex) {
-      return -rowHeight;
-    }
-    if (startIndex > targetIndex && idx >= targetIndex && idx < startIndex) {
-      return rowHeight;
-    }
-    return 0;
   }
 
   function onListKeydown(e: KeyboardEvent) {
@@ -710,6 +720,7 @@
       }
       if (e.key === "Delete") {
         e.preventDefault();
+        if (gameRunning) return;
         if (checkedModIds.size > 1) {
           if (window.confirm(`确定要批量卸载选中的 ${checkedModIds.size} 个 Mod 吗？`)) {
             batchUninstall();
@@ -787,6 +798,41 @@
       toast(String(e));
     }
   }
+
+  async function handleConnectFolder() {
+    if (!isTauri()) {
+      toast("浏览器预览不支持原生目录选择，请在桌面版操作");
+      return;
+    }
+    try {
+      const selected = await open({
+        multiple: true,
+        directory: true,
+        title: "选择要直接连接的 Mod 文件夹",
+      });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      let connected = 0;
+      const failures: string[] = [];
+      for (const path of paths) {
+        try {
+          await api.connectExternalMod(path, character.internal_name);
+          connected += 1;
+        } catch (e) {
+          failures.push(String(e));
+        }
+      }
+      await refreshMods();
+      onconfigured();
+      if (failures.length === 0) {
+        toast(`已连接 ${connected} 个外部 Mod，源文件不会被复制`);
+      } else {
+        toast(`已连接 ${connected} 个，${failures.length} 个失败：${failures[0]}`);
+      }
+    } catch (e) {
+      toast(String(e));
+    }
+  }
 </script>
 
 <div class="flex flex-col h-full min-h-0 {isDragging ? 'cursor-col-resize select-none' : ''}">
@@ -826,13 +872,14 @@
       </div>
     </div>
 
-    <!-- 顶部动作组：导入 Mod + 单选互斥换装模式 + 批量操作 -->
+    <!-- 顶部动作组：导入 Mod + 批量操作 -->
     <div class="flex items-center gap-2 shrink-0">
       <!-- 导入 Mod 复合动作胶囊 (支持选择压缩包与文件夹) -->
       <div class="flex items-center glass radius-pill p-0.5">
         <button
           class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] text-[var(--accent)] active:scale-95"
-          title="选择本地 Mod 压缩包 (.zip / .7z / .rar) 导入到当前角色"
+          title={gameRunning ? "游戏运行期间暂不支持导入" : "选择本地 Mod 压缩包 (.zip / .7z / .rar) 导入到当前角色"}
+          disabled={gameRunning}
           onclick={handleImportArchive}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -845,7 +892,8 @@
         <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-60"></span>
         <button
           class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] text-emerald-500 active:scale-95"
-          title="选择本地 Mod 文件夹导入到当前角色"
+          title={gameRunning ? "游戏运行期间暂不支持导入" : "选择本地 Mod 文件夹导入到当前角色"}
+          disabled={gameRunning}
           onclick={handleImportFolder}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -853,22 +901,20 @@
           </svg>
           <span>导入文件夹</span>
         </button>
+        <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-60"></span>
+        <button
+          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] text-secondary active:scale-95"
+          title={gameRunning ? "游戏运行期间暂不支持连接外部目录" : "直接使用外部 Mod 文件夹，不复制源文件"}
+          disabled={gameRunning}
+          onclick={handleConnectFolder}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          <span>连接外部</span>
+        </button>
       </div>
-
-      <label class="glass radius-pill h-8 px-3 text-xs flex items-center gap-2 cursor-pointer transition-colors"
-        style={radioMode ? "background: var(--accent-fill); color: var(--accent); font-weight: 600" : ""}
-        title="开启后，启用某个外观会自动关闭该角色的其余外观，实现一键换装"
-      >
-        <input type="checkbox" bind:checked={radioMode} class="hidden" />
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="16 3 21 3 21 8"/>
-          <line x1="4" y1="20" x2="21" y2="3"/>
-          <polyline points="21 16 21 21 16 21"/>
-          <line x1="15" y1="15" x2="21" y2="21"/>
-          <line x1="4" y1="4" x2="9" y2="9"/>
-        </svg>
-        <span>单选互斥换装</span>
-      </label>
 
       <div class="flex items-center glass radius-pill p-0.5">
         <button
@@ -901,11 +947,25 @@
   {#if error}
     <p class="mx-8 mb-2 text-sm shrink-0" style="color: var(--danger)">{error}</p>
   {/if}
+  {#if warnMultipleEnabled && enabledCount >= 2}
+    <div
+      class="mx-8 mb-3 px-3.5 py-2.5 radius-card flex items-center gap-2.5 shrink-0 text-xs"
+      style="background: var(--warning-fill); color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning-stroke)"
+      role="status"
+    >
+      <span class="w-2 h-2 rounded-full shrink-0" style="background: var(--warning)"></span>
+      <span><strong>{enabledCount} 个 Mod 同时启用</strong>，可能存在资源覆盖风险；如游戏表现异常，可优先从这里逐个排查。</span>
+    </div>
+  {/if}
 
   <!-- 主体区域：左右主从分栏 + 拖拽调节器 -->
   <div class="flex-1 min-h-0 flex flex-row px-8 pb-6 gap-0">
     <!-- 左侧列表区 -->
-    <div class="flex-1 min-w-[280px] flex flex-col min-h-0 pr-3 relative">
+    <div
+      bind:this={dragOverlayHostEl}
+      class="flex-1 min-w-[280px] flex flex-col min-h-0 pr-3 relative"
+      data-drag-overlay-host
+    >
       <div class="flex items-center justify-between shrink-0 mb-3 gap-2">
         <EnabledFilterChips bind:value={enabledFilter} />
         <div class="flex items-center gap-2">
@@ -933,16 +993,15 @@
         tabindex="0"
         onkeydown={onListKeydown}
       >
-        {#each shown as mod, idx (mod.id)}
+        {#each displayedMods as mod (mod.id)}
           <ModRow
             {mod}
             {categories}
             selected={selectedMod?.id === mod.id}
             checked={checkedModIds.has(mod.id)}
             isMultiSelectMode={checkedModIds.size > 0}
-            isDragging={draggingModId === mod.id}
-            dragOffsetY={draggingModId === mod.id ? dragOffsetY : 0}
-            slotShiftY={getItemSlotShift(idx)}
+            dragPlaceholder={draggingModId === mod.id}
+            mutationLocked={gameRunning}
             onstartdrag={handleStartPointerDrag}
             ontoggle={(next) => toggle(mod, next)}
             ontogglefavorite={() => toggleFavoriteMod(mod)}
@@ -972,10 +1031,32 @@
         {/if}
       </div>
 
+      {#if draggedMod && dragPreviewRect}
+        <div
+          class="absolute z-[100] pointer-events-none"
+          style={`left: ${dragPreviewRect.left}px; top: ${dragPreviewTop}px; width: ${dragPreviewRect.width}px; height: ${dragPreviewRect.height}px;`}
+          aria-hidden="true"
+          data-drag-preview
+        >
+          <ModRow
+            mod={draggedMod}
+            {categories}
+            dragPreview={true}
+            mutationLocked={gameRunning}
+            ontoggle={() => {}}
+            onrename={async () => false}
+            onuninstall={async () => {}}
+            onopen={() => {}}
+            onmove={() => {}}
+          />
+        </div>
+      {/if}
+
       <!-- 底部悬浮批量操作栏（绝对居中在列表正下方，永不跨越到右侧详情面板） -->
       <BatchActionBar
         selectedCount={checkedModIds.size}
         {categories}
+        destructiveLocked={gameRunning}
         onEnableAll={batchEnable}
         onDisableAll={batchDisable}
         onMoveCategory={batchMoveCategory}
@@ -1008,6 +1089,8 @@
         mod={selectedMod}
         {categories}
         {character}
+        variantLocked={gameRunning}
+        mutationLocked={gameRunning}
         ontoggle={(next) => selectedMod && toggle(selectedMod, next)}
         onrename={(name) => selectedMod ? renameMod(selectedMod, name) : Promise.resolve(false)}
         onuninstall={() => selectedMod ? uninstallMod(selectedMod) : Promise.resolve()}

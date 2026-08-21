@@ -61,10 +61,19 @@ pub fn start_watcher(app: &tauri::AppHandle, state: &AppState) {
         (cfg.library_root.clone(), cfg.mods_dir.clone())
     };
     let library = Arc::clone(&state.library);
+    let external_sources = library
+        .lock()
+        .unwrap()
+        .list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|entry| entry.source_path.map(std::path::PathBuf::from))
+        .filter(|path| path.is_dir())
+        .collect();
     let game_running = Arc::clone(&state.game_running);
     let app2 = app.clone();
     let mods_dir2 = mods_dir.clone();
-    let watcher = liquimod_core::watch::start(root, mods_dir, move || {
+    let watcher = liquimod_core::watch::start(root, mods_dir, external_sources, move || {
         let lib = library.lock().unwrap();
         let deploy = !game_running.load(std::sync::atomic::Ordering::Relaxed);
         match reconcile_and_diff_with_deploy(&lib, mods_dir2.as_deref(), deploy) {
@@ -103,6 +112,7 @@ pub fn start_game_watchdog(app: &tauri::AppHandle, state: &AppState) {
     let running = Arc::clone(&state.game_running);
     let library = Arc::clone(&state.library);
     let config = Arc::clone(&state.config);
+    let deferred_runtime_cleanup = Arc::clone(&state.deferred_runtime_cleanup);
     let app2 = app.clone();
     let watchdog = liquimod_core::refresh::GameWatchdog::start(
         process_names,
@@ -118,6 +128,7 @@ pub fn start_game_watchdog(app: &tauri::AppHandle, state: &AppState) {
             if !is_running {
                 let library = Arc::clone(&library);
                 let config = Arc::clone(&config);
+                let deferred_runtime_cleanup = Arc::clone(&deferred_runtime_cleanup);
                 let app3 = app2.clone();
                 tauri::async_runtime::spawn_blocking(move || {
                     let mods_dir = config.lock().unwrap().mods_dir.clone();
@@ -132,12 +143,15 @@ pub fn start_game_watchdog(app: &tauri::AppHandle, state: &AppState) {
                     }
                     match reconcile_and_diff(&lib, mods_dir.as_deref()) {
                         Ok((added, removed)) if added > 0 || removed > 0 => {
+                            deferred_runtime_cleanup.lock().unwrap().clear();
                             let _ = app3.emit(
                                 "library-changed",
                                 serde_json::json!({ "added": added, "removed": removed }),
                             );
                         }
-                        Ok(_) => {}
+                        Ok(_) => {
+                            deferred_runtime_cleanup.lock().unwrap().clear();
+                        }
                         Err(error) => {
                             let _ = app3
                                 .emit("liquimod-toast", format!("游戏退出后部署对账失败：{error}"));
@@ -214,15 +228,20 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::choose_mods_dir,
+            commands::get_storage_info,
+            commands::migrate_storage,
+            commands::cleanup_previous_library,
             commands::get_characters,
             commands::list_mods,
             commands::set_mod_enabled,
             commands::set_mod_variant,
             commands::install_mod,
+            commands::connect_external_mod,
             commands::uninstall_mod,
             commands::rename_mod,
             commands::reassign_mod,
             commands::set_auto_enable,
+            commands::set_warn_multiple_mods,
             commands::read_log,
             commands::list_presets,
             commands::save_preset,

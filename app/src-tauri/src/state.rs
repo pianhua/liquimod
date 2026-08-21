@@ -2,6 +2,7 @@ use crate::config::Config;
 use liquimod_core::library::Library;
 use liquimod_core::refresh::{GameWatchdog, RefreshClient};
 use liquimod_core::watch::LibraryWatcher;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
@@ -17,23 +18,37 @@ pub struct AppState {
     pub game_watchdog: Mutex<Option<GameWatchdog>>,
     /// 最近一次看门狗状态，供 IPC 快速读取。
     pub game_running: Arc<AtomicBool>,
+    /// 游戏运行期拆除 Junction 后待清理的运行副本。
+    pub deferred_runtime_cleanup: Arc<Mutex<HashSet<i64>>>,
 }
 
 impl AppState {
     /// 启动：读配置 → 打开（或初始化）库
     pub fn bootstrap() -> Self {
-        let config = Config::load();
+        let config_path = Config::config_path();
+        let mut config = Config::load();
         let library = Library::open(&config.library_root)
             .or_else(|_| Library::init(&config.library_root))
-            .expect("无法打开 Mod 库");
+            .unwrap_or_else(|preferred_error| {
+                let fallback = config_path
+                    .parent()
+                    .expect("配置路径应有父目录")
+                    .join("Library");
+                config.library_root = fallback.clone();
+                Library::open(&fallback)
+                    .or_else(|_| Library::init(&fallback))
+                    .unwrap_or_else(|_| panic!("无法打开 Mod 库：{preferred_error}"))
+            });
+        let _ = config.save_to(&config_path);
         Self {
-            config_path: Config::config_path(),
+            config_path,
             config: Arc::new(Mutex::new(config)),
             library: Arc::new(Mutex::new(library)),
             watcher: Mutex::new(None),
             refresh: Arc::new(Mutex::new(None)),
             game_watchdog: Mutex::new(None),
             game_running: Arc::new(AtomicBool::new(false)),
+            deferred_runtime_cleanup: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }

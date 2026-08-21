@@ -1,8 +1,8 @@
 # LiquiMod
 
-面向《崩坏：星穹铁道》3Dmigoto Mod 的 Windows 桌面管理器。LiquiMod 使用 Rust Core、Tauri 2、Svelte 5 和 Tailwind CSS 构建，提供 Mod 导入、分类、启停、预设、变体选择、冲突诊断和部署自愈。
+面向《崩坏：星穹铁道》3Dmigoto Mod 的 Windows 桌面管理器。LiquiMod 使用 Rust Core、Tauri 2、Svelte 5 和 Tailwind CSS 构建，提供 Mod 导入、分类、启停、预设、变体选择、风险提示和部署自愈。
 
-[![Release](https://img.shields.io/badge/release-v0.3.1-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.3.1)
+[![Release](https://img.shields.io/badge/release-v0.4.0-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.4.0)
 [![CI](https://github.com/pianhua/liquimod/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pianhua/liquimod/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8.svg)](https://v2.tauri.app/)
@@ -11,19 +11,20 @@
 
 ## 当前版本
 
-`v0.3.1` 是面向 Windows 10/11 x64 的稳定修订版本，提供便携式 ZIP 包。发布包包含主程序、F10 刷新助手、README 和许可证，不包含游戏本体或 3Dmigoto。
+`v0.4.0` 是面向 Windows 10/11 x64 的首个正式存储架构版本，同时提供 NSIS 安装包与便携式 ZIP 包。发布包包含主程序、F10 刷新助手、README 和许可证，不包含游戏本体或 3Dmigoto。
 
-- [下载 v0.3.1](https://github.com/pianhua/liquimod/releases/tag/v0.3.1)
+- [下载 v0.4.0](https://github.com/pianhua/liquimod/releases/tag/v0.4.0)
 - [查看 CI](https://github.com/pianhua/liquimod/actions)
-- [查看 v0.3.1 完整变更](https://github.com/pianhua/liquimod/compare/v0.3.0...v0.3.1)
+- [查看 v0.4.0 完整变更](https://github.com/pianhua/liquimod/compare/v0.3.1...v0.4.0)
 
 ## 功能
 
 ### Mod 管理
 
 - 导入文件夹以及 `.zip`、`.7z`、`.rar` Mod 压缩包
+- 直接连接外部 Mod 文件夹，不复制、不接管、不删除源文件；源目录离线时显示告警并禁止启用
 - 自动识别角色，支持手动归属和未分类 Mod 管理
-- 启用、禁用、重命名、移动、卸载和批量应用预设
+- 启用、禁用、重命名、移动、断开外部连接或卸载托管 Mod
 - 自定义封面、立绘预览、搜索、排序、收藏和拖拽排序
 - 密码本支持加密压缩包的历史密码尝试
 
@@ -35,29 +36,38 @@
 - 目录监控自动发现库内变化，并在游戏退出后完成物理部署对账
 - SQLite `op_log` 写前事务日志支持崩溃恢复和启动自愈
 
-### 变体与冲突诊断
+### 数据存储
+
+- 默认数据根目录位于软件所在盘的 `LiquiModData`，避免 Mod 库随着系统盘配置目录无限膨胀
+- 设置页支持将核心仓库迁移到任意可用盘符；迁移采用复制、校验、原子切换，旧仓库在用户确认前保留
+- 迁移范围包括 Mod 库、SQLite 数据库、封面缓存、日志以及由 LiquiMod 托管的 3DMigoto 工作区
+- 外部 Mod 只记录来源路径；断开连接只移除 LiquiMod 索引，不会删除外部文件夹
+
+### 变体与多 Mod 提示
 
 - 识别 `Option`、编号和 `[Variant]` 等明确命名的变体目录
 - 将基础资源与选中变体合并到运行副本，变体文件覆盖同路径基础文件
-- 对 3DMigoto 的 Mod hash、Constants 和变量名冲突提供诊断
+- 同一角色启用一个 Mod 时显示绿灯，启用多个时显示黄灯和详情警告；提示可在设置中关闭
+- Hash 与变量冲突扫描器保留在核心层，当前版本不自动扫描，也不据此限制 Mod 启停
 - 运行副本中的全局变量按 Mod ID 隔离，减少跨 Mod 命名冲突
 
 ### 游戏集成与环境诊断
 
 - 进程看门狗显示游戏运行状态
-- 游戏运行期间阻止启停、卸载、重命名、移动、预设、变体和部署修复等危险操作
-- 安装时若开启自动启用，游戏运行期间只完成入库，自动启用会被延后
-- 独立的 `liquimod-refresh-helper.exe` 负责发送 F10 刷新信号
+- 游戏运行期间允许同卷 NTFS/ReFS Junction Mod 启停；不限制同角色启用数量，启用多个 Mod 时以黄灯提示潜在风险
+- 游戏运行期间继续阻止安装、卸载、重命名、移动、应用预设、文件变体和部署修复
+- 所有 Mod 变更均不自动发送 F10；用户可通过常驻“热重载”按钮手动刷新
+- 独立的 `liquimod-refresh-helper.exe` 会前置游戏窗口、发送 F10，并向主程序确认结果
 - 设置页检查 WebView2、VC++、目录权限、游戏/加载器配置和部署模式
 - 提供 WebView2 下载入口、Defender 排除命令和部署修复入口
 
 ## 安装与首次使用
 
-1. 从 [v0.3.1 Release](https://github.com/pianhua/liquimod/releases/tag/v0.3.1) 下载 `LiquiMod-Windows-x64.zip`。
-2. 将 ZIP 解压到可写目录，保持 `liquimod-app.exe` 与 `liquimod-refresh-helper.exe` 位于同一目录。
-3. 启动 `liquimod-app.exe`。
-4. 在设置中配置 Mod 库目录、3Dmigoto 的 `Mods` 目录、游戏可执行文件和加载器路径。
-5. 导入 Mod，确认角色归属后再启用。
+1. 从 [v0.4.0 Release](https://github.com/pianhua/liquimod/releases/tag/v0.4.0) 下载 `LiquiMod-*.exe` 安装包或 `LiquiMod-Windows-x64.zip` 便携包。
+2. 安装包支持选择安装位置；便携包解压后保持 `liquimod-app.exe` 与 `liquimod-refresh-helper.exe` 位于同一目录。
+3. 启动 LiquiMod，在设置中确认数据存储根目录。默认位于软件所在盘的 `LiquiModData`，也可以迁移到其他盘符。
+4. 配置游戏可执行文件、3Dmigoto 加载器和运行中的 `Mods` 部署目录。
+5. 导入 Mod；若不希望复制文件，可在角色详情中使用“连接外部”直接挂载已有文件夹。
 
 3Dmigoto 和游戏文件需要用户自行准备。首次使用前建议先在设置页完成环境诊断；涉及 Junction、CopyFallback 或 F10 刷新的操作可能触发管理员权限提示。
 
@@ -67,7 +77,8 @@ LiquiMod 的部署操作以保护用户文件为优先：
 
 - ZIP、远端资产和图片路径经过相对路径净化与 containment 校验，拒绝绝对路径、盘符、UNC 和 `..` 越界路径。
 - 遇到非空实体目录、未知文件或非 LiquiMod 部署目标时，部署器会报错并停止，不强制删除。
-- 游戏运行期间，目录监控和全库扫描只更新索引，不主动重建 Junction 或复制部署目录；库内安装仍可进行，但自动启用会被延后。
+- 游戏运行期间，目录监控和全库扫描只更新索引，不主动重建 Junction 或复制部署目录；安装等文件变更会被明确阻止。
+- 运行期禁用 Junction 时只拆除入口，可能仍被游戏引用的运行副本延迟到游戏退出后清理。
 - 游戏退出后会自动进行一次部署对账；也可以在设置页手动执行部署修复。
 
 ## 系统要求
@@ -137,7 +148,7 @@ npm test
 npm run build
 ```
 
-`v0.3.1` 当前验证结果：Rust 测试 207 个通过，4 个环境相关测试按条件忽略；前端 22 个测试套件、100 个测试通过。RAR 真实压缩包和 Windows 符号链接权限测试需要额外本机 fixture 或系统权限。
+发布前必须以 CI 的实际结果为准。RAR 真实压缩包和 Windows 符号链接权限测试可能需要额外本机 fixture 或系统权限。
 
 ## 项目结构
 

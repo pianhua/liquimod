@@ -6,6 +6,7 @@
     type ConfigDto,
     type DiagnosticStatusDto,
     type AssetSyncProgressDto,
+    type StorageInfoDto,
   } from "$lib/api";
   import { applyTheme } from "$lib/theme";
   import { toast } from "$lib/toast.svelte";
@@ -34,6 +35,8 @@
   let installingMigoto = $state(false);
   let detectingGame = $state(false);
   let migotoProgress = $state<import("$lib/api").MigotoDownloadProgressDto | null>(null);
+  let storageInfo = $state<StorageInfoDto | null>(null);
+  let storageBusy = $state(false);
 
   onMount(() => {
     let unlistenProgress: (() => void) | undefined;
@@ -59,6 +62,11 @@
         localAssetVersion = await api.getLocalAssetVersion();
       } catch {
         localAssetVersion = null;
+      }
+      try {
+        storageInfo = await api.getStorageInfo();
+      } catch {
+        storageInfo = null;
       }
 
       if (isTauri()) {
@@ -112,6 +120,15 @@
   async function toggleAutoEnable(next: boolean) {
     try {
       await api.setAutoEnable(next);
+      onchanged();
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
+  async function toggleMultipleModWarning(next: boolean) {
+    try {
+      await api.setWarnMultipleMods(next);
       onchanged();
     } catch (e) {
       toast(String(e));
@@ -178,6 +195,66 @@
       }
     } catch (e) {
       toast(String(e));
+    }
+  }
+
+  function formatBytes(bytes: number | null | undefined): string {
+    if (bytes == null) return "未知";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  }
+
+  async function loadStorageInfo() {
+    try {
+      storageInfo = await api.getStorageInfo();
+    } catch (e) {
+      toast(`读取存储信息失败：${e}`);
+    }
+  }
+
+  async function pickStorageRoot() {
+    if (storageBusy) return;
+    if (!isTauri()) {
+      toast("浏览器预览不支持原生目录选择，请在桌面版操作");
+      return;
+    }
+    try {
+      const path = await open({ directory: true, title: "选择 LiquiMod 数据存储盘符或文件夹" });
+      if (typeof path !== "string" || !path.trim()) return;
+      const confirmed = window.confirm(
+        `将把 LiquiMod 核心仓库复制到：\n${path}\n\n旧仓库会暂时保留，确认迁移完成后可在此页面手动清理。继续吗？`,
+      );
+      if (!confirmed) return;
+      storageBusy = true;
+      const result = await api.migrateStorage(path);
+      toast(`存储迁移完成：已复制 ${result.copied_files} 个文件（${formatBytes(result.copied_bytes)}）`);
+      await loadStorageInfo();
+      onchanged();
+    } catch (e) {
+      toast(`存储迁移失败：${e}`);
+    } finally {
+      storageBusy = false;
+    }
+  }
+
+  async function cleanupPreviousStorage() {
+    if (storageBusy || !storageInfo?.previous_library_root) return;
+    const confirmed = window.confirm(
+      `确定删除旧仓库吗？\n${storageInfo.previous_library_root}\n\n此操作只会清理已经完成迁移的旧 LiquiMod 仓库，不会影响当前仓库。`,
+    );
+    if (!confirmed) return;
+    storageBusy = true;
+    try {
+      const bytes = await api.cleanupPreviousLibrary();
+      toast(`旧仓库已清理（${formatBytes(bytes)}）`);
+      await loadStorageInfo();
+      onchanged();
+    } catch (e) {
+      toast(`清理旧仓库失败：${e}`);
+    } finally {
+      storageBusy = false;
     }
   }
 
@@ -535,6 +612,18 @@
       </div>
 
       <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-medium">多 Mod 风险提示</p>
+          <p class="text-xs text-secondary mt-0.5">同一角色启用两个及以上 Mod 时显示黄灯与详情提示</p>
+        </div>
+        <Toggle
+          checked={config?.warn_multiple_mods ?? true}
+          ariaLabel="多 Mod 风险提示"
+          onchange={toggleMultipleModWarning}
+        />
+      </div>
+
+      <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex items-center justify-between gap-3">
         <div class="min-w-0">
           <p class="text-sm font-medium">角色分类别名</p>
           <p class="text-xs text-secondary mt-0.5">侧边栏与面包屑的默认角色大类显示名</p>
@@ -716,6 +805,67 @@
               <span>📂</span> 打开仓库
             </button>
           </div>
+        </div>
+
+        <!-- LiquiMod 数据存储根：迁移只复制并保留旧仓库，避免误删用户数据 -->
+        <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-3">
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <p class="text-sm font-medium">数据存储位置</p>
+                <span class="px-1.5 py-0.5 radius-pill text-[10px] font-semibold text-[var(--accent)]" style="background: var(--accent-fill)">可迁移</span>
+              </div>
+              <p class="text-xs text-secondary mt-0.5">默认跟随软件所在盘；Mod 仓库、数据库、日志与托管 3DMigoto 会统一放在这里。</p>
+            </div>
+            <div class="flex items-center justify-end gap-1.5 shrink-0">
+              <button
+                class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-[var(--item-hover)] disabled:opacity-50"
+                disabled={storageBusy}
+                onclick={pickStorageRoot}
+              >
+                {storageBusy ? "处理中…" : "迁移到…"}
+              </button>
+              <button
+                class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] disabled:opacity-50"
+                title="打开数据存储目录"
+                disabled={!storageInfo?.storage_root || storageBusy}
+                onclick={() => storageInfo?.storage_root && api.openPathInExplorer(storageInfo.storage_root)}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+            <div class="min-w-0 p-2.5 radius-card" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+              <p class="text-secondary">当前数据根</p>
+              <p class="font-mono truncate mt-1" title={storageInfo?.storage_root ?? config?.storage_root ?? "读取中…"}>{storageInfo?.storage_root ?? config?.storage_root ?? "读取中…"}</p>
+            </div>
+            <div class="p-2.5 radius-card" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+              <p class="text-secondary">仓库占用</p>
+              <p class="font-mono mt-1">{formatBytes(storageInfo?.bytes)} · {storageInfo?.files ?? "—"} 文件</p>
+            </div>
+            <div class="p-2.5 radius-card" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+              <p class="text-secondary">所在盘可用空间</p>
+              <p class="font-mono mt-1">{formatBytes(storageInfo?.available_bytes)}</p>
+            </div>
+          </div>
+
+          {#if storageInfo?.previous_library_root}
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 radius-card text-xs text-amber-600 dark:text-amber-300" style="background: color-mix(in srgb, var(--warning) 12%, transparent); box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--warning) 40%, transparent)">
+              <div class="min-w-0">
+                <p class="font-semibold">检测到迁移前的旧仓库，当前仍保留</p>
+                <p class="font-mono truncate mt-0.5" title={storageInfo.previous_library_root}>{storageInfo.previous_library_root}</p>
+              </div>
+              <button
+                class="radius-pill h-8 px-3 text-xs font-medium border border-amber-500/40 hover:bg-amber-500/10 cursor-pointer shrink-0 disabled:opacity-50"
+                disabled={storageBusy}
+                onclick={cleanupPreviousStorage}
+              >
+                清理旧仓库
+              </button>
+            </div>
+          {/if}
         </div>
       </div>
     </section>
@@ -1086,7 +1236,7 @@
       <!-- 关于信息 -->
       <div class="border-t border-[var(--glass-stroke)] pt-3.5 text-xs text-secondary flex items-center justify-between">
         <span>LiquiMod · 星轨流光 —— 崩坏：星穹铁道 现代化 Mod 管理器</span>
-        <span class="font-mono text-[var(--accent)] font-medium">v0.3.1 (Rust + Tauri 2 + Svelte 5)</span>
+        <span class="font-mono text-[var(--accent)] font-medium">v0.4.0 (Rust + Tauri 2 + Svelte 5)</span>
       </div>
     </section>
   </div>

@@ -13,6 +13,7 @@ vi.mock("$lib/api", async (importOriginal) => {
       addPassword: vi.fn(),
       removePassword: vi.fn(),
       setAutoEnable: vi.fn(),
+      setWarnMultipleMods: vi.fn(),
       readLog: vi.fn(),
       getLocalAssetVersion: vi.fn(),
       checkGameAssetsUpdate: vi.fn(),
@@ -26,9 +27,12 @@ vi.mock("$lib/api", async (importOriginal) => {
 });
 
 const config: import("$lib/api").ConfigDto = {
+  storage_root: "C:/mock",
   library_root: "C:/mock/Library",
+  previous_library_root: null,
   mods_dir: "D:/game/Mods",
   auto_enable: false,
+  warn_multiple_mods: true,
   theme: "auto",
   character_category_name: "角色",
   game_exe: null,
@@ -40,9 +44,12 @@ const config: import("$lib/api").ConfigDto = {
   migoto_version: "v2.4.2",
 };
 const testConfig: import("$lib/api").ConfigDto = {
+  storage_root: "C:/",
   library_root: "C:/L",
+  previous_library_root: null,
   mods_dir: null,
   auto_enable: false,
+  warn_multiple_mods: true,
   theme: "auto",
   character_category_name: "角色",
   game_exe: null,
@@ -60,9 +67,11 @@ describe("Settings", () => {
     vi.mocked(api.addPassword).mockResolvedValue(undefined);
     vi.mocked(api.removePassword).mockResolvedValue(undefined);
     vi.mocked(api.setAutoEnable).mockResolvedValue(testConfig);
+    vi.mocked(api.setWarnMultipleMods).mockResolvedValue(testConfig);
     vi.mocked(api.readLog).mockResolvedValue("2026-08-18T10:00:00 INFO hello log");
     vi.mocked(api.readLog).mockClear();
     vi.mocked(api.setAutoEnable).mockClear();
+    vi.mocked(api.setWarnMultipleMods).mockClear();
   });
 
   it("显示目录配置", () => {
@@ -103,6 +112,12 @@ describe("Settings", () => {
     render(Settings, { props: { config: testConfig, onback: vi.fn(), onchanged: vi.fn() } });
     await fireEvent.click(screen.getByRole("switch", { name: "自动启用" }));
     expect(api.setAutoEnable).toHaveBeenCalledWith(true);
+  });
+
+  it("多 Mod 风险提示开关调用 setWarnMultipleMods", async () => {
+    render(Settings, { props: { config: testConfig, onback: vi.fn(), onchanged: vi.fn() } });
+    await fireEvent.click(screen.getByRole("switch", { name: "多 Mod 风险提示" }));
+    expect(api.setWarnMultipleMods).toHaveBeenCalledWith(false);
   });
 
   it("日志区加载并刷新", async () => {
