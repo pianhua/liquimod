@@ -1,9 +1,9 @@
 [package]
 name = "liquimod-cli"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 
 [dependencies]
-liquimod-core = { path = "../liquimod-core", version = "0.3.0" }
+liquimod-core = { path = "../liquimod-core", version = "0.3.1" }
 clap = { version = "4", features = ["derive"] }
 rpassword = "7.5.4"

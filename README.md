@@ -2,7 +2,7 @@
 
 面向《崩坏：星穹铁道》3Dmigoto Mod 的 Windows 桌面管理器。LiquiMod 使用 Rust Core、Tauri 2、Svelte 5 和 Tailwind CSS 构建，提供 Mod 导入、分类、启停、预设、变体选择、冲突诊断和部署自愈。
 
-[![Release](https://img.shields.io/badge/release-v0.3.0-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.3.0)
+[![Release](https://img.shields.io/badge/release-v0.3.1-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.3.1)
 [![CI](https://github.com/pianhua/liquimod/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pianhua/liquimod/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8.svg)](https://v2.tauri.app/)
@@ -11,11 +11,11 @@
 
 ## 当前版本
 
-`v0.3.0` 是第一个正式发行版本，面向 Windows 10/11 x64，提供便携式 ZIP 包。发布包包含主程序和 F10 刷新助手，不包含游戏本体或 3Dmigoto。
+`v0.3.1` 是面向 Windows 10/11 x64 的稳定修订版本，提供便携式 ZIP 包。发布包包含主程序、F10 刷新助手、README 和许可证，不包含游戏本体或 3Dmigoto。
 
-- [下载 v0.3.0](https://github.com/pianhua/liquimod/releases/tag/v0.3.0)
+- [下载 v0.3.1](https://github.com/pianhua/liquimod/releases/tag/v0.3.1)
 - [查看 CI](https://github.com/pianhua/liquimod/actions)
-- [查看完整变更](https://github.com/pianhua/liquimod/pull/1)
+- [查看 v0.3.1 完整变更](https://github.com/pianhua/liquimod/compare/v0.3.0...v0.3.1)
 
 ## 功能
 
@@ -53,7 +53,7 @@
 
 ## 安装与首次使用
 
-1. 从 [v0.3.0 Release](https://github.com/pianhua/liquimod/releases/tag/v0.3.0) 下载 `LiquiMod-Windows-x64.zip`。
+1. 从 [v0.3.1 Release](https://github.com/pianhua/liquimod/releases/tag/v0.3.1) 下载 `LiquiMod-Windows-x64.zip`。
 2. 将 ZIP 解压到可写目录，保持 `liquimod-app.exe` 与 `liquimod-refresh-helper.exe` 位于同一目录。
 3. 启动 `liquimod-app.exe`。
 4. 在设置中配置 Mod 库目录、3Dmigoto 的 `Mods` 目录、游戏可执行文件和加载器路径。
@@ -137,7 +137,7 @@ npm test
 npm run build
 ```
 
-`v0.3.0` 当前验证结果：Rust 测试 207 个通过，4 个环境相关测试按条件忽略；前端 22 个测试套件、100 个测试通过。RAR 真实压缩包和 Windows 符号链接权限测试需要额外本机 fixture 或系统权限。
+`v0.3.1` 当前验证结果：Rust 测试 207 个通过，4 个环境相关测试按条件忽略；前端 22 个测试套件、100 个测试通过。RAR 真实压缩包和 Windows 符号链接权限测试需要额外本机 fixture 或系统权限。
 
 ## 项目结构
 
