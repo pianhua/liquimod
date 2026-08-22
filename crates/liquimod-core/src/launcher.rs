@@ -105,11 +105,175 @@ pub fn spawn_program_with_uac(
     }
 }
 
+#[cfg(windows)]
+/// 原生 Win32 Hook 注入启动（与 XXMI 100% 对齐的无感 Hook 注入机制）
+pub fn launch_with_hook(
+    game_exe: &Path,
+    work_dir: Option<&Path>,
+    d3d11_dll: &Path,
+    loader_dll: &Path,
+) -> Result<LaunchResult> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{FreeLibrary, HANDLE};
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    use windows::Win32::System::Threading::{CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW};
+    use windows::Win32::UI::WindowsAndMessaging::HHOOK;
+
+    if !game_exe.is_file() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("游戏执行文件不存在: {}", game_exe.display()),
+        )));
+    }
+    if !d3d11_dll.is_file() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("3DMigoto d3d11.dll 不存在: {}", d3d11_dll.display()),
+        )));
+    }
+    if !loader_dll.is_file() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("3dmloader.dll 不存在: {}", loader_dll.display()),
+        )));
+    }
+
+    let work_path = work_dir.unwrap_or_else(|| game_exe.parent().unwrap_or(Path::new(".")));
+
+    let loader_wide: Vec<u16> = loader_dll
+        .to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let h_loader = unsafe { LoadLibraryW(PCWSTR(loader_wide.as_ptr())) }.map_err(|e| {
+        LiquiModError::Io(std::io::Error::other(format!(
+            "加载 3dmloader.dll 失败: {e}"
+        )))
+    })?;
+
+    type FnHookLibrary = unsafe extern "system" fn(PCWSTR, *mut HHOOK, *mut HANDLE) -> i32;
+    type FnWaitForInjection = unsafe extern "system" fn(PCWSTR, PCWSTR, i32) -> i32;
+    type FnUnhookLibrary = unsafe extern "system" fn(*mut HHOOK, *mut HANDLE) -> i32;
+    type FnStartProcess = unsafe extern "system" fn(PCWSTR, PCWSTR, PCWSTR) -> i32;
+
+    let p_hook = unsafe { GetProcAddress(h_loader, windows::core::s!("HookLibrary")) };
+    let p_wait = unsafe { GetProcAddress(h_loader, windows::core::s!("WaitForInjection")) };
+    let p_unhook = unsafe { GetProcAddress(h_loader, windows::core::s!("UnhookLibrary")) };
+    let p_start = unsafe { GetProcAddress(h_loader, windows::core::s!("StartProcess")) };
+
+    if let (Some(f_hook), Some(f_wait), Some(f_unhook)) = (p_hook, p_wait, p_unhook) {
+        let fn_hook: FnHookLibrary = unsafe { std::mem::transmute(f_hook) };
+        let fn_wait: FnWaitForInjection = unsafe { std::mem::transmute(f_wait) };
+        let fn_unhook: FnUnhookLibrary = unsafe { std::mem::transmute(f_unhook) };
+
+        let d3d11_wide: Vec<u16> = d3d11_dll
+            .to_string_lossy()
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut hook = HHOOK::default();
+        let mut mutex = HANDLE::default();
+
+        let hook_res = unsafe { fn_hook(PCWSTR(d3d11_wide.as_ptr()), &mut hook, &mut mutex) };
+        if hook_res != 0 {
+            let _ = unsafe { FreeLibrary(h_loader) };
+            return Err(LiquiModError::Io(std::io::Error::other(format!(
+                "3DMigoto HookLibrary 失败，错误代码: {hook_res}"
+            ))));
+        }
+
+        let app_name_wide: Vec<u16> = game_exe
+            .to_string_lossy()
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let work_dir_wide: Vec<u16> = work_path
+            .to_string_lossy()
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let si = STARTUPINFOW {
+            cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+            ..Default::default()
+        };
+        let mut pi = PROCESS_INFORMATION::default();
+
+        let started = unsafe {
+            CreateProcessW(
+                PCWSTR(app_name_wide.as_ptr()),
+                None,
+                None,
+                None,
+                false,
+                windows::Win32::System::Threading::PROCESS_CREATION_FLAGS(0),
+                None,
+                PCWSTR(work_dir_wide.as_ptr()),
+                &si,
+                &mut pi,
+            )
+        };
+
+        if started.is_err() {
+            if let Some(f_start) = p_start {
+                let fn_start: FnStartProcess = unsafe { std::mem::transmute(f_start) };
+                let empty_wide: Vec<u16> = vec![0];
+                let start_res = unsafe {
+                    fn_start(
+                        PCWSTR(app_name_wide.as_ptr()),
+                        PCWSTR(work_dir_wide.as_ptr()),
+                        PCWSTR(empty_wide.as_ptr()),
+                    )
+                };
+                if start_res != 0 {
+                    let _ = unsafe { fn_unhook(&mut hook, &mut mutex) };
+                    let _ = unsafe { FreeLibrary(h_loader) };
+                    return Err(LiquiModError::Io(std::io::Error::other(format!(
+                        "启动游戏进程失败，错误码: {start_res}"
+                    ))));
+                }
+            } else {
+                let _ = unsafe { fn_unhook(&mut hook, &mut mutex) };
+                let _ = unsafe { FreeLibrary(h_loader) };
+                return Err(LiquiModError::Io(std::io::Error::other(
+                    "启动游戏进程失败（需要管理员权限）".to_string(),
+                )));
+            }
+        }
+
+        let proc_name = game_exe.file_name().unwrap_or_default().to_string_lossy();
+        let proc_wide: Vec<u16> = proc_name.encode_utf16().chain(std::iter::once(0)).collect();
+        let _ = unsafe { fn_wait(PCWSTR(d3d11_wide.as_ptr()), PCWSTR(proc_wide.as_ptr()), 15) };
+        let _ = unsafe { fn_unhook(&mut hook, &mut mutex) };
+        let _ = unsafe { FreeLibrary(h_loader) };
+
+        Ok(LaunchResult {
+            success: true,
+            message: "✨ 已无感加载 3DMigoto 并拉起游戏！".to_string(),
+            pid: None,
+        })
+    } else {
+        let _ = unsafe { FreeLibrary(h_loader) };
+        Err(LiquiModError::Io(std::io::Error::other(
+            "3dmloader.dll 缺少必要导出函数 (HookLibrary / WaitForInjection / UnhookLibrary)",
+        )))
+    }
+}
+
+#[cfg(not(windows))]
+pub fn launch_with_hook(
+    _game_exe: &Path,
+    _work_dir: Option<&Path>,
+    _d3d11_dll: &Path,
+    _loader_dll: &Path,
+) -> Result<LaunchResult> {
+    Err(LiquiModError::Io(std::io::Error::other("仅支持 Windows")))
+}
+
 /// 执行带 3DMigoto Mod 注入的完整启动流程：
 /// 1. 自动同步 d3dx.ini 模式与 target 游戏路径
-/// 2. 提权/安全启动 3DMigoto Loader 加载器
-/// 3. 等待用户配置的注入缓冲延迟 (delay_ms)
-/// 4. 提权/安全拉起游戏主程序
+/// 2. 原生 Hook 注入拉起游戏（彻底废除第三方 Loader 弹窗）
 pub fn launch_with_mod(opts: &GameLaunchOptions) -> Result<LaunchResult> {
     if !opts.game_exe.is_file() {
         return Err(LiquiModError::Io(std::io::Error::new(
@@ -127,38 +291,17 @@ pub fn launch_with_mod(opts: &GameLaunchOptions) -> Result<LaunchResult> {
         }
     }
 
-    // 2. 若存在 Loader 则先启动 Loader 进入注入准备状态 (支持提权)
-    let mut loader_started = false;
-    if let Some(loader) = &opts.loader_exe {
-        if loader.is_file() && spawn_program_with_uac(loader, &opts.migoto_dir, None, true).is_ok()
-        {
-            loader_started = true;
-        }
+    // 2. 原生 Hook 无感注入
+    let d3d11_dll = opts.migoto_dir.join("d3d11.dll");
+    let loader_dll = opts.migoto_dir.join("3dmloader.dll");
+    let game_dir = opts.game_exe.parent();
+
+    if d3d11_dll.is_file() && loader_dll.is_file() {
+        return launch_with_hook(&opts.game_exe, game_dir, &d3d11_dll, &loader_dll);
     }
 
-    // 3. 等待注入缓冲延迟 (由用户在设置中自定义，如 500ms)
-    if opts.delay_ms > 0 {
-        std::thread::sleep(std::time::Duration::from_millis(opts.delay_ms));
-    }
-
-    // 4. 自动提权/安全拉起游戏主程序
-    let game_dir = opts.game_exe.parent().unwrap_or_else(|| Path::new("."));
-    spawn_program_with_uac(&opts.game_exe, game_dir, None, false)?;
-
-    let msg = if loader_started {
-        format!(
-            "✨ 3DMigoto 注入就绪 (延时 {}ms)，已拉起游戏！",
-            opts.delay_ms
-        )
-    } else {
-        "已拉起游戏主程序".to_string()
-    };
-
-    Ok(LaunchResult {
-        success: true,
-        message: msg,
-        pid: None,
-    })
+    // 3. 备用纯净原生启动
+    launch_native_game(&opts.game_exe)
 }
 
 /// 兼容老接口：默认执行带 Mod 启动流程
