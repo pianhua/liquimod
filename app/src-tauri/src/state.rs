@@ -27,6 +27,17 @@ impl AppState {
     pub fn bootstrap() -> Self {
         let config_path = Config::config_path();
         let mut config = Config::load();
+        match liquimod_core::migoto_sync::seed_bundled_packages(&config.data_root()) {
+            Ok(count) if count > 0 => tracing::info!("seeded {count} bundled core package(s)"),
+            Ok(_) => {}
+            Err(error) => tracing::warn!("bundled core package seeding failed: {error}"),
+        }
+        if let Err(error) =
+            liquimod_core::migoto_sync::init_migoto_workspace(&config.managed_migoto_dir())
+        {
+            tracing::warn!("managed 3Dmigoto workspace initialization failed: {error}");
+        }
+        liquimod_core::games::hsr::Hsr::set_asset_root(config.data_root().join("GameAssets"));
         let library = Library::open(&config.library_root)
             .or_else(|_| Library::init(&config.library_root))
             .unwrap_or_else(|preferred_error| {

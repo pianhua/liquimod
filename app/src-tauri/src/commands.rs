@@ -30,7 +30,10 @@ fn refresh_helper_path() -> Option<PathBuf> {
 
 /// 用户主动请求时通知 helper 发 F10。
 /// 阻塞（UAC 弹窗 + 最多 5s 管道轮询）：必须在 spawn_blocking 工作线程内调用。
-fn send_refresh_game(refresh: &Mutex<Option<RefreshClient>>) -> Result<(), String> {
+fn send_refresh_game(
+    refresh: &Mutex<Option<RefreshClient>>,
+    process_name: &str,
+) -> Result<(), String> {
     let Some(helper) = refresh_helper_path() else {
         return Err("未找到刷新 helper，无法发送 F10".to_string());
     };
@@ -41,35 +44,9 @@ fn send_refresh_game(refresh: &Mutex<Option<RefreshClient>>) -> Result<(), Strin
         *guard = Some(client);
     }
     if let Some(client) = guard.as_mut() {
-        if let Err(error) = client.poke() {
+        if let Err(error) = client.poke_for_process(process_name) {
             *guard = None; // helper 死了，下次重连
             return Err(format!("F10 发送失败：{error}"));
-        }
-    }
-    Ok(())
-}
-
-/// 通过游戏伴侣助手一键无感拉起游戏并挂钩注入 3DMigoto
-fn launch_game_with_helper(
-    refresh: &Mutex<Option<RefreshClient>>,
-    game_exe: &Path,
-    work_dir: Option<&Path>,
-    d3d11_dll: Option<&Path>,
-    loader_dll: Option<&Path>,
-) -> Result<(), String> {
-    let Some(helper) = refresh_helper_path() else {
-        return Err("未找到游戏原生助手 helper".to_string());
-    };
-    let mut guard = refresh.lock().unwrap();
-    if guard.is_none() {
-        let client = RefreshClient::connect_or_launch(&helper)
-            .map_err(|e| format!("游戏助手启动失败：{e}"))?;
-        *guard = Some(client);
-    }
-    if let Some(client) = guard.as_mut() {
-        if let Err(error) = client.launch_game(game_exe, work_dir, d3d11_dll, loader_dll) {
-            *guard = None;
-            return Err(format!("游戏拉起注入失败：{error}"));
         }
     }
     Ok(())
@@ -81,6 +58,7 @@ pub struct ConfigDto {
     pub library_root: String,
     pub previous_library_root: Option<String>,
     pub mods_dir: Option<String>,
+    pub mod_sources: Vec<String>,
     pub auto_enable: bool,
     pub warn_multiple_mods: bool,
     pub theme: String,
@@ -264,6 +242,11 @@ pub fn config_dto(c: &Config) -> ConfigDto {
             .as_ref()
             .map(|p| p.display().to_string()),
         mods_dir: c.mods_dir.as_ref().map(|p| p.display().to_string()),
+        mod_sources: c
+            .mod_sources
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect(),
         auto_enable: c.auto_enable,
         warn_multiple_mods: c.warn_multiple_mods,
         theme: c.theme.clone(),
@@ -625,21 +608,59 @@ pub fn set_mods_dir(c: &mut Config, path: PathBuf) -> Result<ConfigDto, String> 
     if !path.is_dir() {
         return Err(format!("目录不存在：{}", path.display()));
     }
-    c.mods_dir = Some(path);
+    let requested = normalized_for_compare(&path);
+    let managed = normalized_for_compare(&c.managed_mods_dir());
+    if requested != managed {
+        return Err(format!(
+            "3DMigoto Mods 运行目录由 LiquiMod 托管，不能切换到外部目录；请使用“外部 Mod 源目录”添加真实 Mod 文件夹。当前托管目录：{}",
+            c.managed_mods_dir().display()
+        ));
+    }
+    c.mods_dir = Some(c.managed_mods_dir());
     Ok(config_dto(c))
 }
 
-/// 启动已配置的可执行文件；未配置或文件缺失时报人话错误。通过 ShellExecute 启动并自动支持提权。
-fn launch_exe(exe: Option<&Path>, what: &str) -> Result<(), String> {
-    let Some(exe) = exe else {
-        return Err(format!("未配置{what}路径，请在设置中配置"));
-    };
-    if !exe.is_file() {
-        return Err(format!("{what}不存在：{}", exe.display()));
+fn normalize_existing_directory(path: &Path, label: &str) -> Result<PathBuf, String> {
+    if !path.is_dir() {
+        return Err(format!("{label}不存在：{}", path.display()));
     }
-    liquimod_core::refresh::launch_program(exe).map_err(|e| format!("启动{what}失败：{e}"))?;
-    tracing::info!("launched {} ({})", what, exe.display());
-    Ok(())
+    path.canonicalize()
+        .map_err(|e| format!("无法读取{label}：{e}"))
+}
+
+fn normalized_for_compare(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(path))
+                .unwrap_or_else(|_| path.to_path_buf())
+        }
+    })
+}
+
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    left == right || left.starts_with(right) || right.starts_with(left)
+}
+
+fn validate_mod_source(config: &Config, source: &Path) -> Result<PathBuf, String> {
+    let source = normalize_existing_directory(source, "外部 Mod 源目录")?;
+    let library = normalized_for_compare(&config.library_root);
+    if paths_overlap(&source, &library) {
+        return Err("外部 Mod 源不能与 LiquiMod Library 重叠".to_string());
+    }
+    if let Some(mods_dir) = config.mods_dir.as_deref() {
+        let mods = normalized_for_compare(mods_dir);
+        if paths_overlap(&source, &mods) {
+            return Err("外部 Mod 源不能与 3DMigoto Mods 部署目录重叠".to_string());
+        }
+    }
+    let managed_migoto = normalized_for_compare(&config.managed_migoto_dir());
+    if paths_overlap(&source, &managed_migoto) {
+        return Err("外部 Mod 源不能与 LiquiMod 托管的 3DMigoto 工作区重叠".to_string());
+    }
+    Ok(source)
 }
 
 /// 安装 Mod（支持文件夹或压缩包）：character=None 时从内容推断。人话错误信息。
@@ -865,6 +886,113 @@ pub fn choose_mods_dir(
 }
 
 #[tauri::command]
+pub async fn add_mod_source(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<ConfigDto, String> {
+    ensure_game_stopped(state.inner(), "添加外部 Mod 源")?;
+    let config = std::sync::Arc::clone(&state.config);
+    let library = std::sync::Arc::clone(&state.library);
+    let config_path = state.config_path.clone();
+    let game_running = state.game_running.load(Ordering::Relaxed);
+    let source = PathBuf::from(path);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut next = config.lock().unwrap().clone();
+        let source = validate_mod_source(&next, &source)?;
+        if !next
+            .mod_sources
+            .iter()
+            .map(|value| normalized_for_compare(value))
+            .any(|value| value == source)
+        {
+            next.mod_sources.push(source);
+            next.mod_sources
+                .sort_by_key(|value| value.to_string_lossy().to_lowercase());
+            next.save_to(&config_path)
+                .map_err(|e| format!("保存外部 Mod 源配置失败：{e}"))?;
+            *config.lock().unwrap() = next.clone();
+        }
+
+        let (mods_dir, sources) = (next.mods_dir.clone(), next.mod_sources.clone());
+        let lib = library.lock().unwrap();
+        crate::reconcile_and_diff_with_sources(&lib, mods_dir.as_deref(), &sources, !game_running)
+            .map_err(|e| format!("扫描外部 Mod 源失败：{e}"))?;
+        Ok::<ConfigDto, String>(config_dto(&next))
+    })
+    .await
+    .map_err(|e| format!("添加外部 Mod 源任务失败：{e}"))??;
+    crate::start_watcher(&app, state.inner());
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn remove_mod_source(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<ConfigDto, String> {
+    ensure_game_stopped(state.inner(), "移除外部 Mod 源")?;
+    let config = std::sync::Arc::clone(&state.config);
+    let library = std::sync::Arc::clone(&state.library);
+    let config_path = state.config_path.clone();
+    let requested = normalized_for_compare(Path::new(&path));
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut next = config.lock().unwrap().clone();
+        let before = next.mod_sources.len();
+        next.mod_sources
+            .retain(|value| normalized_for_compare(value) != requested);
+        if next.mod_sources.len() == before {
+            return Err("未找到要移除的外部 Mod 源".to_string());
+        }
+
+        // 解除连接只删除索引与 LiquiMod 自己创建的 Junction，不触碰源目录中的任何文件。
+        let lib = library.lock().unwrap();
+        let external_entries = lib
+            .db
+            .list_mods()
+            .map_err(|e| format!("读取外部 Mod 索引失败：{e}"))?
+            .into_iter()
+            .filter(|entry| {
+                entry.storage_kind == ModStorageKind::External
+                    && entry
+                        .source_path
+                        .as_deref()
+                        .map(|source| {
+                            let source = normalized_for_compare(Path::new(source));
+                            source == requested || source.starts_with(&requested)
+                        })
+                        .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        if let Some(mods_dir) = next.mods_dir.as_deref() {
+            let deployer = Deployer::new(&lib, mods_dir);
+            for entry in &external_entries {
+                if entry.enabled {
+                    deployer
+                        .disable(entry.id)
+                        .map_err(|e| format!("移除外部 Mod 部署失败：{e}"))?;
+                }
+            }
+        }
+        for entry in external_entries {
+            lib.db
+                .remove_mod(entry.id)
+                .map_err(|e| format!("移除外部 Mod 索引失败：{e}"))?;
+            liquimod_core::thumbs::remove_thumbnail(&lib.layout.root, entry.id);
+        }
+        next.save_to(&config_path)
+            .map_err(|e| format!("保存外部 Mod 源配置失败：{e}"))?;
+        *config.lock().unwrap() = next.clone();
+        Ok(config_dto(&next))
+    })
+    .await
+    .map_err(|e| format!("移除外部 Mod 源任务失败：{e}"))??;
+    crate::start_watcher(&app, state.inner());
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn get_storage_info(state: tauri::State<'_, AppState>) -> Result<StorageInfoDto, String> {
     let (library_root, previous_library_root, storage_root) = {
         let config = state.config.lock().unwrap();
@@ -946,11 +1074,7 @@ pub async fn migrate_storage(
         next_config.library_root = report.library_root.clone();
         if managed_migoto {
             next_config.mods_dir = Some(new_managed_migoto.join("Mods"));
-            if let Some(loader) = old_config.loader_exe.as_deref() {
-                if let Ok(relative) = loader.strip_prefix(&old_managed_migoto) {
-                    next_config.loader_exe = Some(new_managed_migoto.join(relative));
-                }
-            }
+            next_config.loader_exe = None;
         }
         if let Err(error) = next_config.save_to(&config_path) {
             let _ = std::fs::remove_dir_all(&report.library_root);
@@ -962,6 +1086,7 @@ pub async fn migrate_storage(
 
         *library_guard = new_library;
         *config.lock().unwrap() = next_config.clone();
+        liquimod_core::games::hsr::Hsr::set_asset_root(next_config.data_root().join("GameAssets"));
         let deployment_warning = next_config.mods_dir.as_deref().and_then(|mods_dir| {
             Deployer::new(&library_guard, mods_dir)
                 .reconcile()
@@ -994,6 +1119,15 @@ pub async fn cleanup_previous_library(state: tauri::State<'_, AppState>) -> Resu
             .previous_library_root
             .clone()
             .ok_or_else(|| "没有可清理的旧仓库".to_string())?;
+        if !previous.exists() {
+            // 迁移记录可能指向已经被用户手动移走的旧仓库。这里只清理陈旧元数据，
+            // 不尝试删除不存在的路径，也不放宽后续真实目录的安全校验。
+            config.previous_library_root = None;
+            config
+                .save_to(&config_path)
+                .map_err(|e| format!("保存清理状态失败：{e}"))?;
+            return Ok(0);
+        }
         if previous == config.library_root
             || previous.file_name().and_then(|name| name.to_str()) != Some("Library")
             || !previous.join("liquimod.db").is_file()
@@ -1708,28 +1842,6 @@ pub fn get_game_status(state: tauri::State<AppState>) -> GameStatusDto {
 }
 
 #[tauri::command]
-pub fn choose_loader_exe(state: tauri::State<AppState>, path: String) -> Result<ConfigDto, String> {
-    let p = PathBuf::from(path);
-    if !p.is_file() {
-        return Err(format!("文件不存在：{}", p.display()));
-    }
-    if !p
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|ext| ext.eq_ignore_ascii_case("exe"))
-        .unwrap_or(false)
-    {
-        return Err("请选择 .exe 可执行文件".to_string());
-    }
-    let mut config = state.config.lock().unwrap();
-    config.loader_exe = Some(p);
-    config
-        .save_to(&state.config_path)
-        .map_err(|e| format!("配置保存失败：{e}"))?;
-    Ok(config_dto(&config))
-}
-
-#[tauri::command]
 pub async fn auto_detect_game_exe() -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let found = liquimod_core::discovery::auto_detect_game_exe();
@@ -1771,81 +1883,135 @@ pub async fn check_migoto_update(
 }
 
 #[tauri::command]
-pub async fn install_migoto_update(
-    app: tauri::AppHandle,
+pub async fn check_xxmi_update(
     state: tauri::State<'_, AppState>,
-    download_url: String,
-    version_tag: Option<String>,
-) -> Result<ConfigDto, String> {
-    let (target_dir, token, mirror) = {
-        let mut config = state.config.lock().unwrap();
-        let target = if let Some(mods) = &config.mods_dir {
-            mods.parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| config.managed_migoto_dir())
-        } else {
-            let def = config.managed_migoto_dir();
-            config.mods_dir = Some(def.join("Mods"));
-            def
-        };
-        let t = if config.github_token.is_empty() {
-            None
-        } else {
-            Some(config.github_token.clone())
-        };
-        let m = if config.github_mirror.is_empty() {
-            None
-        } else {
-            Some(config.github_mirror.clone())
-        };
-        (target, t, m)
+) -> Result<liquimod_core::migoto_sync::MigotoReleaseInfo, String> {
+    let (token, mirror) = {
+        let config = state.config.lock().unwrap();
+        (
+            (!config.github_token.is_empty()).then(|| config.github_token.clone()),
+            (!config.github_mirror.is_empty()).then(|| config.github_mirror.clone()),
+        )
     };
+    liquimod_core::migoto_sync::check_latest_xxmi_release(token.as_deref(), mirror.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
 
+#[tauri::command]
+pub fn get_core_package_status(
+    state: tauri::State<AppState>,
+) -> Vec<liquimod_core::migoto_sync::PackageStatus> {
+    let data_root = state.config.lock().unwrap().data_root();
+    liquimod_core::migoto_sync::package_statuses(&data_root)
+}
+
+async fn install_latest_core_package(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    package: liquimod_core::migoto_sync::PackageKind,
+) -> Result<ConfigDto, String> {
+    let (data_root, token, mirror, config_path) = {
+        let config = state.config.lock().unwrap();
+        (
+            config.data_root(),
+            (!config.github_token.is_empty()).then(|| config.github_token.clone()),
+            (!config.github_mirror.is_empty()).then(|| config.github_mirror.clone()),
+            state.config_path.clone(),
+        )
+    };
+    let release = match package {
+        liquimod_core::migoto_sync::PackageKind::Srmi => {
+            liquimod_core::migoto_sync::check_latest_srmi_release(
+                token.as_deref(),
+                mirror.as_deref(),
+            )
+            .await
+        }
+        liquimod_core::migoto_sync::PackageKind::Xxmi => {
+            liquimod_core::migoto_sync::check_latest_xxmi_release(
+                token.as_deref(),
+                mirror.as_deref(),
+            )
+            .await
+        }
+    }
+    .map_err(|e| e.to_string())?;
     let (tx, mut rx) = tokio::sync::mpsc::channel(32);
-    let app_clone = app.clone();
+    let app2 = app.clone();
     let forward_task = tokio::spawn(async move {
         while let Some(progress) = rx.recv().await {
-            let _ = app_clone.emit("migoto-download-progress", progress);
+            let _ = app2.emit("migoto-download-progress", progress);
         }
     });
-
-    let res = liquimod_core::migoto_sync::download_and_install_migoto(
-        &download_url,
-        &target_dir,
+    let result = liquimod_core::migoto_sync::install_official_package(
+        &release,
+        &data_root,
         mirror.as_deref(),
         token.as_deref(),
         Some(tx),
     )
-    .await;
-
+    .await
+    .map_err(|e| e.to_string());
     let _ = forward_task.await;
-    res.map_err(|e| e.to_string())?;
+    result?;
 
-    // 确保自动绑定 mods_dir 与更新版本记录
-    let config = {
-        let mut cfg = state.config.lock().unwrap();
-        let mods_path = target_dir.join("Mods");
-        if !mods_path.exists() {
-            let _ = std::fs::create_dir_all(&mods_path);
-        }
-        cfg.mods_dir = Some(mods_path);
-        if let Some(tag) = version_tag {
-            cfg.migoto_version = Some(tag);
-        }
+    let mut config = state.config.lock().unwrap();
+    config.mods_dir = Some(liquimod_core::migoto_sync::runtime_paths(&data_root).mods_dir);
+    if package == liquimod_core::migoto_sync::PackageKind::Srmi {
+        config.migoto_version = Some(release.tag_name.clone());
+    }
+    config
+        .save_to(&config_path)
+        .map_err(|e| format!("保存核心版本配置失败：{e}"))?;
+    let dto = config_dto(&config);
+    drop(config);
+    crate::start_watcher(app, state);
+    Ok(dto)
+}
 
-        // 检查是否存在 loader
-        let loader_candidate = target_dir.join("3DMigoto Loader.exe");
-        if loader_candidate.is_file() {
-            cfg.loader_exe = Some(loader_candidate);
-        }
+#[tauri::command]
+pub async fn install_xxmi_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<ConfigDto, String> {
+    ensure_game_stopped(state.inner(), "更新 XXMI 核心")?;
+    install_latest_core_package(
+        &app,
+        state.inner(),
+        liquimod_core::migoto_sync::PackageKind::Xxmi,
+    )
+    .await
+}
 
-        cfg.save_to(&state.config_path)
-            .map_err(|e| format!("配置保存失败：{e}"))?;
-        config_dto(&cfg)
-    };
+#[tauri::command]
+pub async fn install_srmi_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<ConfigDto, String> {
+    ensure_game_stopped(state.inner(), "更新 SRMI 核心")?;
+    install_latest_core_package(
+        &app,
+        state.inner(),
+        liquimod_core::migoto_sync::PackageKind::Srmi,
+    )
+    .await
+}
 
-    crate::start_watcher(&app, state.inner());
-    Ok(config)
+#[tauri::command]
+pub async fn install_migoto_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    _download_url: String,
+    _version_tag: Option<String>,
+) -> Result<ConfigDto, String> {
+    ensure_game_stopped(state.inner(), "更新 SRMI 核心")?;
+    install_latest_core_package(
+        &app,
+        state.inner(),
+        liquimod_core::migoto_sync::PackageKind::Srmi,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1860,14 +2026,7 @@ pub fn switch_to_managed_migoto(
     let mut cfg = state.config.lock().unwrap();
     let mods_dir = def_dir.join("Mods");
     cfg.mods_dir = Some(mods_dir);
-
-    let loader_1 = def_dir.join("3DMigoto Loader.exe");
-    let loader_2 = def_dir.join("3DMigotoLoader.exe");
-    if loader_1.is_file() {
-        cfg.loader_exe = Some(loader_1);
-    } else if loader_2.is_file() {
-        cfg.loader_exe = Some(loader_2);
-    }
+    cfg.loader_exe = None;
 
     cfg.save_to(&state.config_path)
         .map_err(|e| format!("配置保存失败：{e}"))?;
@@ -2034,36 +2193,17 @@ pub fn set_github_mirror(
     Ok(config_dto(&config))
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ModConflictsDto {
-    pub hash_conflicts: Vec<liquimod_core::d3d::ModConflict>,
-    pub variable_conflicts: Vec<liquimod_core::d3d::VariableConflict>,
-}
-
 #[tauri::command]
-pub fn get_mod_conflicts(state: tauri::State<AppState>) -> Result<ModConflictsDto, String> {
-    let lib = state.library.lock().unwrap();
-    let hash_conflicts = liquimod_core::d3d::detect_conflicts(&lib).map_err(|e| e.to_string())?;
-    let variable_conflicts =
-        liquimod_core::d3d::detect_variable_conflicts(&lib).map_err(|e| e.to_string())?;
-    Ok(ModConflictsDto {
-        hash_conflicts,
-        variable_conflicts,
-    })
-}
-
-#[tauri::command]
-pub fn launch_game(
-    state: tauri::State<AppState>,
+pub async fn launch_game(
+    state: tauri::State<'_, AppState>,
 ) -> Result<liquimod_core::launcher::LaunchResult, String> {
-    let (game_exe, mods_dir, loader_exe, work_mode_str, delay_ms) = {
+    let (game_exe, work_mode_str, delay_ms, data_root) = {
         let c = state.config.lock().unwrap();
         (
             c.game_exe.clone(),
-            c.mods_dir.clone(),
-            c.loader_exe.clone(),
             c.work_mode.clone(),
             c.injection_delay_ms,
+            c.data_root(),
         )
     };
 
@@ -2071,73 +2211,34 @@ pub fn launch_game(
         return Err("未配置游戏主程序路径，请在设置中配置或点击自动探测".to_string());
     };
 
-    let migoto_dir = mods_dir
-        .and_then(|m| m.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| {
-            game_path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf()
-        });
-
-    // 1. 确保 3DMigoto 工作区核心套件 (3dmloader.dll, d3d11.dll 3.13MB, 着色器) 完整且自愈升级
-    let _ = liquimod_core::migoto_sync::deploy_embedded_srmi_suite(&migoto_dir);
-
     let work_mode = match work_mode_str.as_str() {
         "dev" => liquimod_core::d3d::MigotoWorkMode::Dev,
         _ => liquimod_core::d3d::MigotoWorkMode::Play,
     };
 
-    // 2. 同步更新 d3dx.ini
-    if migoto_dir.is_dir() {
-        let ini_path = migoto_dir.join("d3dx.ini");
-        if ini_path.is_file() {
-            let _ = liquimod_core::d3d::update_d3dx_ini_mode(&ini_path, work_mode);
-            let _ = liquimod_core::d3d::update_d3dx_ini_target(&ini_path, &game_path);
-        }
-    }
+    let process_name = game_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("StarRail.exe")
+        .to_string();
 
-    let d3d11 = migoto_dir.join("d3d11.dll");
-    let loader_dll = migoto_dir.join("3dmloader.dll");
-    let game_dir = game_path.parent();
-
-    // 3. 优先使用 Helper 执行原生无感 Hook 注入启动
-    if d3d11.is_file() && loader_dll.is_file() {
-        if refresh_helper_path().is_some() {
-            if let Ok(()) = launch_game_with_helper(
-                &state.refresh,
-                &game_path,
-                game_dir,
-                Some(&d3d11),
-                Some(&loader_dll),
-            ) {
-                return Ok(liquimod_core::launcher::LaunchResult {
-                    success: true,
-                    message: "✨ 已无感加载 3DMigoto 并拉起游戏！".to_string(),
-                    pid: None,
-                });
-            }
-        }
-
-        // 4. 若 Helper 尚未运行或管道异常，直接使用主进程原生 Win32 Hook 注入启动
-        return liquimod_core::launcher::launch_with_hook(
-            &game_path,
-            game_dir,
-            &d3d11,
-            &loader_dll,
+    tauri::async_runtime::spawn_blocking(move || {
+        let runtime = liquimod_core::migoto_sync::prepare_managed_runtime(
+            &data_root, &game_path, work_mode, delay_ms,
         )
-        .map_err(|e| format!("模组注入拉起游戏失败：{e}"));
-    }
-
-    let opts = liquimod_core::launcher::GameLaunchOptions {
-        game_exe: game_path,
-        migoto_dir,
-        loader_exe,
-        work_mode,
-        delay_ms,
-    };
-
-    liquimod_core::launcher::launch_with_mod(&opts).map_err(|e| e.to_string())
+        .map_err(|e| format!("准备 XXMI/SRMI 运行时失败：{e}"))?;
+        let opts = liquimod_core::launcher::GameLaunchOptions {
+            game_exe: game_path,
+            migoto_dir: runtime.runtime_root,
+            injector_dll: runtime.injector_dll,
+            process_name,
+            work_mode,
+            delay_ms,
+        };
+        liquimod_core::launcher::launch_with_mod(&opts).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("模组启动任务异常：{e}"))?
 }
 
 #[tauri::command]
@@ -2172,12 +2273,6 @@ pub fn launch_official_launcher(
 }
 
 #[tauri::command]
-pub fn launch_loader(state: tauri::State<AppState>) -> Result<(), String> {
-    let exe = state.config.lock().unwrap().loader_exe.clone();
-    launch_exe(exe.as_deref(), "加载器")
-}
-
-#[tauri::command]
 pub fn inspect_3dmigoto_dir(path: String) -> Result<MigotoInspectDto, String> {
     let p = PathBuf::from(path);
     let info = liquimod_core::d3d::inspect_migoto_dir(&p).map_err(|e| e.to_string())?;
@@ -2201,18 +2296,13 @@ pub fn import_3dmigoto_dir(
 
     let dto = {
         let mut config = state.config.lock().unwrap();
-        if let Some(mods_dir) = info.mods_dir {
-            if !mods_dir.exists() {
-                let _ = std::fs::create_dir_all(&mods_dir);
-            }
-            config.mods_dir = Some(mods_dir);
-        }
         if let Some(game_exe) = info.game_exe {
             config.game_exe = Some(game_exe);
         }
-        if let Some(loader_exe) = info.loader_exe {
-            config.loader_exe = Some(loader_exe);
-        }
+        // 导入旧配置只读取游戏路径；运行时始终使用 LiquiMod 自己的
+        // 3DMigoto 工作区，旧 Loader.exe 不再进入启动链。
+        config.mods_dir = Some(config.managed_mods_dir());
+        config.loader_exe = None;
         config
             .save_to(&state.config_path)
             .map_err(|e| format!("配置保存失败：{e}"))?;
@@ -2468,7 +2558,12 @@ pub async fn trigger_refresh_game(state: tauri::State<'_, AppState>) -> Result<(
         if !is_game_running(&process_name_refs) {
             return Err("未检测到游戏进程，无法发送 F10".to_string());
         }
-        send_refresh_game(&refresh)
+        let process_name = process_names
+            .iter()
+            .find(|name| is_game_running(&[name.as_str()]))
+            .map(String::as_str)
+            .unwrap_or("StarRail.exe");
+        send_refresh_game(&refresh, process_name)
     })
     .await
     .map_err(|e| format!("刷新任务失败：{e}"))?
@@ -2597,10 +2692,13 @@ pub async fn rescan_library(state: tauri::State<'_, AppState>) -> Result<RescanR
     let game_running = std::sync::Arc::clone(&state.game_running);
     tauri::async_runtime::spawn_blocking(move || {
         let lib = library.lock().unwrap();
-        let mods_dir = config.lock().unwrap().mods_dir.clone();
+        let (mods_dir, sources) = {
+            let cfg = config.lock().unwrap();
+            (cfg.mods_dir.clone(), cfg.mod_sources.clone())
+        };
         let deploy = !game_running.load(std::sync::atomic::Ordering::Relaxed);
         let (added, removed) =
-            crate::reconcile_and_diff_with_deploy(&lib, mods_dir.as_deref(), deploy)
+            crate::reconcile_and_diff_with_sources(&lib, mods_dir.as_deref(), &sources, deploy)
                 .map_err(|e| format!("全库重新扫描失败：{e}"))?;
         Ok(RescanResultDto { added, removed })
     })
@@ -2649,13 +2747,12 @@ pub struct DiagnosticStatusDto {
 
 #[tauri::command]
 pub fn get_diagnostic_status(state: tauri::State<AppState>) -> DiagnosticStatusDto {
-    let (library_root, mods_dir, game_exe, loader_exe) = {
+    let (library_root, mods_dir, game_exe) = {
         let config = state.config.lock().unwrap();
         (
             config.library_root.clone(),
             config.mods_dir.clone(),
             config.game_exe.clone(),
-            config.loader_exe.clone(),
         )
     };
     let helper_ready = refresh_helper_path().is_some();
@@ -2663,7 +2760,7 @@ pub fn get_diagnostic_status(state: tauri::State<AppState>) -> DiagnosticStatusD
         &library_root,
         mods_dir.as_deref(),
         game_exe.as_deref(),
-        loader_exe.as_deref(),
+        None,
         helper_ready,
     );
     let filesystem = mods_dir
@@ -2685,7 +2782,8 @@ pub fn get_diagnostic_status(state: tauri::State<AppState>) -> DiagnosticStatusD
     DiagnosticStatusDto {
         helper_ready,
         game_configured: game_exe.is_some_and(|p| !p.as_os_str().is_empty()),
-        loader_configured: loader_exe.is_some_and(|p| !p.as_os_str().is_empty()),
+        // 保留 DTO 字段供旧前端兼容；当前原生 Hook 流程不再配置 Loader.exe。
+        loader_configured: false,
         mods_dir_configured: mods_dir.as_ref().is_some_and(|p| !p.as_os_str().is_empty()),
         checks,
         filesystem,
@@ -2734,16 +2832,23 @@ pub struct AssetUpdateCheckResultDto {
 }
 
 #[tauri::command]
-pub async fn get_local_asset_version() -> Result<Option<String>, String> {
-    let service = liquimod_core::assets_sync::AssetSyncService::new();
+pub async fn get_local_asset_version(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let asset_root = state.config.lock().unwrap().data_root().join("GameAssets");
+    liquimod_core::games::hsr::Hsr::set_asset_root(asset_root.clone());
+    let service = liquimod_core::assets_sync::AssetSyncService::with_root(asset_root);
     Ok(service.get_local_version().await)
 }
 
 #[tauri::command]
 pub async fn check_game_assets_update(
+    state: tauri::State<'_, AppState>,
     game: Option<String>,
 ) -> Result<AssetUpdateCheckResultDto, String> {
-    let service = liquimod_core::assets_sync::AssetSyncService::new();
+    let asset_root = state.config.lock().unwrap().data_root().join("GameAssets");
+    liquimod_core::games::hsr::Hsr::set_asset_root(asset_root.clone());
+    let service = liquimod_core::assets_sync::AssetSyncService::with_root(asset_root);
     let local = service.get_local_version().await;
     let filter = game.as_deref().or(Some("Honkai"));
     match service.check_for_updates(filter).await {
@@ -2762,9 +2867,12 @@ pub async fn check_game_assets_update(
 #[tauri::command]
 pub async fn sync_game_assets(
     app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
     game: Option<String>,
 ) -> Result<liquimod_core::assets_sync::AssetSyncResult, String> {
-    let service = liquimod_core::assets_sync::AssetSyncService::new();
+    let asset_root = state.config.lock().unwrap().data_root().join("GameAssets");
+    liquimod_core::games::hsr::Hsr::set_asset_root(asset_root.clone());
+    let service = liquimod_core::assets_sync::AssetSyncService::with_root(asset_root);
     let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
     let app_clone = app.clone();
@@ -2790,6 +2898,7 @@ pub async fn sync_game_assets(
 
 #[tauri::command]
 pub async fn get_character_image_data(
+    state: tauri::State<'_, AppState>,
     game: Option<String>,
     filename: String,
 ) -> Result<Option<String>, String> {
@@ -2808,9 +2917,11 @@ pub async fn get_character_image_data(
         return Ok(None);
     };
 
-    let asset_root = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("LiquiMod")
+    let asset_root = state
+        .config
+        .lock()
+        .unwrap()
+        .data_root()
         .join("GameAssets")
         .join(game_name);
 
@@ -2968,6 +3079,7 @@ mod tests {
             library_root: PathBuf::from("x"),
             previous_library_root: None,
             mods_dir: None,
+            mod_sources: Vec::new(),
             auto_enable: false,
             warn_multiple_mods: true,
             theme: "auto".into(),
@@ -3282,16 +3394,6 @@ mod tests {
     }
 
     #[test]
-    fn launch_exe_errors_when_unconfigured_or_missing() {
-        assert!(launch_exe(None, "游戏")
-            .unwrap_err()
-            .contains("未配置游戏路径"));
-        assert!(launch_exe(Some(Path::new("C:/no/such.exe")), "游戏")
-            .unwrap_err()
-            .contains("不存在"));
-    }
-
-    #[test]
     fn maybe_auto_enable_deploys_when_on() {
         let tmp = tempfile::tempdir().unwrap();
         let lib = Library::init(tmp.path()).unwrap();
@@ -3303,6 +3405,7 @@ mod tests {
             library_root: tmp.path().to_path_buf(),
             previous_library_root: None,
             mods_dir: Some(mods.path().to_path_buf()),
+            mod_sources: Vec::new(),
             auto_enable: false,
             warn_multiple_mods: true,
             theme: "auto".into(),

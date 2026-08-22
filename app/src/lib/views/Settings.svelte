@@ -7,6 +7,7 @@
     type DiagnosticStatusDto,
     type AssetSyncProgressDto,
     type StorageInfoDto,
+    type CorePackageStatusDto,
   } from "$lib/api";
   import { applyTheme } from "$lib/theme";
   import { toast } from "$lib/toast.svelte";
@@ -32,15 +33,14 @@
   let syncing = $state(false);
   let checkingUpdate = $state(false);
   let syncProgress = $state<AssetSyncProgressDto | null>(null);
-  let installingMigoto = $state(false);
   let detectingGame = $state(false);
-  let migotoProgress = $state<import("$lib/api").MigotoDownloadProgressDto | null>(null);
   let storageInfo = $state<StorageInfoDto | null>(null);
   let storageBusy = $state(false);
+  let coreStatuses = $state<CorePackageStatusDto[]>([]);
+  let sourceBusy = $state(false);
 
   onMount(() => {
     let unlistenProgress: (() => void) | undefined;
-    let unlistenMigotoProgress: (() => void) | undefined;
 
     (async () => {
       try {
@@ -68,24 +68,22 @@
       } catch {
         storageInfo = null;
       }
+      try {
+        coreStatuses = await api.getCorePackageStatus();
+      } catch {
+        coreStatuses = [];
+      }
 
       if (isTauri()) {
         const { listen } = await import("@tauri-apps/api/event");
         unlistenProgress = await listen<AssetSyncProgressDto>("asset-sync-progress", (e) => {
           syncProgress = e.payload;
         });
-        unlistenMigotoProgress = await listen<import("$lib/api").MigotoDownloadProgressDto>(
-          "migoto-download-progress",
-          (e) => {
-            migotoProgress = e.payload;
-          }
-        );
       }
     })();
 
     return () => {
       unlistenProgress?.();
-      unlistenMigotoProgress?.();
     };
   });
 
@@ -162,39 +160,37 @@
     }
   }
 
-  async function import3dMigoto() {
+  async function addModSource() {
+    if (sourceBusy) return;
     if (!isTauri()) {
       toast("浏览器预览不支持原生目录选择，请在桌面版操作");
       return;
     }
     try {
-      const path = await open({ directory: true, title: "选择 3Dmigoto 根目录（包含 d3dx.ini）" });
-      if (typeof path === "string") {
-        await api.import3dMigotoDir(path);
-        toast("已成功识别并导入 3Dmigoto 配置！");
-        diagStatus = await api.getDiagnosticStatus().catch(() => null);
-        onchanged();
-      }
+      const path = await open({ directory: true, title: "选择外部 Mod 源目录" });
+      if (typeof path !== "string" || !path.trim()) return;
+      sourceBusy = true;
+      await api.addModSource(path);
+      toast("外部 Mod 源已连接；源文件不会被复制或删除");
+      onchanged();
     } catch (e) {
       toast(String(e));
+    } finally {
+      sourceBusy = false;
     }
   }
 
-  async function pickModsDir() {
-    if (!isTauri()) {
-      toast("浏览器预览不支持原生目录选择，请在桌面版操作");
-      return;
-    }
+  async function removeModSource(path: string) {
+    if (sourceBusy) return;
+    sourceBusy = true;
     try {
-      const path = await open({ directory: true, title: "选择 3Dmigoto Mods 目录" });
-      if (typeof path === "string") {
-        await api.chooseModsDir(path);
-        toast("已更新 Mods 目录");
-        diagStatus = await api.getDiagnosticStatus().catch(() => null);
-        onchanged();
-      }
+      await api.removeModSource(path);
+      toast("已解除外部 Mod 源连接，源文件未删除");
+      onchanged();
     } catch (e) {
       toast(String(e));
+    } finally {
+      sourceBusy = false;
     }
   }
 
@@ -204,6 +200,18 @@
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
     return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  }
+
+  function compactPath(path: string | null | undefined, root = config?.storage_root): string {
+    if (!path) return "未配置";
+    if (!root) return path;
+    const normalizedPath = path.replace(/[\\/]+/g, "/").replace(/\/$/, "");
+    const normalizedRoot = root.replace(/[\\/]+/g, "/").replace(/\/$/, "");
+    if (normalizedPath.toLowerCase() === normalizedRoot.toLowerCase()) return "LiquiMod";
+    if (normalizedPath.toLowerCase().startsWith(`${normalizedRoot.toLowerCase()}/`)) {
+      return `LiquiMod/${normalizedPath.slice(normalizedRoot.length + 1)}`;
+    }
+    return path;
   }
 
   async function loadStorageInfo() {
@@ -248,7 +256,11 @@
     storageBusy = true;
     try {
       const bytes = await api.cleanupPreviousLibrary();
-      toast(`旧仓库已清理（${formatBytes(bytes)}）`);
+      toast(
+        bytes > 0
+          ? `旧仓库已清理（${formatBytes(bytes)}）`
+          : "旧仓库记录已清理（原目录已不存在）",
+      );
       await loadStorageInfo();
       onchanged();
     } catch (e) {
@@ -258,7 +270,7 @@
     }
   }
 
-  async function pickExe(which: "game" | "loader") {
+  async function pickExe(which: "game") {
     if (!isTauri()) {
       toast("浏览器预览不支持原生文件选择，请在桌面版操作");
       return;
@@ -266,12 +278,11 @@
     try {
       const path = await open({
         directory: false,
-        title: which === "game" ? "选择游戏主程序" : "选择 3Dmigoto 加载器",
+        title: "选择游戏主程序",
         filters: [{ name: "可执行文件", extensions: ["exe"] }],
       });
       if (typeof path === "string") {
-        if (which === "game") await api.chooseGameExe(path);
-        else await api.chooseLoaderExe(path);
+        await api.chooseGameExe(path);
         toast("已更新路径");
         diagStatus = await api.getDiagnosticStatus().catch(() => null);
         onchanged();
@@ -405,15 +416,18 @@
     }
   }
 
-  let checkingMigoto = $state(false);
-  let migotoRelease = $state<import("$lib/api").MigotoReleaseInfoDto | null>(null);
-  let delayDraft = $state(500);
+  let srmiRelease = $state<import("$lib/api").MigotoReleaseInfoDto | null>(null);
+  let xxmiRelease = $state<import("$lib/api").MigotoReleaseInfoDto | null>(null);
+  let checkingSrmi = $state(false);
+  let checkingXxmi = $state(false);
+  let installingCore = $state<"SRMI" | "XXMI" | null>(null);
+  let delayDraft = $state(0);
   let tokenDraft = $state("");
   let mirrorDraft = $state("");
 
   $effect(() => {
     if (config) {
-      delayDraft = config.injection_delay_ms ?? 500;
+      delayDraft = config.injection_delay_ms ?? 0;
       tokenDraft = config.github_token ?? "";
       mirrorDraft = config.github_mirror ?? "";
     }
@@ -442,7 +456,7 @@
   async function handleInitMigoto() {
     try {
       await api.switchToManagedMigoto();
-      toast("✨ 已一键切换至 LiquiMod 内置 3DMigoto 环境！");
+      toast("✨ 已初始化 LiquiMod 本地 3DMigoto 运行入口！");
       diagStatus = await api.getDiagnosticStatus().catch(() => null);
       onchanged();
     } catch (e) {
@@ -450,46 +464,54 @@
     }
   }
 
-  async function handleCheckMigotoUpdate() {
-    if (checkingMigoto) return;
-    checkingMigoto = true;
+  async function handleCheckSrmiUpdate() {
+    if (checkingSrmi || installingCore) return;
+    checkingSrmi = true;
     try {
       const rel = await api.checkMigotoUpdate();
-      migotoRelease = rel;
+      srmiRelease = rel;
       if (config?.migoto_version && rel.tag_name && config.migoto_version.trim().toLowerCase() === rel.tag_name.trim().toLowerCase()) {
-        toast(`✨ 当前已是最新版本 (${rel.tag_name})`);
+        toast(`SRMI 当前已是最新版本 (${rel.tag_name})`);
       } else {
-        toast(`✨ 查找到 3DMigoto 最新 Release：${rel.tag_name || rel.name}`);
+        toast(`✨ 查找到 SRMI 最新 Release：${rel.tag_name || rel.name}`);
       }
     } catch (e) {
-      toast(`检查 3DMigoto 更新失败：${e}`);
+      toast(`检查 SRMI 更新失败：${e}`);
     } finally {
-      checkingMigoto = false;
+      checkingSrmi = false;
     }
   }
 
-  async function handleInstallMigoto(downloadUrl: string, versionTag?: string) {
-    if (installingMigoto) return;
-    installingMigoto = true;
-    migotoProgress = {
-      stage: "downloading",
-      percent: 5,
-      downloaded_bytes: 0,
-      total_bytes: null,
-      message: "正在发起 3DMigoto 核心套件下载...",
-    };
+  async function refreshCoreStatuses() {
+    coreStatuses = await api.getCorePackageStatus().catch(() => []);
+  }
+
+  async function handleCheckXxmiUpdate() {
+    if (checkingXxmi || checkingSrmi || installingCore) return;
+    checkingXxmi = true;
     try {
-      await api.installMigotoUpdate(downloadUrl, versionTag);
-      toast(`✨ 3DMigoto 核心套件 (${versionTag || '最新版'}) 已成功部署！`);
-      diagStatus = await api.getDiagnosticStatus().catch(() => null);
+      xxmiRelease = await api.checkXxmiUpdate();
+      toast(`XXMI 官方套件：${xxmiRelease.tag_name || xxmiRelease.name}`);
+    } catch (e) {
+      toast(`检查 XXMI 更新失败：${e}`);
+    } finally {
+      checkingXxmi = false;
+    }
+  }
+
+  async function installCore(packageName: "SRMI" | "XXMI") {
+    if (installingCore) return;
+    installingCore = packageName;
+    try {
+      if (packageName === "SRMI") await api.installSrmiUpdate();
+      else await api.installXxmiUpdate();
+      await refreshCoreStatuses();
+      toast(`${packageName} 官方核心已安装并完成签名校验`);
       onchanged();
     } catch (e) {
-      toast(`安装更新失败：${e}`);
+      toast(`${packageName} 核心安装失败：${e}`);
     } finally {
-      installingMigoto = false;
-      setTimeout(() => {
-        migotoProgress = null;
-      }, 5000);
+      installingCore = null;
     }
   }
 
@@ -647,11 +669,11 @@
       </div>
     </section>
 
-    <!-- 分组 2：游戏与 3Dmigoto 集成 -->
+    <!-- 分组 2：游戏与 XXMI/SRMI 集成 -->
     <section class="glass radius-panel p-6 flex flex-col gap-4">
       <div class="flex flex-col gap-1">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">游戏与 3Dmigoto 集成</h3>
-        <p class="text-xs text-secondary leading-relaxed">智能嗅探国服路径、一键初始化或导入已有 3Dmigoto 套件</p>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">游戏与 XXMI/SRMI 集成</h3>
+        <p class="text-xs text-secondary leading-relaxed">游戏路径、便携运行时与分布式 Mod 源统一在 LiquiMod 内管理</p>
       </div>
 
       <!-- 快速向导操作卡片栏 (三大平行集成动作，统一优雅毛玻璃与晶体矢量图标) -->
@@ -668,8 +690,8 @@
               <line x1="12" y1="22.08" x2="12" y2="12"/>
             </svg>
           </div>
-          <span class="text-xs font-semibold text-[var(--text)]">内置 3DM 套件</span>
-          <span class="text-[11px] text-secondary">一键切换托管目录</span>
+          <span class="text-xs font-semibold text-[var(--text)]">初始化本地运行时</span>
+          <span class="text-[11px] text-secondary">只创建标准入口，不复制 Mod</span>
         </button>
 
         <button
@@ -691,7 +713,7 @@
         <button
           class="glass radius-card p-4 flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95 group"
           style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
-          onclick={import3dMigoto}
+          onclick={addModSource}
         >
           <div class="w-9 h-9 rounded-xl grid place-items-center bg-[var(--input-bg)] text-amber-500 group-hover:scale-110 transition-transform">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -699,8 +721,8 @@
               <circle cx="12" cy="12" r="4"/>
             </svg>
           </div>
-          <span class="text-xs font-semibold text-[var(--text)]">识别外部目录</span>
-          <span class="text-[11px] text-secondary">智能绑定现有配置</span>
+          <span class="text-xs font-semibold text-[var(--text)]">连接外部 Mod 源</span>
+          <span class="text-[11px] text-secondary">任意磁盘均可索引与启用</span>
         </button>
       </div>
 
@@ -744,36 +766,50 @@
           </div>
         </div>
 
-        <!-- 3Dmigoto 加载器 -->
-        <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <p class="text-sm font-medium">3Dmigoto 加载器</p>
-              <span class="text-[10px] px-1.5 py-0.5 radius-pill bg-[var(--surface-sunken)] text-secondary">内置原生 Hook 注入</span>
+        <!-- XXMI 原生 Hook 核心：不再配置或启动 Loader.exe -->
+        <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-3">
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium">XXMI 原生 Hook 核心</p>
+              <p class="text-xs text-secondary mt-0.5">启动 Mod 时由 3dmloader.dll 直接挂钩游戏进程，不再弹出或依赖 3DMigoto Loader.exe。</p>
             </div>
-            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.loader_exe ?? "默认使用内置原生无感注入"}>{config?.loader_exe ?? "默认使用内置原生无感注入 (无需外部 Loader)"}</p>
-          </div>
-          <div class="flex items-center justify-end gap-1.5 shrink-0">
-            {#if config?.loader_exe}
-              <button
-                class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
-                title="在资源管理器中定位"
-                onclick={() => config?.loader_exe && api.openPathInExplorer(config.loader_exe)}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)] disabled:opacity-50" disabled={checkingSrmi || installingCore !== null} onclick={handleCheckSrmiUpdate}>
+                {checkingSrmi ? "检查中…" : "检查 SRMI 更新"}
               </button>
-            {/if}
-            <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("loader")}>
-              自定义…
-            </button>
+              <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)] disabled:opacity-50" disabled={checkingXxmi || installingCore !== null} onclick={handleCheckXxmiUpdate}>
+                {checkingXxmi ? "检查中…" : "检查 XXMI 更新"}
+              </button>
+              <button class="accent-fill accent-text radius-pill h-8 px-3 text-xs font-semibold cursor-pointer disabled:opacity-50" disabled={installingCore !== null} onclick={() => installCore("XXMI")}>
+                {installingCore === "XXMI" ? "安装中…" : "安装 / 修复"}
+              </button>
+            </div>
           </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {#each coreStatuses as status (status.package)}
+              <div class="p-3 radius-card" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-semibold">{status.package} 官方套件</span>
+                  <span class="text-[11px] font-semibold" class:text-emerald-500={status.ready} class:text-amber-500={!status.ready}>{status.ready ? "已就绪" : "缺少文件"}</span>
+                </div>
+                <p class="text-[11px] text-secondary font-mono truncate mt-1" title={status.package_dir}>{compactPath(status.package_dir)}</p>
+                <div class="flex items-center justify-between gap-2 mt-2">
+                  <span class="text-[11px] text-secondary">版本 {status.installed_version ?? "未安装"}</span>
+                  <button class="glass radius-pill h-7 px-2.5 text-[11px] cursor-pointer hover:bg-[var(--item-hover)] disabled:opacity-50" disabled={installingCore !== null} onclick={() => installCore(status.package)}>{installingCore === status.package ? "处理中…" : "修复"}</button>
+                </div>
+              </div>
+            {/each}
+          </div>
+          {#if srmiRelease}<p class="text-[11px] text-secondary">最新 SRMI：{srmiRelease.tag_name || srmiRelease.name} · 下载包签名已由后端校验。</p>{/if}
+          {#if xxmiRelease}<p class="text-[11px] text-secondary">最新 XXMI：{xxmiRelease.tag_name || xxmiRelease.name} · 下载包签名已由后端校验。</p>{/if}
         </div>
 
         <!-- 3Dmigoto Mods 部署目录 -->
         <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium">3Dmigoto Mods 部署目录</p>
-            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.mods_dir ?? "未配置"}>{config?.mods_dir ?? "未配置"}</p>
+            <p class="text-sm font-medium">3Dmigoto Mods 运行入口</p>
+            <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.mods_dir ?? "未初始化"}>{compactPath(config?.mods_dir, config?.storage_root)}</p>
+            <p class="text-[11px] text-secondary mt-1">此目录只保存 Junction 入口，不保存真实 Mod 文件；真实 Mod 可来自 Library 或任意已连接的外部源。</p>
           </div>
           <div class="flex items-center justify-end gap-1.5 shrink-0">
             {#if config?.mods_dir}
@@ -785,20 +821,47 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
               </button>
             {/if}
+            <span class="px-2.5 h-7 flex items-center radius-pill text-[11px] font-semibold text-emerald-500" style="background: color-mix(in srgb, #10b981 12%, transparent)">
+              {config?.mods_dir ? "LiquiMod 托管" : "尚未初始化"}
+            </span>
             <button
               class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]"
-              onclick={pickModsDir}
+              onclick={handleInitMigoto}
             >
-              选择…
+              {config?.mods_dir ? "修复入口" : "初始化"}
             </button>
           </div>
+        </div>
+
+        <!-- 外部 Mod 源：只建立索引与 Junction，不接管源文件 -->
+        <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-2.5">
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium">外部 Mod 源目录</p>
+              <p class="text-xs text-secondary mt-0.5">Mod 可以分散在任意磁盘；添加源目录后会自动扫描、索引并按需建立 Junction。解除连接不会删除源文件。</p>
+            </div>
+            <button class="accent-fill accent-text radius-pill h-8 px-3 text-xs font-semibold cursor-pointer disabled:opacity-50" disabled={sourceBusy} onclick={addModSource}>{sourceBusy ? "处理中…" : "添加目录"}</button>
+          </div>
+          {#if config?.mod_sources?.length}
+            <div class="flex flex-col gap-1.5">
+              {#each config.mod_sources as source (source)}
+                <div class="glass radius-card min-h-9 px-3 py-2 flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></span>
+                  <span class="font-mono text-[11px] truncate flex-1" title={source}>{source}</span>
+                  <button class="glass radius-pill h-7 px-2.5 text-[11px] text-secondary hover:text-[var(--danger)] hover:bg-[var(--item-hover)] cursor-pointer disabled:opacity-50" aria-label={`解除外部 Mod 源 ${source}`} disabled={sourceBusy} onclick={() => removeModSource(source)}>解除</button>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="p-3 radius-card text-xs text-secondary" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">尚未添加外部源。应用内安装的 Mod 默认保存在当前数据根下的 Library。</div>
+          {/if}
         </div>
 
         <!-- LiquiMod 核心仓库 -->
         <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium">LiquiMod 核心仓库（Library）</p>
-            <p class="text-xs text-secondary truncate mt-0.5 font-mono select-all" title={config?.library_root ?? "…"}>{config?.library_root ?? "…"}</p>
+            <p class="text-xs text-secondary truncate mt-0.5 font-mono" title={config?.library_root ?? "…"}>{compactPath(config?.library_root, config?.storage_root)}</p>
           </div>
           <div class="flex items-center justify-end shrink-0">
             <button
@@ -857,7 +920,8 @@
           {#if storageInfo?.previous_library_root}
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 radius-card text-xs text-amber-600 dark:text-amber-300" style="background: color-mix(in srgb, var(--warning) 12%, transparent); box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--warning) 40%, transparent)">
               <div class="min-w-0">
-                <p class="font-semibold">检测到迁移前的旧仓库，当前仍保留</p>
+                <p class="font-semibold">迁移备份仍保留（不参与运行）</p>
+                <p class="text-[11px] mt-0.5">当前使用新的 LiquiMod/Library；确认内容无误后可清理旧仓库。</p>
                 <p class="font-mono truncate mt-0.5" title={storageInfo.previous_library_root}>{storageInfo.previous_library_root}</p>
               </div>
               <button
@@ -873,91 +937,19 @@
       </div>
     </section>
 
-    <!-- 分组 3：3DMigoto 核心套件与启动引擎微调 -->
+    <!-- 分组 3：启动与更新设置 -->
     <section class="glass radius-panel p-6 flex flex-col gap-4">
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <div class="flex items-center gap-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">3DMigoto 核心与启动引擎微调</h3>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-[var(--input-bg)] text-secondary">
-              当前核心: {config?.migoto_version ?? '内置就绪'}
-            </span>
-          </div>
-          <p class="text-xs text-secondary mt-0.5">原生挂起注入、延迟缓冲微调与云端 SRMI 核心套件一键安装/更新</p>
-        </div>
-        <button
-          class="glass radius-pill h-8 px-3.5 text-xs font-medium shrink-0 cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)]"
-          disabled={checkingMigoto || installingMigoto}
-          onclick={handleCheckMigotoUpdate}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class={checkingMigoto ? "animate-spin" : ""}>
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-          </svg>
-          {checkingMigoto ? "检查中…" : "检查 3DM 核心更新"}
-        </button>
+      <div>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">启动与更新设置</h3>
+        <p class="text-xs text-secondary mt-0.5">原生 XXMI Hook 启动、DLL 初始化延迟与官方核心更新</p>
       </div>
-
-      {#if migotoRelease}
-        {@const isUpToDate = Boolean(config?.migoto_version && migotoRelease.tag_name && config.migoto_version.trim().toLowerCase() === migotoRelease.tag_name.trim().toLowerCase())}
-        <div class="p-3.5 radius-card flex flex-col gap-2.5 border border-[var(--glass-stroke)] bg-[var(--input-bg)]">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="font-bold text-sm" class:text-emerald-500={isUpToDate} class:text-[var(--accent)]={!isUpToDate}>
-                {isUpToDate ? `✅ 当前已是最新版本 (${migotoRelease.tag_name || migotoRelease.name})` : `🎉 发现新版本：${migotoRelease.tag_name || migotoRelease.name}`}
-              </span>
-            </div>
-            <span class="text-secondary font-mono text-xs">{migotoRelease.published_at?.slice(0, 10) ?? ""}</span>
-          </div>
-          {#if migotoRelease.asset_name}
-            <div class="text-secondary text-xs">官方安装包：{migotoRelease.asset_name} ({migotoRelease.size_bytes ? Math.round(migotoRelease.size_bytes / 1024) + ' KB' : ''})</div>
-          {/if}
-          {#if migotoRelease.body}
-            <p class="text-secondary text-[11px] line-clamp-2 leading-relaxed">{migotoRelease.body}</p>
-          {/if}
-
-          {#if migotoRelease.download_url}
-            <div class="pt-2 border-t border-[var(--glass-stroke)] flex items-center justify-between">
-              <span class="text-xs text-secondary">自动下载并覆写 ShaderFixes 与核心 DLL，保留 Mods 软链接</span>
-              <button
-                class="radius-pill h-8 px-4 text-xs font-bold shrink-0 cursor-pointer transition-transform hover:scale-[1.02] flex items-center gap-1.5"
-                class:accent-fill={!isUpToDate}
-                class:accent-text={!isUpToDate}
-                class:glass={isUpToDate}
-                disabled={installingMigoto}
-                onclick={() => migotoRelease?.download_url && handleInstallMigoto(migotoRelease.download_url, migotoRelease.tag_name)}
-              >
-                <span>{isUpToDate ? '🔄' : '🚀'}</span>
-                <span>{installingMigoto ? "正在下载安装…" : (isUpToDate ? "重新部署 / 修复" : `一键更新至 ${migotoRelease.tag_name || '最新'}`)}</span>
-              </button>
-            </div>
-          {/if}
-        </div>
-      {/if}
-
-      {#if migotoProgress}
-        <div class="p-3.5 radius-card flex flex-col gap-2 border border-[var(--glass-stroke)] bg-[var(--accent-fill)]">
-          <div class="flex items-center justify-between text-xs font-semibold text-[var(--accent)]">
-            <span class="flex items-center gap-1.5">
-              <span class="animate-spin">⏳</span>
-              <span>{migotoProgress.message}</span>
-            </span>
-            <span class="font-mono">{Math.round(migotoProgress.percent)}%</span>
-          </div>
-          <div class="w-full h-2 bg-[var(--progress-track)] rounded-full overflow-hidden">
-            <div
-              class="h-full bg-[var(--accent)] transition-all duration-300 rounded-full shadow-sm"
-              style={`width: ${migotoProgress.percent}%`}
-            ></div>
-          </div>
-        </div>
-      {/if}
 
       <!-- 注入延迟调节 -->
       <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm font-medium">3DM 启动后延时启动游戏的时间 (注入缓冲延迟)</p>
-            <p class="text-xs text-secondary mt-0.5">带 Mod 启动时，先启动 3DMigoto Loader，等待指定毫秒再自动拉起游戏主程序，为 DirectX 注入留出缓冲时间（默认 500ms）</p>
+            <p class="text-sm font-medium">XXMI DLL 初始化延迟</p>
+            <p class="text-xs text-secondary mt-0.5">按官方 XXMI 方式写入 d3dx.ini 的 [System]，不会启动外部 Loader.exe（默认 500ms）</p>
           </div>
           <span class="text-xs font-mono font-bold text-[var(--accent)] px-2.5 py-0.5 glass radius-pill">
             {delayDraft} ms
@@ -1239,7 +1231,7 @@
       <!-- 关于信息 -->
       <div class="border-t border-[var(--glass-stroke)] pt-3.5 text-xs text-secondary flex items-center justify-between">
         <span>LiquiMod · 星轨流光 —— 崩坏：星穹铁道 现代化 Mod 管理器</span>
-        <span class="font-mono text-[var(--accent)] font-medium">v0.5.1 (Rust + Tauri 2 + Svelte 5)</span>
+        <span class="font-mono text-[var(--accent)] font-medium">v0.6.0 (Rust + Tauri 2 + Svelte 5)</span>
       </div>
     </section>
   </div>

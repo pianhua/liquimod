@@ -111,9 +111,10 @@ impl Default for AssetSyncService {
 
 impl AssetSyncService {
     pub fn new() -> Self {
-        let asset_root = dirs::data_local_dir()
+        let asset_root = std::env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("LiquiMod")
             .join("GameAssets");
         Self::with_root(asset_root)
     }

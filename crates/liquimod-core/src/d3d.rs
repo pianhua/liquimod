@@ -280,7 +280,7 @@ pub fn apply_work_mode(content: &str, mode: MigotoWorkMode) -> String {
     result
 }
 
-/// 同步更新 d3dx.ini 中的 [Loader] target 字段为当前配置的游戏可执行文件绝对路径
+/// 同步更新 d3dx.ini 中的 [Loader] target 字段为当前配置的游戏可执行文件名。
 pub fn update_d3dx_ini_target(ini_path: &Path, target_exe: &Path) -> Result<()> {
     if !ini_path.is_file() {
         return Ok(());
@@ -289,6 +289,49 @@ pub fn update_d3dx_ini_target(ini_path: &Path, target_exe: &Path) -> Result<()> 
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
     let win_path = target_exe.to_string_lossy().replace('/', "\\");
     set_ini_key_value(&mut lines, "Loader", "target", &win_path);
+    let mut result = lines.join("\r\n");
+    if !result.ends_with("\r\n") && !result.is_empty() {
+        result.push_str("\r\n");
+    }
+    std::fs::write(ini_path, result)?;
+    Ok(())
+}
+
+/// 同步更新官方 XXMI 使用的 DLL 初始化延迟（毫秒）。
+pub fn update_d3dx_ini_initialization_delay(ini_path: &Path, delay_ms: u64) -> Result<()> {
+    if !ini_path.is_file() {
+        return Ok(());
+    }
+    let content = std::fs::read_to_string(ini_path)?;
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    set_ini_key_value(
+        &mut lines,
+        "System",
+        "dll_initialization_delay",
+        &delay_ms.min(10_000).to_string(),
+    );
+    let mut result = lines.join("\r\n");
+    if !result.ends_with("\r\n") && !result.is_empty() {
+        result.push_str("\r\n");
+    }
+    std::fs::write(ini_path, result)?;
+    Ok(())
+}
+
+/// 官方 XXMI/SRMI 运行时要求的加载器进程名。
+pub const XXMI_LOADER_NAME: &str = "XXMI Launcher.exe";
+
+/// 将 d3dx.ini 的 [Loader] loader 字段固定为官方 XXMI 进程名。
+///
+/// 这个值不能跟随 LiquiMod 的产品显示名或旧版可执行文件名变化；3DMigoto
+/// 会用它校验加载宿主，实际主程序文件名必须与该值一致。
+pub fn ensure_xxmi_loader_name(ini_path: &Path) -> Result<()> {
+    if !ini_path.is_file() {
+        return Ok(());
+    }
+    let content = std::fs::read_to_string(ini_path)?;
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    set_ini_key_value(&mut lines, "Loader", "loader", XXMI_LOADER_NAME);
     let mut result = lines.join("\r\n");
     if !result.ends_with("\r\n") && !result.is_empty() {
         result.push_str("\r\n");

@@ -74,15 +74,18 @@ jobs:
         run: |
           $packageDir = "dist/LiquiMod-Windows-x64"
           New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
-          Copy-Item -Path "target/release/liquimod-app.exe" -Destination $packageDir
+          Copy-Item -Path "target/release/XXMI Launcher.exe" -Destination $packageDir
           Copy-Item -Path "target/release/liquimod-refresh-helper.exe" -Destination $packageDir
           Copy-Item -Path "README.md" -Destination $packageDir
           Copy-Item -Path "LICENSE" -Destination $packageDir
+          Copy-Item -Path "assets/builtin-core/Packages" -Destination "$packageDir/Packages" -Recurse -Force
           $required = @(
-            "$packageDir/liquimod-app.exe",
+            "$packageDir/XXMI Launcher.exe",
             "$packageDir/liquimod-refresh-helper.exe",
             "$packageDir/README.md",
-            "$packageDir/LICENSE"
+            "$packageDir/LICENSE",
+            "$packageDir/Packages/SRMI/Manifest.json",
+            "$packageDir/Packages/XXMI/Manifest.json"
           )
           foreach ($path in $required) {
             if (-not (Test-Path $path)) { throw "Missing release package file: $path" }

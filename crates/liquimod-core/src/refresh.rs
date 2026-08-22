@@ -66,9 +66,34 @@ impl RefreshClient {
     ///
     /// 同一 read 批次内到达的多次 poke 会合并为单次 F10（helper 按"批次含 b'1'"触发）。
     pub fn poke(&mut self) -> Result<()> {
-        self.pipe.write_all(b"1")?;
+        self.poke_for_process("StarRail.exe")
+    }
+
+    /// 通知 helper 针对指定游戏进程窗口发一次 F10。
+    /// 协议为 `p<exe-name>\0`；保留 `poke()` 兼容旧 helper 的默认行为。
+    pub fn poke_for_process(&mut self, process_name: &str) -> Result<()> {
+        let process_name = process_name.trim();
+        if process_name.is_empty()
+            || process_name.contains('\0')
+            || process_name.contains('/')
+            || process_name.contains('\\')
+        {
+            return Err(LiquiModError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "游戏进程名无效",
+            )));
+        }
+        self.pipe.write_all(b"p")?;
+        self.pipe.write_all(process_name.as_bytes())?;
+        self.pipe.write_all(&[0])?;
         self.pipe.flush()?;
-        wait_for_pipe_reply(&self.pipe, Duration::from_secs(2))?;
+        if wait_for_pipe_reply(&self.pipe, Duration::from_secs(2)).is_err() {
+            // 兼容正在运行的旧 helper：旧协议收到任意包含 `1` 的批次即发送默认 StarRail F10。
+            // 新 helper 也识别该单字节命令，因此升级应用时无需强制杀掉旧 helper 进程。
+            self.pipe.write_all(b"1")?;
+            self.pipe.flush()?;
+            wait_for_pipe_reply(&self.pipe, Duration::from_secs(2))?;
+        }
         let mut ack = [0u8; 1];
         self.pipe.read_exact(&mut ack)?;
         if ack[0] == b'1' {

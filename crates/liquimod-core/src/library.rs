@@ -1,5 +1,6 @@
 use crate::db::Database;
 use crate::error::Result;
+use crate::games::Game;
 use crate::models::{ModEntry, ModStorageKind};
 use crate::paths::{is_valid_segment, LibraryLayout};
 use std::path::{Component, Path, PathBuf};
@@ -145,6 +146,97 @@ impl Library {
             self.db.list_mods()?.iter().map(|m| m.id).collect();
         crate::thumbs::gc_thumbnails(&self.layout.root, &valid_ids);
         self.db.list_mods()
+    }
+
+    /// 扫描用户配置的外部 Mod 源目录。
+    ///
+    /// 每个源支持两种常见布局：
+    /// - 源目录本身就是一个 Mod；
+    /// - 源目录下直接放 Mod，或按“角色/Mod”放置。
+    ///
+    /// 只建立索引，不复制、移动、重命名或删除源文件。
+    pub fn scan_external_sources(&self, roots: &[PathBuf], game: &dyn Game) -> Result<usize> {
+        let library_root = self.layout.root.canonicalize()?;
+        let mut discovered = 0;
+        let mut seen_sources = std::collections::HashSet::new();
+
+        for configured_root in roots {
+            let Ok(root) = configured_root.canonicalize() else {
+                continue;
+            };
+            if !root.is_dir()
+                || root == library_root
+                || root.starts_with(&library_root)
+                || library_root.starts_with(&root)
+            {
+                continue;
+            }
+
+            let mut candidates: Vec<(PathBuf, Option<String>)> = Vec::new();
+            if looks_like_mod_folder(&root) {
+                candidates.push((root.clone(), None));
+            } else if let Ok(first_level) = std::fs::read_dir(&root) {
+                for first in first_level.flatten() {
+                    let first_path = first.path();
+                    if !first.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                        continue;
+                    }
+                    if looks_like_mod_folder(&first_path) {
+                        candidates.push((first_path, None));
+                        continue;
+                    }
+                    let character_hint = first.file_name().to_string_lossy().into_owned();
+                    if let Ok(second_level) = std::fs::read_dir(&first_path) {
+                        for second in second_level.flatten() {
+                            let second_path = second.path();
+                            if second.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                                && looks_like_mod_folder(&second_path)
+                            {
+                                candidates.push((second_path, Some(character_hint.clone())));
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (source, character_hint) in candidates {
+                let source = source.canonicalize()?;
+                let source_text = source
+                    .to_string_lossy()
+                    .trim_start_matches(r"\\?\")
+                    .to_string();
+                if !seen_sources.insert(source_text.clone()) {
+                    continue;
+                }
+                let name = source
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .filter(|value| is_valid_segment(value))
+                    .unwrap_or("External Mod")
+                    .to_string();
+                let character = character_hint
+                    .filter(|value| is_valid_segment(value))
+                    .or_else(|| crate::games::infer_character(&source, game))
+                    .unwrap_or_else(|| "Others".to_string());
+                let existed = self.db.find_external_source(&source_text)?.is_some();
+                let id = self
+                    .db
+                    .upsert_external_mod(&character, &name, &source_text)?;
+                refresh_stats(&self.db, id, &source)?;
+                let current = self.db.get_mod(id)?;
+                let active = crate::variants::active_variant_name(
+                    &source,
+                    current.active_variant.as_deref(),
+                );
+                if active != current.active_variant {
+                    self.db.set_active_variant(id, active.as_deref())?;
+                }
+                if !existed {
+                    discovered += 1;
+                }
+            }
+        }
+        Ok(discovered)
     }
 
     /// 把外部文件夹复制进仓库并收录索引。已存在同名 mod 则覆盖式合并。
@@ -337,6 +429,35 @@ fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn looks_like_mod_folder(path: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+        let kind = entry.file_type().ok();
+        if kind.as_ref().is_some_and(|value| value.is_dir())
+            && matches!(
+                name.as_str(),
+                "res" | "resources" | "texture" | "textures" | "shaderfixes"
+            )
+        {
+            return true;
+        }
+        if kind.as_ref().is_some_and(|value| value.is_file())
+            && matches!(
+                std::path::Path::new(&name)
+                    .extension()
+                    .and_then(|value| value.to_str()),
+                Some("ini" | "buf" | "ib" | "dds" | "hlsl" | "json")
+            )
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// 递归统计目录（总字节, 文件数）；任何一级读不了就返回 (-1, -1)（前端显示 "—"）。

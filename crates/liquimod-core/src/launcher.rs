@@ -3,7 +3,9 @@
 use crate::d3d::{update_d3dx_ini_mode, update_d3dx_ini_target, MigotoWorkMode};
 use crate::error::{LiquiModError, Result};
 use serde::{Deserialize, Serialize};
+use std::ffi::c_void;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameLaunchOptions {
@@ -11,11 +13,13 @@ pub struct GameLaunchOptions {
     pub game_exe: PathBuf,
     /// 3Dmigoto 根目录路径 (包含 d3dx.ini)
     pub migoto_dir: PathBuf,
-    /// 3Dmigoto 加载器 (如 3DMigoto Loader.exe，可选)
-    pub loader_exe: Option<PathBuf>,
+    /// XXMI 包中的 3dmloader.dll。
+    pub injector_dll: PathBuf,
+    /// 目标进程文件名，例如 StarRail.exe。
+    pub process_name: String,
     /// 工作模式 (Play / Dev)
     pub work_mode: MigotoWorkMode,
-    /// 注入时机延迟 (毫秒，0 ~ 5000ms)
+    /// 3Dmigoto DLL 初始化延迟 (毫秒，写入 d3dx.ini 的 [System])。
     pub delay_ms: u64,
 }
 
@@ -105,175 +109,11 @@ pub fn spawn_program_with_uac(
     }
 }
 
-#[cfg(windows)]
-/// 原生 Win32 Hook 注入启动（与 XXMI 100% 对齐的无感 Hook 注入机制）
-pub fn launch_with_hook(
-    game_exe: &Path,
-    work_dir: Option<&Path>,
-    d3d11_dll: &Path,
-    loader_dll: &Path,
-) -> Result<LaunchResult> {
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{FreeLibrary, HANDLE};
-    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-    use windows::Win32::System::Threading::{CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW};
-    use windows::Win32::UI::WindowsAndMessaging::HHOOK;
-
-    if !game_exe.is_file() {
-        return Err(LiquiModError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("游戏执行文件不存在: {}", game_exe.display()),
-        )));
-    }
-    if !d3d11_dll.is_file() {
-        return Err(LiquiModError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("3DMigoto d3d11.dll 不存在: {}", d3d11_dll.display()),
-        )));
-    }
-    if !loader_dll.is_file() {
-        return Err(LiquiModError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("3dmloader.dll 不存在: {}", loader_dll.display()),
-        )));
-    }
-
-    let work_path = work_dir.unwrap_or_else(|| game_exe.parent().unwrap_or(Path::new(".")));
-
-    let loader_wide: Vec<u16> = loader_dll
-        .to_string_lossy()
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-
-    let h_loader = unsafe { LoadLibraryW(PCWSTR(loader_wide.as_ptr())) }.map_err(|e| {
-        LiquiModError::Io(std::io::Error::other(format!(
-            "加载 3dmloader.dll 失败: {e}"
-        )))
-    })?;
-
-    type FnHookLibrary = unsafe extern "system" fn(PCWSTR, *mut HHOOK, *mut HANDLE) -> i32;
-    type FnWaitForInjection = unsafe extern "system" fn(PCWSTR, PCWSTR, i32) -> i32;
-    type FnUnhookLibrary = unsafe extern "system" fn(*mut HHOOK, *mut HANDLE) -> i32;
-    type FnStartProcess = unsafe extern "system" fn(PCWSTR, PCWSTR, PCWSTR) -> i32;
-
-    let p_hook = unsafe { GetProcAddress(h_loader, windows::core::s!("HookLibrary")) };
-    let p_wait = unsafe { GetProcAddress(h_loader, windows::core::s!("WaitForInjection")) };
-    let p_unhook = unsafe { GetProcAddress(h_loader, windows::core::s!("UnhookLibrary")) };
-    let p_start = unsafe { GetProcAddress(h_loader, windows::core::s!("StartProcess")) };
-
-    if let (Some(f_hook), Some(f_wait), Some(f_unhook)) = (p_hook, p_wait, p_unhook) {
-        let fn_hook: FnHookLibrary = unsafe { std::mem::transmute(f_hook) };
-        let fn_wait: FnWaitForInjection = unsafe { std::mem::transmute(f_wait) };
-        let fn_unhook: FnUnhookLibrary = unsafe { std::mem::transmute(f_unhook) };
-
-        let d3d11_wide: Vec<u16> = d3d11_dll
-            .to_string_lossy()
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-        let mut hook = HHOOK::default();
-        let mut mutex = HANDLE::default();
-
-        let hook_res = unsafe { fn_hook(PCWSTR(d3d11_wide.as_ptr()), &mut hook, &mut mutex) };
-        if hook_res != 0 {
-            let _ = unsafe { FreeLibrary(h_loader) };
-            return Err(LiquiModError::Io(std::io::Error::other(format!(
-                "3DMigoto HookLibrary 失败，错误代码: {hook_res}"
-            ))));
-        }
-
-        let app_name_wide: Vec<u16> = game_exe
-            .to_string_lossy()
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-        let work_dir_wide: Vec<u16> = work_path
-            .to_string_lossy()
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-
-        let si = STARTUPINFOW {
-            cb: std::mem::size_of::<STARTUPINFOW>() as u32,
-            ..Default::default()
-        };
-        let mut pi = PROCESS_INFORMATION::default();
-
-        let started = unsafe {
-            CreateProcessW(
-                PCWSTR(app_name_wide.as_ptr()),
-                None,
-                None,
-                None,
-                false,
-                windows::Win32::System::Threading::PROCESS_CREATION_FLAGS(0),
-                None,
-                PCWSTR(work_dir_wide.as_ptr()),
-                &si,
-                &mut pi,
-            )
-        };
-
-        if started.is_err() {
-            if let Some(f_start) = p_start {
-                let fn_start: FnStartProcess = unsafe { std::mem::transmute(f_start) };
-                let empty_wide: Vec<u16> = vec![0];
-                let start_res = unsafe {
-                    fn_start(
-                        PCWSTR(app_name_wide.as_ptr()),
-                        PCWSTR(work_dir_wide.as_ptr()),
-                        PCWSTR(empty_wide.as_ptr()),
-                    )
-                };
-                if start_res != 0 {
-                    let _ = unsafe { fn_unhook(&mut hook, &mut mutex) };
-                    let _ = unsafe { FreeLibrary(h_loader) };
-                    return Err(LiquiModError::Io(std::io::Error::other(format!(
-                        "启动游戏进程失败，错误码: {start_res}"
-                    ))));
-                }
-            } else {
-                let _ = unsafe { fn_unhook(&mut hook, &mut mutex) };
-                let _ = unsafe { FreeLibrary(h_loader) };
-                return Err(LiquiModError::Io(std::io::Error::other(
-                    "启动游戏进程失败（需要管理员权限）".to_string(),
-                )));
-            }
-        }
-
-        let proc_name = game_exe.file_name().unwrap_or_default().to_string_lossy();
-        let proc_wide: Vec<u16> = proc_name.encode_utf16().chain(std::iter::once(0)).collect();
-        let _ = unsafe { fn_wait(PCWSTR(d3d11_wide.as_ptr()), PCWSTR(proc_wide.as_ptr()), 15) };
-        let _ = unsafe { fn_unhook(&mut hook, &mut mutex) };
-        let _ = unsafe { FreeLibrary(h_loader) };
-
-        Ok(LaunchResult {
-            success: true,
-            message: "✨ 已无感加载 3DMigoto 并拉起游戏！".to_string(),
-            pid: None,
-        })
-    } else {
-        let _ = unsafe { FreeLibrary(h_loader) };
-        Err(LiquiModError::Io(std::io::Error::other(
-            "3dmloader.dll 缺少必要导出函数 (HookLibrary / WaitForInjection / UnhookLibrary)",
-        )))
-    }
-}
-
-#[cfg(not(windows))]
-pub fn launch_with_hook(
-    _game_exe: &Path,
-    _work_dir: Option<&Path>,
-    _d3d11_dll: &Path,
-    _loader_dll: &Path,
-) -> Result<LaunchResult> {
-    Err(LiquiModError::Io(std::io::Error::other("仅支持 Windows")))
-}
-
-/// 执行带 3DMigoto Mod 注入的完整启动流程：
+/// 执行与 XXMI 一致的原生 Hook 启动流程：
 /// 1. 自动同步 d3dx.ini 模式与 target 游戏路径
-/// 2. 原生 Hook 注入拉起游戏（彻底废除第三方 Loader 弹窗）
+/// 2. Hook `d3d11.dll`，再直接拉起游戏主程序
+/// 3. 早期/晚期各校验一次 3Dmigoto 注入结果
+/// 4. 始终释放全局 Hook，不启动外部 Loader.exe
 pub fn launch_with_mod(opts: &GameLaunchOptions) -> Result<LaunchResult> {
     if !opts.game_exe.is_file() {
         return Err(LiquiModError::Io(std::io::Error::new(
@@ -282,26 +122,295 @@ pub fn launch_with_mod(opts: &GameLaunchOptions) -> Result<LaunchResult> {
         )));
     }
 
-    // 1. 同步更新 d3dx.ini
-    if opts.migoto_dir.is_dir() {
-        let ini_path = opts.migoto_dir.join("d3dx.ini");
-        if ini_path.is_file() {
-            let _ = update_d3dx_ini_mode(&ini_path, opts.work_mode);
-            let _ = update_d3dx_ini_target(&ini_path, &opts.game_exe);
+    if !opts.migoto_dir.is_dir() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("3DMigoto 工作区不存在: {}", opts.migoto_dir.display()),
+        )));
+    }
+    let d3dx_ini = opts.migoto_dir.join("d3dx.ini");
+    let d3d11 = opts.migoto_dir.join("d3d11.dll");
+    if !d3dx_ini.is_file() || !d3d11.is_file() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "标准 3DMigoto 工作区不完整，请先安装/修复 XXMI 与 SRMI 核心",
+        )));
+    }
+    if d3dx_ini.is_file() {
+        update_d3dx_ini_mode(&d3dx_ini, opts.work_mode)?;
+        let target_name = opts
+            .game_exe
+            .file_name()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| opts.game_exe.clone());
+        update_d3dx_ini_target(&d3dx_ini, &target_name)?;
+    }
+
+    #[cfg(windows)]
+    {
+        if !opts.injector_dll.is_file() {
+            return Err(LiquiModError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "未找到 XXMI 原生注入器：{}，请先安装 XXMI 核心",
+                    opts.injector_dll.display()
+                ),
+            )));
         }
+        let process_name = if opts.process_name.trim().is_empty() {
+            opts.game_exe
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("StarRail.exe")
+                .to_string()
+        } else {
+            opts.process_name.clone()
+        };
+        tracing::info!(
+            game = %opts.game_exe.display(),
+            work_dir = %opts.migoto_dir.display(),
+            injector = %opts.injector_dll.display(),
+            d3d11 = %d3d11.display(),
+            process = %process_name,
+            "starting game with XXMI native Hook"
+        );
+        let hook = HookSession::new(&opts.injector_dll, &d3d11, &process_name)?;
+        let game_dir = opts.game_exe.parent().unwrap_or_else(|| Path::new("."));
+        let child = spawn_game_process(&opts.game_exe, game_dir)?;
+
+        // 与 XXMI 一致：先做早期 Hook 校验，再等待目标进程稳定，最后做一次晚期校验。
+        let (early_hooked, early_result) = hook.wait_for_injection(5)?;
+        tracing::info!(process = %process_name, hooked = early_hooked, "XXMI early Hook verification completed");
+        let window_seen = wait_for_window(&process_name, Duration::from_secs(15));
+        tracing::info!(process = %process_name, window_seen, "XXMI game window detection completed");
+        let (late_hooked, late_result) = if window_seen {
+            hook.wait_for_injection(5)?
+        } else {
+            (false, -1)
+        };
+        tracing::info!(process = %process_name, hooked = late_hooked, "XXMI late Hook verification completed");
+        if !early_hooked && !late_hooked {
+            return Err(LiquiModError::Io(std::io::Error::other(format!(
+                "XXMI Hook 未能注入 {process_name}（早期返回码 {early_result}，晚期返回码 {late_result}），请检查游戏权限、核心文件与 d3dx.ini"
+            ))));
+        }
+        let pid = child.as_ref().map(std::process::Child::id);
+        Ok(LaunchResult {
+            success: true,
+            message: format!("XXMI Hook 已完成，3DMigoto 已加载到 {process_name}"),
+            pid,
+        })
     }
 
-    // 2. 原生 Hook 无感注入
-    let d3d11_dll = opts.migoto_dir.join("d3d11.dll");
-    let loader_dll = opts.migoto_dir.join("3dmloader.dll");
-    let game_dir = opts.game_exe.parent();
+    #[cfg(not(windows))]
+    {
+        let game_dir = opts.game_exe.parent().unwrap_or_else(|| Path::new("."));
+        spawn_program_with_uac(&opts.game_exe, game_dir, None, false)?;
+        Ok(LaunchResult {
+            success: true,
+            message: "已拉起游戏主程序（非 Windows 未执行原生 Hook）".to_string(),
+            pid: None,
+        })
+    }
+}
 
-    if d3d11_dll.is_file() && loader_dll.is_file() {
-        return launch_with_hook(&opts.game_exe, game_dir, &d3d11_dll, &loader_dll);
+#[cfg(windows)]
+type HookLibraryFn =
+    unsafe extern "system" fn(*const u16, *mut *mut c_void, *mut *mut c_void) -> i32;
+
+#[cfg(windows)]
+type WaitForInjectionFn = unsafe extern "system" fn(*const u16, *const u16, i32) -> i32;
+
+#[cfg(windows)]
+type UnhookLibraryFn = unsafe extern "system" fn(*mut *mut c_void, *mut *mut c_void) -> i32;
+
+#[cfg(windows)]
+struct HookSession {
+    library: libloading::Library,
+    hook: *mut c_void,
+    mutex: *mut c_void,
+    d3d11_path: Vec<u16>,
+    process_name: Vec<u16>,
+}
+
+#[cfg(windows)]
+impl HookSession {
+    fn new(injector_dll: &Path, d3d11_path: &Path, process_name: &str) -> Result<Self> {
+        tracing::info!(
+            injector = %injector_dll.display(),
+            d3d11 = %d3d11_path.display(),
+            process = %process_name,
+            "loading XXMI 3dmloader.dll"
+        );
+        let library = unsafe { libloading::Library::new(injector_dll) }.map_err(|e| {
+            LiquiModError::Io(std::io::Error::other(format!(
+                "加载 3dmloader.dll 失败：{e}"
+            )))
+        })?;
+        let d3d11_path = to_wide_path(d3d11_path);
+        let process_name = to_wide_str(process_name);
+        let mut session = Self {
+            library,
+            hook: std::ptr::null_mut(),
+            mutex: std::ptr::null_mut(),
+            d3d11_path,
+            process_name,
+        };
+        let result = unsafe {
+            let hook: libloading::Symbol<HookLibraryFn> = session
+                .library
+                .get(b"HookLibrary\0")
+                .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+            hook(
+                session.d3d11_path.as_ptr(),
+                &mut session.hook,
+                &mut session.mutex,
+            )
+        };
+        tracing::info!(
+            result,
+            hook_null = session.hook.is_null(),
+            "XXMI HookLibrary returned"
+        );
+        if result != 0 || session.hook.is_null() {
+            return Err(LiquiModError::Io(std::io::Error::other(format!(
+                "3dmloader.dll HookLibrary 失败，错误码 {result}"
+            ))));
+        }
+        Ok(session)
     }
 
-    // 3. 备用纯净原生启动
-    launch_native_game(&opts.game_exe)
+    fn wait_for_injection(&self, timeout_seconds: i32) -> Result<(bool, i32)> {
+        let result = unsafe {
+            let wait: libloading::Symbol<WaitForInjectionFn> = self
+                .library
+                .get(b"WaitForInjection\0")
+                .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+            wait(
+                self.d3d11_path.as_ptr(),
+                self.process_name.as_ptr(),
+                timeout_seconds,
+            )
+        };
+        tracing::info!(result, timeout_seconds, "XXMI WaitForInjection returned");
+        Ok((result == 0, result))
+    }
+
+    fn unhook(&mut self) {
+        if self.hook.is_null() && self.mutex.is_null() {
+            return;
+        }
+        let _ = unsafe {
+            self.library
+                .get::<UnhookLibraryFn>(b"UnhookLibrary\0")
+                .map(|unhook| unhook(&mut self.hook, &mut self.mutex))
+        };
+        self.hook = std::ptr::null_mut();
+        self.mutex = std::ptr::null_mut();
+    }
+}
+
+#[cfg(windows)]
+impl Drop for HookSession {
+    fn drop(&mut self) {
+        self.unhook();
+    }
+}
+
+#[cfg(windows)]
+fn to_wide_path(path: &Path) -> Vec<u16> {
+    path.to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+#[cfg(windows)]
+fn to_wide_str(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn spawn_game_process(exe: &Path, work_dir: &Path) -> Result<Option<std::process::Child>> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_CONSOLE: u32 = 0x00000010;
+    const CREATE_DEFAULT_ERROR_MODE: u32 = 0x04000000;
+
+    let mut command = std::process::Command::new(exe);
+    command
+        .current_dir(work_dir)
+        // 与 XXMI 的 Native 启动上下文一致；GUI 游戏不会因此显示命令行窗口。
+        .creation_flags(CREATE_NEW_CONSOLE | CREATE_DEFAULT_ERROR_MODE);
+
+    match command.spawn() {
+        Ok(child) => Ok(Some(child)),
+        Err(error)
+            if error.raw_os_error() == Some(740)
+                || error.kind() == std::io::ErrorKind::PermissionDenied =>
+        {
+            spawn_program_with_uac(exe, work_dir, None, false)?;
+            Ok(None)
+        }
+        Err(error) => Err(LiquiModError::Io(error)),
+    }
+}
+
+#[cfg(windows)]
+fn wait_for_window(name: &str, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        let mut system = sysinfo::System::new();
+        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        let pids: Vec<u32> = system
+            .processes()
+            .values()
+            .filter(|process| process.name().eq_ignore_ascii_case(name))
+            .map(|process| process.pid().as_u32())
+            .collect();
+        if pids.iter().copied().any(has_visible_window) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+#[cfg(windows)]
+fn has_visible_window(pid: u32) -> bool {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
+    };
+
+    struct SearchState {
+        pid: u32,
+        found: bool,
+    }
+
+    unsafe extern "system" fn callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let state = &mut *(lparam.0 as *mut SearchState);
+        if IsWindowVisible(hwnd).as_bool() {
+            let mut window_pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut window_pid));
+            if window_pid == state.pid {
+                state.found = true;
+                return BOOL(0);
+            }
+        }
+        BOOL(1)
+    }
+
+    let mut state = SearchState { pid, found: false };
+    unsafe {
+        let _ = EnumWindows(Some(callback), LPARAM(&mut state as *mut _ as isize));
+    }
+    state.found
+}
+
+#[cfg(not(windows))]
+fn has_visible_window(_pid: u32) -> bool {
+    true
 }
 
 /// 兼容老接口：默认执行带 Mod 启动流程

@@ -28,6 +28,7 @@
     onlaunchnativegame,
     onlaunchofficial = undefined,
     onrefreshgame = undefined,
+    onimport = undefined,
     ontogglesettings,
     onapplied,
   }: {
@@ -45,6 +46,7 @@
     onlaunchnativegame: () => void;
     onlaunchofficial?: () => void;
     onrefreshgame?: () => void;
+    onimport?: () => void;
     ontogglesettings: () => void;
     onapplied: () => void;
   } = $props();
@@ -176,6 +178,18 @@
 
     <!-- 预设管理入口 -->
     <PresetMenu {onapplied} applyDisabled={gameRunning} />
+
+    {#if onimport}
+      <button
+        class="glass radius-pill h-8 px-2.5 flex items-center gap-1.5 text-xs font-medium cursor-pointer transition-colors hover:bg-[var(--item-hover)] active:scale-95 shrink-0"
+        aria-label="导入 Mod 包"
+        title="选择 Mod 压缩包导入；如果系统拖放无反应，请使用这里"
+        onclick={onimport}
+      >
+        <IconPackage size={13} />
+        <span>导入</span>
+      </button>
+    {/if}
 
     <!-- 工作模式切换胶囊 (Play / Dev) -->
     <div class="relative flex items-center h-8 glass radius-pill px-1 gap-1">

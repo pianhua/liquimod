@@ -1,175 +1,52 @@
 //! 3Dmigoto (SRMI) 核心套件内置初始化、云端下载安装与版本同步模块
 
 use crate::error::{LiquiModError, Result};
+use base64::Engine;
 use futures_util::StreamExt;
+use p384::ecdsa::{signature::hazmat::PrehashVerifier, Signature, VerifyingKey};
+use p384::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-/// 默认内置的标准 d3dx.ini 模板文本 (对齐 XXMI 1071 行完整规范)
-pub const EMBEDDED_D3DX_INI_TEMPLATE: &str = include_str!("../../../assets/srmi/d3dx.ini");
+/// 默认内置的标准 d3dx.ini 模板文本
+pub const EMBEDDED_D3DX_INI_TEMPLATE: &str = r#"; 3Dmigoto for Honkai: Star Rail (SRMI) Configuration File
+; Managed by LiquiMod
 
-/// 预置内置的 SRMI 核心套件静态文件映射 (包含 3dmloader.dll, d3d11.dll, d3dcompiler_47.dll, 骨骼蒙皮 Compute Shader、字体、通知及帮助)
-pub const EMBEDDED_SRMI_FILES: &[(&str, &[u8])] = &[
-    (
-        "3dmloader.dll",
-        include_bytes!("../../../assets/srmi/3dmloader.dll"),
-    ),
-    (
-        "d3d11.dll",
-        include_bytes!("../../../assets/srmi/d3d11.dll"),
-    ),
-    (
-        "d3dcompiler_47.dll",
-        include_bytes!("../../../assets/srmi/d3dcompiler_47.dll"),
-    ),
-    ("d3dx.ini", include_bytes!("../../../assets/srmi/d3dx.ini")),
-    (
-        "Core/SRMI/main.ini",
-        include_bytes!("../../../assets/srmi/Core/SRMI/main.ini"),
-    ),
-    (
-        "Core/SRMI/BatchedPose.ini",
-        include_bytes!("../../../assets/srmi/Core/SRMI/BatchedPose.ini"),
-    ),
-    (
-        "Core/SRMI/d3dx_patch.ini",
-        include_bytes!("../../../assets/srmi/Core/SRMI/d3dx_patch.ini"),
-    ),
-    (
-        "Core/SRMI/help.ini",
-        include_bytes!("../../../assets/srmi/Core/SRMI/help.ini"),
-    ),
-    (
-        "Core/SRMI/Fonts/LiberationSans-Bold.dds",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Fonts/LiberationSans-Bold.dds"),
-    ),
-    (
-        "Core/SRMI/Fonts/LiberationSans-Bold.png",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Fonts/LiberationSans-Bold.png"),
-    ),
-    (
-        "Core/SRMI/Notifications/HuntingModeGuide.md",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Notifications/HuntingModeGuide.md"),
-    ),
-    (
-        "Core/SRMI/Notifications/UserGuide.md",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Notifications/UserGuide.md"),
-    ),
-    (
-        "Core/SRMI/Shaders/MultiSkinning1VG.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/MultiSkinning1VG.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/MultiSkinning2VG.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/MultiSkinning2VG.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/MultiSkinning3VG.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/MultiSkinning3VG.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/MultiSkinning4VG.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/MultiSkinning4VG.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/MultiSkinning4VG_56.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/MultiSkinning4VG_56.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/SingleSkinning.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/SingleSkinning.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/SingleSkinning1VG.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/SingleSkinning1VG.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/SingleSkinning2VG.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/SingleSkinning2VG.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/SingleSkinning3VG.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/SingleSkinning3VG.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/SingleSkinning_56.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/SingleSkinning_56.hlsl"),
-    ),
-    (
-        "Core/SRMI/Shaders/TextPrinter.hlsl",
-        include_bytes!("../../../assets/srmi/Core/SRMI/Shaders/TextPrinter.hlsl"),
-    ),
-    (
-        "Core/Debugger/Debugger.ini",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Debugger.ini"),
-    ),
-    (
-        "Core/Debugger/debug_cb.ini",
-        include_bytes!("../../../assets/srmi/Core/Debugger/debug_cb.ini"),
-    ),
-    (
-        "Core/Debugger/Fonts/LiberationSans-Bold.dds",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Fonts/LiberationSans-Bold.dds"),
-    ),
-    (
-        "Core/Debugger/Fonts/LiberationSans-Bold.png",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Fonts/LiberationSans-Bold.png"),
-    ),
-    (
-        "Core/Debugger/Notifications/CompatibilityMode.md",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Notifications/CompatibilityMode.md"),
-    ),
-    (
-        "Core/Debugger/Notifications/ErrorCompatibilityModeDisabled.md",
-        include_bytes!(
-            "../../../assets/srmi/Core/Debugger/Notifications/ErrorCompatibilityModeDisabled.md"
-        ),
-    ),
-    (
-        "Core/Debugger/Notifications/ErrorOldVersionMod.md",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Notifications/ErrorOldVersionMod.md"),
-    ),
-    (
-        "Core/Debugger/Notifications/ErrorOldVersionWWMI.md",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Notifications/ErrorOldVersionWWMI.md"),
-    ),
-    (
-        "Core/Debugger/Notifications/HuntingModeGuide.md",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Notifications/HuntingModeGuide.md"),
-    ),
-    (
-        "Core/Debugger/Notifications/UserGuide.md",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Notifications/UserGuide.md"),
-    ),
-    (
-        "Core/Debugger/Shaders/Debugger.cs_5_0.8000.bin",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Shaders/Debugger.cs_5_0.8000.bin"),
-    ),
-    (
-        "Core/Debugger/Shaders/Debugger.hlsl",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Shaders/Debugger.hlsl"),
-    ),
-    (
-        "Core/Debugger/Shaders/debug_cb.gs_5_0.4.bin",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Shaders/debug_cb.gs_5_0.4.bin"),
-    ),
-    (
-        "Core/Debugger/Shaders/debug_cb.hlsl",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Shaders/debug_cb.hlsl"),
-    ),
-    (
-        "Core/Debugger/Shaders/debug_cb.ps_5_0.4.bin",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Shaders/debug_cb.ps_5_0.4.bin"),
-    ),
-    (
-        "Core/Debugger/Shaders/debug_cb.vs_5_0.4.bin",
-        include_bytes!("../../../assets/srmi/Core/Debugger/Shaders/debug_cb.vs_5_0.4.bin"),
-    ),
-    (
-        "ShaderFixes/Sucrose.png",
-        include_bytes!("../../../assets/srmi/ShaderFixes/Sucrose.png"),
-    ),
-];
+[Loader]
+target = StarRail.exe
+loader = XXMI Launcher.exe
+module = d3d11.dll
+require_admin = false
+delay = 0
+
+[Hunting]
+hunting = 0
+marking_actions = clipboard
+
+[Logging]
+calls = 0
+debug = 0
+show_warnings = 0
+
+[Rendering]
+track_texture_updates = 0
+track_region_hashes = 0
+track_implicit_index_buffers = 1
+allow_buffer_resize = 1
+
+[System]
+dll_initialization_delay = 0
+
+[Constants]
+; Global constants for mod variables
+
+[Include]
+include = Core\SRMI\main.ini
+include_recursive = Mods
+exclude_recursive = DISABLED*
+"#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigotoReleaseInfo {
@@ -178,79 +55,56 @@ pub struct MigotoReleaseInfo {
     pub body: String,
     pub published_at: Option<String>,
     pub download_url: Option<String>,
-    pub libs_download_url: Option<String>,
     pub asset_name: Option<String>,
     pub size_bytes: Option<u64>,
+    #[serde(default)]
+    pub package: String,
+    #[serde(default)]
+    pub signature: Option<String>,
+    #[serde(default)]
+    pub manifest_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigotoDownloadProgress {
-    pub stage: String, // "downloading_libs" | "extracting_libs" | "downloading_srmi" | "extracting_srmi" | "completed" | "failed"
+    pub stage: String, // "downloading" | "extracting" | "completed" | "failed"
     pub percent: f32,
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     pub message: String,
 }
 
-/// 获取 LiquiMod 默认的内置/托管 3DMigoto 目录路径 (%APPDATA%/LiquiMod/3DMigoto)
+/// 获取 LiquiMod 默认的内置/托管 3DMigoto 目录路径。
+/// 当前版本始终落在可执行文件旁边，避免回到 `%APPDATA%`/C 盘。
 pub fn default_managed_migoto_dir() -> PathBuf {
-    dirs::config_dir()
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("LiquiMod")
         .join("3DMigoto")
-}
-
-/// 部署内置的完整 SRMI 核心套件到目标目录 (自动校验与升级核心 DLL、蒙皮着色器与 d3dx.ini)
-pub fn deploy_embedded_srmi_suite(target_dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(target_dir)?;
-    std::fs::create_dir_all(target_dir.join("Mods"))?;
-    std::fs::create_dir_all(target_dir.join("ShaderFixes"))?;
-    std::fs::create_dir_all(target_dir.join("ShaderCache"))?;
-
-    for (rel_path, bytes) in EMBEDDED_SRMI_FILES {
-        let dest = target_dir.join(rel_path);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let should_write = if !dest.exists() {
-            true
-        } else if *rel_path == "d3dx.ini" {
-            // d3dx.ini 采用下方专用的智能合并逻辑，不直接覆盖
-            false
-        } else {
-            // 核心 DLL (3dmloader.dll / d3d11.dll / d3dcompiler_47.dll) 与着色器：对比二进制内容，不匹配则自动无感升级
-            match std::fs::read(&dest) {
-                Ok(existing) => existing != *bytes,
-                Err(_) => true,
-            }
-        };
-
-        if should_write {
-            std::fs::write(&dest, bytes)?;
-        }
-    }
-
-    // 针对 d3dx.ini：若存在则做智能合并，确保 [Include] 与渲染参数就绪同时保留用户自定义配置
-    let ini_path = target_dir.join("d3dx.ini");
-    if ini_path.is_file() {
-        if let Ok(existing_ini) = std::fs::read_to_string(&ini_path) {
-            let merged = merge_d3dx_ini(&existing_ini, EMBEDDED_D3DX_INI_TEMPLATE);
-            if merged != existing_ini {
-                let _ = std::fs::write(&ini_path, merged);
-            }
-        }
-    } else {
-        std::fs::write(&ini_path, EMBEDDED_D3DX_INI_TEMPLATE)?;
-    }
-
-    Ok(())
 }
 
 /// 在指定的目标目录下初始化 3Dmigoto 工作区
 pub fn init_migoto_workspace(target_dir: &Path) -> Result<PathBuf> {
-    deploy_embedded_srmi_suite(target_dir)?;
+    if !target_dir.exists() {
+        std::fs::create_dir_all(target_dir)?;
+    }
+
+    let mods_dir = target_dir.join("Mods");
+    if !mods_dir.exists() {
+        std::fs::create_dir_all(&mods_dir)?;
+    }
+
+    let shader_fixes_dir = target_dir.join("ShaderFixes");
+    if !shader_fixes_dir.exists() {
+        std::fs::create_dir_all(&shader_fixes_dir)?;
+    }
+
     let ini_path = target_dir.join("d3dx.ini");
+    if !ini_path.exists() {
+        std::fs::write(&ini_path, EMBEDDED_D3DX_INI_TEMPLATE)?;
+    }
+
     Ok(ini_path)
 }
 
@@ -262,144 +116,362 @@ pub fn is_migoto_workspace(target_dir: &Path) -> bool {
     target_dir.join("d3dx.ini").is_file()
 }
 
-/// 辅助方法：从 GitHub API 拉取指定仓库的 Release 信息
-async fn fetch_github_release(
-    repo_owner: &str,
-    repo_name: &str,
-    client: &reqwest::Client,
-    github_token: Option<&str>,
-    mirror_url: Option<&str>,
-) -> Result<MigotoReleaseInfo> {
-    let raw_api = format!(
-        "https://api.github.com/repos/{}/{}/releases/latest",
-        repo_owner, repo_name
-    );
-    let base_api = if let Some(mirror) = mirror_url {
-        let clean = mirror.trim_end_matches('/');
-        format!("{}/{}", clean, raw_api)
-    } else {
-        raw_api
-    };
+pub const XXMI_PUBLIC_KEY: &str =
+    "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEYac352uRGKZh6LOwK0fVDW/TpyECEfnRtUp+bP2PJPP63SWOkJ3a/d9pAnPfYezRVJ1hWjZtpRTT8HEAN/b4mWpJvqO43SAEV/1Q6vz9Rk/VvRV3jZ6B/tmqVnIeHKEb";
 
-    let mut req = client.get(&base_api);
-    if let Some(token) = github_token {
-        if !token.trim().is_empty() {
-            req = req.header("Authorization", format!("token {}", token.trim()));
-        }
-    }
-
-    let res = req.send().await.map_err(|e| {
-        LiquiModError::Io(std::io::Error::other(format!(
-            "检查 {}/{} 更新失败: {}",
-            repo_owner, repo_name, e
-        )))
-    })?;
-
-    if !res.status().is_success() {
-        return Err(LiquiModError::Io(std::io::Error::other(format!(
-            "GitHub API 响应错误状态码 ({}): {}",
-            repo_name,
-            res.status()
-        ))));
-    }
-
-    let json: serde_json::Value = res.json().await.map_err(|e| {
-        LiquiModError::Io(std::io::Error::other(format!(
-            "解析 Release JSON 失败: {}",
-            e
-        )))
-    })?;
-
-    let tag_name = json["tag_name"].as_str().unwrap_or("").to_string();
-    let name = json["name"].as_str().unwrap_or(&tag_name).to_string();
-    let body = json["body"].as_str().unwrap_or("").to_string();
-    let published_at = json["published_at"].as_str().map(|s| s.to_string());
-
-    let mut download_url = None;
-    let mut asset_name = None;
-    let mut size_bytes = None;
-
-    if let Some(assets) = json["assets"].as_array() {
-        for asset in assets {
-            if let Some(a_name) = asset["name"].as_str() {
-                if a_name.ends_with(".zip") {
-                    asset_name = Some(a_name.to_string());
-                    download_url = asset["browser_download_url"]
-                        .as_str()
-                        .map(|s| s.to_string());
-                    size_bytes = asset["size"].as_u64();
-                    break;
-                }
-            }
-        }
-    }
-
-    Ok(MigotoReleaseInfo {
-        tag_name,
-        name,
-        body,
-        published_at,
-        download_url,
-        libs_download_url: None,
-        asset_name,
-        size_bytes,
-    })
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum PackageKind {
+    Srmi,
+    Xxmi,
 }
 
-/// 获取 SRMI 最新的 Release 版本信息及关联的 Libs DLL 套件信息
-pub async fn check_latest_srmi_release(
+impl PackageKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Srmi => "SRMI",
+            Self::Xxmi => "XXMI",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PackageStatus {
+    pub package: PackageKind,
+    pub installed_version: Option<String>,
+    pub package_dir: String,
+    pub ready: bool,
+    pub missing_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimePaths {
+    pub data_root: PathBuf,
+    pub runtime_root: PathBuf,
+    pub injector_dll: PathBuf,
+    pub d3d11_dll: PathBuf,
+    pub d3dcompiler_dll: PathBuf,
+    pub nvapi_dll: PathBuf,
+    pub d3dx_ini: PathBuf,
+    pub mods_dir: PathBuf,
+}
+
+fn package_dir(data_root: &Path, package: PackageKind) -> PathBuf {
+    data_root.join("Packages").join(package.name())
+}
+
+pub fn package_file(data_root: &Path, package: PackageKind, name: &str) -> PathBuf {
+    package_dir(data_root, package).join(name)
+}
+
+pub fn runtime_paths(data_root: &Path) -> RuntimePaths {
+    let runtime_root = data_root.join("3DMigoto");
+    RuntimePaths {
+        data_root: data_root.to_path_buf(),
+        runtime_root: runtime_root.clone(),
+        injector_dll: package_file(data_root, PackageKind::Xxmi, "3dmloader.dll"),
+        d3d11_dll: runtime_root.join("d3d11.dll"),
+        d3dcompiler_dll: runtime_root.join("d3dcompiler_47.dll"),
+        nvapi_dll: runtime_root.join("nvapi64.dll"),
+        d3dx_ini: runtime_root.join("d3dx.ini"),
+        mods_dir: runtime_root.join("Mods"),
+    }
+}
+
+pub fn package_statuses(data_root: &Path) -> Vec<PackageStatus> {
+    [PackageKind::Srmi, PackageKind::Xxmi]
+        .into_iter()
+        .map(|package| package_status(data_root, package))
+        .collect()
+}
+
+pub fn package_status(data_root: &Path, package: PackageKind) -> PackageStatus {
+    let dir = package_dir(data_root, package);
+    let mut missing_files = Vec::new();
+    let required = match package {
+        PackageKind::Srmi => vec!["Manifest.json", "d3dx.ini", "Core\\SRMI\\main.ini"],
+        PackageKind::Xxmi => vec![
+            "Manifest.json",
+            "3dmloader.dll",
+            "d3d11.dll",
+            "d3dcompiler_47.dll",
+        ],
+    };
+    for file in required {
+        if !dir.join(file).is_file() {
+            missing_files.push(file.to_string());
+        }
+    }
+    let installed_version = read_manifest_version(&dir.join("Manifest.json"));
+    PackageStatus {
+        package,
+        installed_version,
+        package_dir: dir.display().to_string(),
+        ready: missing_files.is_empty(),
+        missing_files,
+    }
+}
+
+/// 将随程序分发的标准 SRMI/XXMI 核心包补入当前便携数据根。
+///
+/// 发行包可能把核心放在 exe 旁的 `Packages`，也可能由 Tauri 放在
+/// `resources/Packages`。只在目标包不完整时复制，且通过与官方安装相同的
+/// 结构/签名校验后再原子替换，绝不覆盖已经完整的用户更新版本。
+pub fn seed_bundled_packages(data_root: &Path) -> Result<usize> {
+    let mut source_roots = vec![data_root.join("Packages")];
+    if let Some(exe_parent) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+    {
+        source_roots.push(exe_parent.join("Packages"));
+        source_roots.push(exe_parent.join("resources").join("Packages"));
+    }
+
+    let mut seeded = 0;
+    for package in [PackageKind::Srmi, PackageKind::Xxmi] {
+        if package_status(data_root, package).ready {
+            continue;
+        }
+
+        let target = package_dir(data_root, package);
+        let source = source_roots
+            .iter()
+            .map(|root| root.join(package.name()))
+            .find(|candidate| {
+                if !candidate.is_dir() || same_path(candidate, &target) {
+                    return false;
+                }
+                verify_package_layout(candidate, package).is_ok()
+            });
+        let Some(source) = source else {
+            continue;
+        };
+
+        let package_parent = data_root.join("Packages");
+        std::fs::create_dir_all(&package_parent)?;
+        let temp = package_parent.join(format!(
+            ".{}-bundled-{}",
+            package.name(),
+            uuid::Uuid::new_v4()
+        ));
+        if temp.exists() {
+            std::fs::remove_dir_all(&temp)?;
+        }
+        let result = (|| -> Result<()> {
+            copy_directory_contents(&source, &temp, &[])?;
+            verify_package_layout(&temp, package)?;
+            replace_managed_directory(&temp, &target)
+        })();
+        if result.is_err() && temp.exists() {
+            let _ = std::fs::remove_dir_all(&temp);
+        }
+        result?;
+        seeded += 1;
+    }
+    Ok(seeded)
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
+}
+
+fn read_manifest_version(path: &Path) -> Option<String> {
+    let data = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<serde_json::Value>(&data).ok()?["version"]
+        .as_str()
+        .map(str::to_string)
+}
+
+fn github_api_url(owner: &str, repo: &str, mirror_url: Option<&str>) -> String {
+    let original = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
+    mirror_url
+        .filter(|value| !value.trim().is_empty())
+        .map(|mirror| format!("{}/{}", mirror.trim_end_matches('/'), original))
+        .unwrap_or(original)
+}
+
+fn mirrored_download_url(url: &str, mirror_url: Option<&str>) -> String {
+    mirror_url
+        .filter(|value| !value.trim().is_empty())
+        .map(|mirror| format!("{}/{}", mirror.trim_end_matches('/'), url))
+        .unwrap_or_else(|| url.to_string())
+}
+
+fn release_signature(body: &str) -> Option<String> {
+    let marker = body.find("## Signature")?;
+    body[marker..]
+        .lines()
+        .skip(1)
+        .map(str::trim)
+        .find_map(|line| {
+            let value = line.strip_prefix('-')?.trim();
+            if value.is_empty() {
+                None
+            } else if base64::engine::general_purpose::STANDARD
+                .decode(value)
+                .is_ok()
+            {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        })
+}
+
+async fn fetch_latest_package_release(
+    package: &str,
+    owner: &str,
+    repo: &str,
+    asset_prefix: &str,
     github_token: Option<&str>,
     mirror_url: Option<&str>,
 ) -> Result<MigotoReleaseInfo> {
     let client = reqwest::Client::builder()
-        .user_agent("LiquiMod-Client")
-        .timeout(std::time::Duration::from_secs(10))
+        .user_agent("LiquiMod-XXMI-Compatible")
+        .timeout(Duration::from_secs(20))
         .build()
         .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+    let mut request = client.get(github_api_url(owner, repo, mirror_url));
+    if let Some(token) = github_token.filter(|value| !value.trim().is_empty()) {
+        request = request.header("Authorization", format!("token {}", token.trim()));
+    }
+    let response = request.send().await.map_err(|e| {
+        LiquiModError::Io(std::io::Error::other(format!(
+            "检查 {package} 官方套件更新失败：{e}"
+        )))
+    })?;
+    if !response.status().is_success() {
+        return Err(LiquiModError::Io(std::io::Error::other(format!(
+            "{package} GitHub API 返回状态码：{}",
+            response.status()
+        ))));
+    }
+    let json = response.json::<serde_json::Value>().await.map_err(|e| {
+        LiquiModError::Io(std::io::Error::other(format!(
+            "解析 {package} Release 信息失败：{e}"
+        )))
+    })?;
+    let tag_name = json["tag_name"].as_str().unwrap_or_default().to_string();
+    let version = tag_name.trim_start_matches('v');
+    let asset_name = format!("{asset_prefix}{version}.zip");
+    let Some(assets) = json["assets"].as_array() else {
+        return Err(LiquiModError::Io(std::io::Error::other(format!(
+            "{package} Release 没有安装包资产"
+        ))));
+    };
+    let Some(asset) = assets
+        .iter()
+        .find(|asset| asset["name"].as_str() == Some(&asset_name))
+    else {
+        return Err(LiquiModError::Io(std::io::Error::other(format!(
+            "{package} Release 缺少官方资产 {asset_name}"
+        ))));
+    };
+    let download_url = asset["browser_download_url"].as_str().map(str::to_string);
+    let manifest_url = assets
+        .iter()
+        .find(|asset| asset["name"].as_str() == Some("Manifest.json"))
+        .and_then(|asset| asset["browser_download_url"].as_str())
+        .map(str::to_string);
+    Ok(MigotoReleaseInfo {
+        tag_name,
+        name: json["name"].as_str().unwrap_or_default().to_string(),
+        body: json["body"].as_str().unwrap_or_default().to_string(),
+        published_at: json["published_at"].as_str().map(str::to_string),
+        download_url,
+        asset_name: Some(asset_name),
+        size_bytes: asset["size"].as_u64(),
+        package: package.to_string(),
+        signature: release_signature(json["body"].as_str().unwrap_or_default()),
+        manifest_url,
+    })
+}
 
-    let mut srmi_info = fetch_github_release(
+fn verify_official_signature(signature: Option<&str>, data: &[u8]) -> Result<()> {
+    let signature = signature.ok_or_else(|| {
+        LiquiModError::Io(std::io::Error::other(
+            "官方 Release 没有签名，已拒绝安装未验证的核心套件",
+        ))
+    })?;
+    let public_key = base64::engine::general_purpose::STANDARD
+        .decode(XXMI_PUBLIC_KEY)
+        .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+    let signature = base64::engine::general_purpose::STANDARD
+        .decode(signature)
+        .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+    let key = VerifyingKey::from_public_key_der(&public_key)
+        .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+    let signature = Signature::from_der(&signature)
+        .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+    key.verify_prehash(&Sha256::digest(data), &signature)
+        .map_err(|_| {
+            LiquiModError::Io(std::io::Error::other(
+                "官方核心套件签名校验失败，已拒绝安装",
+            ))
+        })
+}
+
+/// 获取 SRMI 最新的 Release 版本信息（支持 GitHub 直连、代理及国内镜像加速）
+pub async fn check_latest_srmi_release(
+    github_token: Option<&str>,
+    mirror_url: Option<&str>,
+) -> Result<MigotoReleaseInfo> {
+    fetch_latest_package_release(
+        "SRMI",
         "SpectrumQT",
         "SRMI-Package",
-        &client,
-        github_token,
-        mirror_url,
-    )
-    .await?;
-
-    if let Ok(libs_info) = fetch_github_release(
-        "SpectrumQT",
-        "XXMI-Libs-Package",
-        &client,
+        "SRMI-TEST-PACKAGE-v",
         github_token,
         mirror_url,
     )
     .await
-    {
-        srmi_info.libs_download_url = libs_info.download_url;
-    }
-
-    Ok(srmi_info)
 }
 
-/// 辅助流式下载方法
-async fn download_zip_stream(
-    client: &reqwest::Client,
-    url: &str,
+/// 获取 XXMI 注入器套件的最新官方 Release。
+pub async fn check_latest_xxmi_release(
+    github_token: Option<&str>,
+    mirror_url: Option<&str>,
+) -> Result<MigotoReleaseInfo> {
+    fetch_latest_package_release(
+        "XXMI",
+        "SpectrumQT",
+        "XXMI-Libs-Package",
+        "XXMI-PACKAGE-v",
+        github_token,
+        mirror_url,
+    )
+    .await
+}
+
+/// 流式下载并一键解压安装 3DMigoto Release 套件到目标目录
+pub async fn download_and_install_migoto(
+    download_url: &str,
+    target_dir: &Path,
     mirror_url: Option<&str>,
     github_token: Option<&str>,
-    stage_name: &str,
-    progress_tx: &Option<tokio::sync::mpsc::Sender<MigotoDownloadProgress>>,
-) -> Result<Vec<u8>> {
+    progress_tx: Option<tokio::sync::mpsc::Sender<MigotoDownloadProgress>>,
+) -> Result<()> {
+    std::fs::create_dir_all(target_dir)?;
+
     let final_url = if let Some(mirror) = mirror_url {
         let clean = mirror.trim_end_matches('/');
-        if url.starts_with("http") {
-            format!("{}/{}", clean, url)
+        if download_url.starts_with("http") {
+            format!("{}/{}", clean, download_url)
         } else {
-            url.to_string()
+            download_url.to_string()
         }
     } else {
-        url.to_string()
+        download_url.to_string()
     };
+
+    let client = reqwest::Client::builder()
+        .user_agent("LiquiMod-Client")
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
 
     let mut req = client.get(&final_url);
     if let Some(token) = github_token {
@@ -408,10 +480,24 @@ async fn download_zip_stream(
         }
     }
 
-    let res = req
-        .send()
-        .await
-        .map_err(|e| LiquiModError::Io(std::io::Error::other(format!("连接下载失败: {}", e))))?;
+    if let Some(tx) = &progress_tx {
+        let _ = tx
+            .send(MigotoDownloadProgress {
+                stage: "downloading".to_string(),
+                percent: 0.0,
+                downloaded_bytes: 0,
+                total_bytes: None,
+                message: "正在连接下载 3DMigoto 核心安装包...".to_string(),
+            })
+            .await;
+    }
+
+    let res = req.send().await.map_err(|e| {
+        LiquiModError::Io(std::io::Error::other(format!(
+            "连接 3DMigoto 安装包下载失败: {}",
+            e
+        )))
+    })?;
 
     if !res.status().is_success() {
         return Err(LiquiModError::Io(std::io::Error::other(format!(
@@ -431,7 +517,7 @@ async fn download_zip_stream(
         downloaded_bytes += chunk.len() as u64;
         zip_bytes.extend_from_slice(&chunk);
 
-        if let Some(tx) = progress_tx {
+        if let Some(tx) = &progress_tx {
             let percent = if let Some(tot) = total_bytes {
                 if tot > 0 {
                     (downloaded_bytes as f32 / tot as f32) * 100.0
@@ -443,7 +529,7 @@ async fn download_zip_stream(
             };
             let _ = tx
                 .send(MigotoDownloadProgress {
-                    stage: stage_name.to_string(),
+                    stage: "downloading".to_string(),
                     percent: percent.min(99.0),
                     downloaded_bytes,
                     total_bytes,
@@ -459,184 +545,37 @@ async fn download_zip_stream(
         }
     }
 
-    Ok(zip_bytes)
-}
-
-/// 流式下载并一键解压安装 3DMigoto 双包套件 (Libs DLL + SRMI Core) 到目标目录
-pub async fn download_and_install_migoto(
-    download_url: &str,
-    target_dir: &Path,
-    mirror_url: Option<&str>,
-    github_token: Option<&str>,
-    progress_tx: Option<tokio::sync::mpsc::Sender<MigotoDownloadProgress>>,
-) -> Result<()> {
-    std::fs::create_dir_all(target_dir)?;
-
-    let client = reqwest::Client::builder()
-        .user_agent("LiquiMod-Client")
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
-
-    // 1. 获取并下载 XXMI-Libs-Package (核心 DLL 套件: 3dmloader.dll, d3d11.dll, d3dcompiler_47.dll)
+    // 下载完成，开始解压与部署
     if let Some(tx) = &progress_tx {
         let _ = tx
             .send(MigotoDownloadProgress {
-                stage: "downloading_libs".to_string(),
-                percent: 0.0,
-                downloaded_bytes: 0,
-                total_bytes: None,
-                message: "正在获取 3DMigoto 核心 DLL 依赖包...".to_string(),
-            })
-            .await;
-    }
-
-    if let Ok(libs_info) = fetch_github_release(
-        "SpectrumQT",
-        "XXMI-Libs-Package",
-        &client,
-        github_token,
-        mirror_url,
-    )
-    .await
-    {
-        if let Some(libs_url) = libs_info.download_url {
-            let libs_bytes = download_zip_stream(
-                &client,
-                &libs_url,
-                mirror_url,
-                github_token,
-                "downloading_libs",
-                &progress_tx,
-            )
-            .await?;
-
-            let target_buf = target_dir.to_path_buf();
-            tokio::task::spawn_blocking(move || {
-                extract_migoto_zip_to_dir(&libs_bytes, &target_buf)
-            })
-            .await
-            .map_err(|e| {
-                LiquiModError::Io(std::io::Error::other(format!("解压 DLL 失败: {}", e)))
-            })??;
-        }
-    }
-
-    // 2. 下载并解压 SRMI 套件 (Core/SRMI, ShaderFixes, d3dx.ini)
-    if let Some(tx) = &progress_tx {
-        let _ = tx
-            .send(MigotoDownloadProgress {
-                stage: "downloading_srmi".to_string(),
-                percent: 0.0,
-                downloaded_bytes: 0,
-                total_bytes: None,
-                message: "正在下载 SRMI 核心套件与着色器...".to_string(),
-            })
-            .await;
-    }
-
-    let srmi_bytes = download_zip_stream(
-        &client,
-        download_url,
-        mirror_url,
-        github_token,
-        "downloading_srmi",
-        &progress_tx,
-    )
-    .await?;
-
-    let srmi_len = srmi_bytes.len() as u64;
-
-    if let Some(tx) = &progress_tx {
-        let _ = tx
-            .send(MigotoDownloadProgress {
-                stage: "extracting_srmi".to_string(),
+                stage: "extracting".to_string(),
                 percent: 99.0,
-                downloaded_bytes: srmi_len,
-                total_bytes: Some(srmi_len),
-                message: "正在解压并覆写 SRMI 着色器套件...".to_string(),
+                downloaded_bytes,
+                total_bytes,
+                message: "正在解压并覆写 3DMigoto 核心套件...".to_string(),
             })
             .await;
     }
 
     let target_buf = target_dir.to_path_buf();
-    tokio::task::spawn_blocking(move || extract_migoto_zip_to_dir(&srmi_bytes, &target_buf))
+    tokio::task::spawn_blocking(move || extract_migoto_zip_to_dir(&zip_bytes, &target_buf))
         .await
-        .map_err(|e| {
-            LiquiModError::Io(std::io::Error::other(format!("解压 SRMI 失败: {}", e)))
-        })??;
-
-    // 3. 兜底确保内置的 Core/SRMI 套件存在
-    let _ = deploy_embedded_srmi_suite(target_dir);
+        .map_err(|e| LiquiModError::Io(std::io::Error::other(format!("解压任务失败: {}", e))))??;
 
     if let Some(tx) = &progress_tx {
         let _ = tx
             .send(MigotoDownloadProgress {
                 stage: "completed".to_string(),
                 percent: 100.0,
-                downloaded_bytes: srmi_len,
-                total_bytes: Some(srmi_len),
-                message: "3DMigoto / SRMI 核心套件已成功安装/更新！".to_string(),
+                downloaded_bytes,
+                total_bytes,
+                message: "3DMigoto 核心套件已成功安装/更新！".to_string(),
             })
             .await;
     }
 
     Ok(())
-}
-
-/// 合并保留用户自定义的 d3dx.ini 参数
-fn merge_d3dx_ini(old_content: &str, new_content: &str) -> String {
-    let mut target_val = None;
-    let mut loader_val = None;
-
-    for line in old_content.lines() {
-        let trimmed = line.trim();
-        if let Some((k, v)) = trimmed.split_once('=') {
-            let key = k.trim().to_lowercase();
-            if key == "target" {
-                target_val = Some(v.trim().to_string());
-            } else if key == "loader" {
-                loader_val = Some(v.trim().to_string());
-            }
-        }
-    }
-
-    let mut out = String::new();
-    let mut in_loader_sec = false;
-
-    for line in new_content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            in_loader_sec = trimmed[1..trimmed.len() - 1]
-                .trim()
-                .eq_ignore_ascii_case("loader");
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-
-        if in_loader_sec {
-            if let Some((k, _)) = trimmed.split_once('=') {
-                let key = k.trim().to_lowercase();
-                if key == "target" {
-                    if let Some(t) = &target_val {
-                        out.push_str(&format!("target = {}\n", t));
-                        continue;
-                    }
-                } else if key == "loader" {
-                    if let Some(l) = &loader_val {
-                        out.push_str(&format!("loader = {}\n", l));
-                        continue;
-                    }
-                }
-            }
-        }
-
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    out
 }
 
 /// 将 3DMigoto 的 zip 字节解压到指定目标目录，智能识别并脱掉顶层根目录包装
@@ -703,10 +642,13 @@ fn extract_migoto_zip_to_dir(zip_bytes: &[u8], target_dir: &Path) -> Result<()> 
         }
 
         // 安全防御 (LM-P1-002): 严禁绝对路径、盘符、UNC 与 ParentDir 逃逸出目标目录
-        let Ok(out_path) = crate::safe_path::ensure_contained(target_dir, Path::new(rel_name))
-        else {
-            continue;
-        };
+        let out_path = crate::safe_path::ensure_contained(target_dir, Path::new(rel_name))
+            .map_err(|_| {
+                LiquiModError::Io(std::io::Error::other(format!(
+                    "压缩包包含越界路径：{}",
+                    entry.name()
+                )))
+            })?;
 
         if entry.is_dir() {
             std::fs::create_dir_all(&out_path)?;
@@ -729,16 +671,13 @@ fn extract_migoto_zip_to_dir(zip_bytes: &[u8], target_dir: &Path) -> Result<()> 
                 std::fs::create_dir_all(parent)?;
             }
 
-            // 如果是 d3dx.ini 且本地已存在，智能合并并覆写更新（保留自定义 target/loader）
+            // 如果是 d3dx.ini 且本地已存在，优先保留本地已有 d3dx.ini
             if out_path.file_name().and_then(|n| n.to_str()) == Some("d3dx.ini")
                 && out_path.is_file()
             {
-                let mut new_bytes = Vec::new();
-                std::io::copy(&mut entry, &mut new_bytes)?;
-                let new_str = String::from_utf8_lossy(&new_bytes);
-                let old_str = std::fs::read_to_string(&out_path).unwrap_or_default();
-                let merged = merge_d3dx_ini(&old_str, &new_str);
-                std::fs::write(&out_path, merged)?;
+                let upstream_path = target_dir.join("d3dx.ini.upstream");
+                let mut outfile = std::fs::File::create(upstream_path)?;
+                std::io::copy(&mut entry, &mut outfile)?;
                 continue;
             }
 
@@ -760,6 +699,386 @@ fn extract_migoto_zip_to_dir(zip_bytes: &[u8], target_dir: &Path) -> Result<()> 
     }
 
     Ok(())
+}
+
+async fn download_package_bytes(
+    url: &str,
+    mirror_url: Option<&str>,
+    github_token: Option<&str>,
+    progress_tx: Option<&tokio::sync::mpsc::Sender<MigotoDownloadProgress>>,
+    package_name: &str,
+) -> Result<Vec<u8>> {
+    let client = reqwest::Client::builder()
+        .user_agent("LiquiMod-XXMI-Compatible")
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+    let mut request = client.get(mirrored_download_url(url, mirror_url));
+    if let Some(token) = github_token.filter(|value| !value.trim().is_empty()) {
+        request = request.header("Authorization", format!("token {}", token.trim()));
+    }
+    let response = request.send().await.map_err(|e| {
+        LiquiModError::Io(std::io::Error::other(format!(
+            "下载 {package_name} 官方套件失败：{e}"
+        )))
+    })?;
+    if !response.status().is_success() {
+        return Err(LiquiModError::Io(std::io::Error::other(format!(
+            "下载 {package_name} 失败，HTTP 状态码：{}",
+            response.status()
+        ))));
+    }
+    let total_bytes = response.content_length();
+    let mut downloaded_bytes = 0u64;
+    let mut data = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+        downloaded_bytes += chunk.len() as u64;
+        data.extend_from_slice(&chunk);
+        if let Some(tx) = progress_tx {
+            let percent = total_bytes
+                .filter(|total| *total > 0)
+                .map(|total| (downloaded_bytes as f32 / total as f32 * 100.0).min(99.0))
+                .unwrap_or(50.0);
+            let _ = tx
+                .send(MigotoDownloadProgress {
+                    stage: "downloading".to_string(),
+                    percent,
+                    downloaded_bytes,
+                    total_bytes,
+                    message: format!(
+                        "正在下载 {package_name}：{} / {}",
+                        format_bytes(downloaded_bytes),
+                        total_bytes
+                            .map(format_bytes)
+                            .unwrap_or_else(|| "未知".to_string())
+                    ),
+                })
+                .await;
+        }
+    }
+    Ok(data)
+}
+
+fn verify_manifest_files(root: &Path, required: &[&str]) -> Result<()> {
+    let manifest_path = root.join("Manifest.json");
+    let manifest = serde_json::from_str::<serde_json::Value>(
+        &std::fs::read_to_string(&manifest_path).map_err(|_| {
+            LiquiModError::Io(std::io::Error::other(format!(
+                "XXMI 套件缺少 Manifest.json：{}",
+                manifest_path.display()
+            )))
+        })?,
+    )
+    .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
+    let signatures = manifest["signatures"].as_object().ok_or_else(|| {
+        LiquiModError::Io(std::io::Error::other("XXMI Manifest.json 缺少 signatures"))
+    })?;
+    for name in required {
+        let path = root.join(name);
+        if !path.is_file() {
+            return Err(LiquiModError::Io(std::io::Error::other(format!(
+                "XXMI 套件缺少关键文件：{name}"
+            ))));
+        }
+        let signature = signatures
+            .get(*name)
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| {
+                LiquiModError::Io(std::io::Error::other(format!(
+                    "XXMI Manifest.json 缺少 {name} 的签名"
+                )))
+            })?;
+        let bytes = std::fs::read(&path)?;
+        verify_official_signature(Some(signature), &bytes)?;
+    }
+    Ok(())
+}
+
+fn verify_package_layout(root: &Path, package: PackageKind) -> Result<()> {
+    let required = match package {
+        PackageKind::Srmi => ["Manifest.json", "d3dx.ini", "Core\\SRMI\\main.ini"].as_slice(),
+        PackageKind::Xxmi => [
+            "Manifest.json",
+            "3dmloader.dll",
+            "d3d11.dll",
+            "d3dcompiler_47.dll",
+        ]
+        .as_slice(),
+    };
+    for name in required {
+        if !root.join(name).is_file() {
+            return Err(LiquiModError::Io(std::io::Error::other(format!(
+                "{} 官方套件缺少关键文件：{}",
+                package.name(),
+                name
+            ))));
+        }
+    }
+    if package == PackageKind::Xxmi {
+        verify_manifest_files(root, &["3dmloader.dll", "d3d11.dll", "d3dcompiler_47.dll"])?;
+    }
+    Ok(())
+}
+
+fn replace_managed_directory(source: &Path, target: &Path) -> Result<()> {
+    let backup = target.with_file_name(format!(
+        ".{}.old-{}",
+        target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("package"),
+        uuid::Uuid::new_v4()
+    ));
+    if target.exists() {
+        std::fs::rename(target, &backup)?;
+    }
+    if let Err(error) = std::fs::rename(source, target) {
+        if backup.exists() {
+            let _ = std::fs::rename(&backup, target);
+        }
+        return Err(error.into());
+    }
+    if backup.exists() {
+        std::fs::remove_dir_all(backup)?;
+    }
+    Ok(())
+}
+
+fn ensure_standard_d3dx_includes(path: &Path) -> Result<()> {
+    let mut content = std::fs::read_to_string(path)?;
+    let needs_core = !content.lines().any(|line| {
+        line.trim()
+            .eq_ignore_ascii_case("include = Core\\SRMI\\main.ini")
+    });
+    let needs_mods = !content
+        .lines()
+        .any(|line| line.trim().eq_ignore_ascii_case("include_recursive = Mods"));
+    if !needs_core && !needs_mods {
+        return Ok(());
+    }
+    if !content.ends_with(['\n', '\r']) {
+        content.push_str("\r\n");
+    }
+    content.push_str("\r\n[Include]\r\n");
+    if needs_core {
+        content.push_str("include = Core\\SRMI\\main.ini\r\n");
+    }
+    if needs_mods {
+        content.push_str("include_recursive = Mods\r\n");
+    }
+    content.push_str("exclude_recursive = DISABLED*\r\n");
+    std::fs::write(path, content)?;
+    Ok(())
+}
+
+/// 判断运行目录里的 d3dx.ini 是否仍是 LiquiMod 为“仅创建工作区”生成的占位配置。
+///
+/// 首次启动时需要先创建 Mods 目录，旧实现同时写入了一个精简模板；如果随后不把
+/// 官方 SRMI d3dx.ini 替换进去，XXMI 注入链会缺少官方 Loader/Include 配置。
+/// 只识别带有 LiquiMod 标记的文件，避免覆盖用户自行维护的标准配置。
+fn is_liquimod_placeholder_d3dx_ini(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .map(|content| content.contains("; Managed by LiquiMod"))
+        .unwrap_or(false)
+}
+
+/// 安装已通过官方 ECDSA 校验的 SRMI/XXMI 包到便携式 `Packages` 缓存。
+/// 不触碰 Library、Mods 和外部 Mod 源。
+pub async fn install_official_package(
+    release: &MigotoReleaseInfo,
+    data_root: &Path,
+    mirror_url: Option<&str>,
+    github_token: Option<&str>,
+    progress_tx: Option<tokio::sync::mpsc::Sender<MigotoDownloadProgress>>,
+) -> Result<()> {
+    let package = match release.package.as_str() {
+        "XXMI" => PackageKind::Xxmi,
+        _ => PackageKind::Srmi,
+    };
+    let url = release.download_url.as_deref().ok_or_else(|| {
+        LiquiModError::Io(std::io::Error::other("官方 Release 缺少安装包下载地址"))
+    })?;
+    let data = download_package_bytes(
+        url,
+        mirror_url,
+        github_token,
+        progress_tx.as_ref(),
+        package.name(),
+    )
+    .await?;
+    verify_official_signature(release.signature.as_deref(), &data)?;
+
+    if let Some(tx) = &progress_tx {
+        let _ = tx
+            .send(MigotoDownloadProgress {
+                stage: "extracting".to_string(),
+                percent: 99.0,
+                downloaded_bytes: data.len() as u64,
+                total_bytes: Some(data.len() as u64),
+                message: format!("正在校验并安装 {} 官方套件…", package.name()),
+            })
+            .await;
+    }
+
+    let package_parent = data_root.join("Packages");
+    std::fs::create_dir_all(&package_parent)?;
+    let temp = package_parent.join(format!(".{}-tmp-{}", package.name(), uuid::Uuid::new_v4()));
+    if temp.exists() {
+        std::fs::remove_dir_all(&temp)?;
+    }
+    std::fs::create_dir_all(&temp)?;
+    let manifest_data = if let Some(manifest_url) = release.manifest_url.as_deref() {
+        Some(
+            download_package_bytes(manifest_url, mirror_url, github_token, None, package.name())
+                .await?,
+        )
+    } else {
+        None
+    };
+    let result = (|| -> Result<()> {
+        extract_migoto_zip_to_dir(&data, &temp)?;
+        if let Some(manifest) = &manifest_data {
+            let _: serde_json::Value = serde_json::from_slice(manifest).map_err(|e| {
+                LiquiModError::Io(std::io::Error::other(format!(
+                    "{} Manifest.json 无效：{}",
+                    package.name(),
+                    e
+                )))
+            })?;
+            std::fs::write(temp.join("Manifest.json"), manifest)?;
+        } else if package == PackageKind::Srmi {
+            let asset_name = release.asset_name.as_deref().unwrap_or("SRMI-PACKAGE.zip");
+            let manifest = serde_json::json!({
+                "version": release.tag_name.trim_start_matches('v'),
+                "signatures": { asset_name: release.signature.clone().unwrap_or_default() }
+            });
+            std::fs::write(
+                temp.join("Manifest.json"),
+                serde_json::to_vec_pretty(&manifest)
+                    .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?,
+            )?;
+        }
+        verify_package_layout(&temp, package)?;
+        replace_managed_directory(&temp, &package_dir(data_root, package))?;
+        Ok(())
+    })();
+    if result.is_err() && temp.exists() {
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+    result?;
+
+    if let Some(tx) = &progress_tx {
+        let _ = tx
+            .send(MigotoDownloadProgress {
+                stage: "completed".to_string(),
+                percent: 100.0,
+                downloaded_bytes: data.len() as u64,
+                total_bytes: Some(data.len() as u64),
+                message: format!("{} 官方套件已安装并完成签名校验", package.name()),
+            })
+            .await;
+    }
+    Ok(())
+}
+
+fn copy_directory_contents(source: &Path, target: &Path, skip: &[&str]) -> Result<()> {
+    if !source.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_text = name.to_string_lossy();
+        if skip
+            .iter()
+            .any(|value| name_text.eq_ignore_ascii_case(value))
+        {
+            continue;
+        }
+        let source_path = entry.path();
+        let target_path = target.join(&name);
+        if entry.file_type()?.is_dir() {
+            copy_directory_contents(&source_path, &target_path, skip)?;
+        } else if entry.file_type()?.is_file() {
+            if let Some(parent) = target_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(source_path, target_path)?;
+        }
+    }
+    Ok(())
+}
+
+/// 将 SRMI 包和 XXMI 二进制部署成标准的便携式 3DMigoto 工作区。
+/// `Mods` 目录只由上层 Deployer 建立 Junction，不会复制 Mod 实体文件。
+pub fn prepare_managed_runtime(
+    data_root: &Path,
+    game_exe: &Path,
+    mode: crate::d3d::MigotoWorkMode,
+    delay_ms: u64,
+) -> Result<RuntimePaths> {
+    let srmi = package_status(data_root, PackageKind::Srmi);
+    let xxmi = package_status(data_root, PackageKind::Xxmi);
+    if !srmi.ready || !xxmi.ready {
+        return Err(LiquiModError::Io(std::io::Error::other(format!(
+            "XXMI/SRMI 核心尚未安装完整（SRMI 缺少 {:?}；XXMI 缺少 {:?}）",
+            srmi.missing_files, xxmi.missing_files
+        ))));
+    }
+    let paths = runtime_paths(data_root);
+    std::fs::create_dir_all(&paths.runtime_root)?;
+    let package_ini = package_file(data_root, PackageKind::Srmi, "d3dx.ini");
+    if package_ini.is_file()
+        && (!paths.d3dx_ini.is_file() || is_liquimod_placeholder_d3dx_ini(&paths.d3dx_ini))
+    {
+        std::fs::copy(package_ini, &paths.d3dx_ini)?;
+    }
+    if !paths.d3dx_ini.is_file() {
+        init_migoto_workspace(&paths.runtime_root)?;
+    }
+    copy_directory_contents(
+        &package_dir(data_root, PackageKind::Srmi),
+        &paths.runtime_root,
+        &[
+            "Manifest.json",
+            "Mods",
+            "ShaderFixes",
+            "ShaderCache",
+            "d3dx.ini",
+        ],
+    )?;
+    let package_user_ini = package_file(data_root, PackageKind::Srmi, "d3dx_user.ini");
+    let runtime_user_ini = paths.runtime_root.join("d3dx_user.ini");
+    if package_user_ini.is_file() && !runtime_user_ini.is_file() {
+        std::fs::copy(package_user_ini, runtime_user_ini)?;
+    }
+    std::fs::create_dir_all(&paths.mods_dir)?;
+    std::fs::create_dir_all(paths.runtime_root.join("ShaderFixes"))?;
+    ensure_standard_d3dx_includes(&paths.d3dx_ini)?;
+    std::fs::copy(
+        package_file(data_root, PackageKind::Xxmi, "d3d11.dll"),
+        &paths.d3d11_dll,
+    )?;
+    std::fs::copy(
+        package_file(data_root, PackageKind::Xxmi, "d3dcompiler_47.dll"),
+        &paths.d3dcompiler_dll,
+    )?;
+    let package_nvapi = package_file(data_root, PackageKind::Xxmi, "nvapi64.dll");
+    if package_nvapi.is_file() {
+        std::fs::copy(package_nvapi, &paths.nvapi_dll)?;
+    }
+    let target_name = game_exe
+        .file_name()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| game_exe.to_path_buf());
+    crate::d3d::update_d3dx_ini_target(&paths.d3dx_ini, &target_name)?;
+    crate::d3d::ensure_xxmi_loader_name(&paths.d3dx_ini)?;
+    crate::d3d::update_d3dx_ini_initialization_delay(&paths.d3dx_ini, delay_ms)?;
+    crate::d3d::update_d3dx_ini_mode(&paths.d3dx_ini, mode)?;
+    Ok(paths)
 }
 
 fn format_bytes(bytes: u64) -> String {
@@ -787,52 +1106,54 @@ mod tests {
         assert!(is_migoto_workspace(&target));
         assert!(target.join("Mods").is_dir());
         assert!(target.join("ShaderFixes").is_dir());
-        assert!(target.join("3dmloader.dll").is_file());
-        assert!(target.join("d3d11.dll").is_file());
-        assert!(target.join("d3dcompiler_47.dll").is_file());
-        assert!(target.join("Core/SRMI/BatchedPose.ini").is_file());
-        assert!(target.join("Core/SRMI/main.ini").is_file());
-        assert!(target
-            .join("Core/SRMI/Shaders/SingleSkinning.hlsl")
-            .is_file());
 
         let content = std::fs::read_to_string(&ini).unwrap();
         assert!(content.contains("[Loader]"));
-        assert!(content.contains("[Include]"));
+        assert!(content.contains("target = StarRail.exe"));
+    }
+
+    #[test]
+    fn prepare_managed_runtime_replaces_liquimod_placeholder_with_official_ini() {
+        let temp = tempfile::tempdir().unwrap();
+        let packages =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/builtin-core/Packages");
+        copy_directory_contents(&packages, &temp.path().join("Packages"), &[]).unwrap();
+
+        let runtime_root = temp.path().join("3DMigoto");
+        init_migoto_workspace(&runtime_root).unwrap();
+        assert!(is_liquimod_placeholder_d3dx_ini(
+            &runtime_root.join("d3dx.ini")
+        ));
+
+        let paths = prepare_managed_runtime(
+            temp.path(),
+            Path::new("StarRail.exe"),
+            crate::d3d::MigotoWorkMode::Play,
+            0,
+        )
+        .unwrap();
+        let content = std::fs::read_to_string(&paths.d3dx_ini).unwrap();
+
+        assert!(!content.contains("; Managed by LiquiMod"));
+        assert!(content.contains("loader = XXMI Launcher.exe"));
         assert!(content.contains("include = Core\\SRMI\\main.ini"));
         assert!(content.contains("include_recursive = Mods"));
-        assert!(content.contains("global $costume_mods = 1"));
-    }
 
-    #[test]
-    fn test_deploy_embedded_srmi_suite_upgrades_outdated_dll() {
-        let temp = tempfile::tempdir().unwrap();
-        let target = temp.path().join("SRMI");
-        std::fs::create_dir_all(&target).unwrap();
-
-        // 模拟用户目录残留的旧版 2.9MB vanilla d3d11.dll
-        let dummy_old_dll = b"old-vanilla-3dmigoto-dll-content";
-        std::fs::write(target.join("d3d11.dll"), dummy_old_dll).unwrap();
-
-        deploy_embedded_srmi_suite(&target).unwrap();
-
-        let upgraded_bytes = std::fs::read(target.join("d3d11.dll")).unwrap();
-        assert_ne!(upgraded_bytes, dummy_old_dll);
-        assert_eq!(
-            upgraded_bytes.len(),
-            include_bytes!("../../../assets/srmi/d3d11.dll").len()
-        );
-    }
-
-    #[test]
-    fn test_merge_d3dx_ini_preserves_custom_target() {
-        let old_ini = "[Loader]\ntarget = D:\\Custom\\StarRail.exe\nloader = MyLoader.exe\n";
-        let new_ini = "[Loader]\ntarget = StarRail.exe\nloader = XXMI Launcher.exe\n[Include]\ninclude = Core\\SRMI\\main.ini\n";
-
-        let merged = merge_d3dx_ini(old_ini, new_ini);
-        assert!(merged.contains("target = D:\\Custom\\StarRail.exe"));
-        assert!(merged.contains("loader = MyLoader.exe"));
-        assert!(merged.contains("include = Core\\SRMI\\main.ini"));
+        std::fs::write(
+            &paths.d3dx_ini,
+            content.replace("loader = XXMI Launcher.exe", "loader = liquimod-app.exe"),
+        )
+        .unwrap();
+        let paths = prepare_managed_runtime(
+            temp.path(),
+            Path::new("StarRail.exe"),
+            crate::d3d::MigotoWorkMode::Play,
+            0,
+        )
+        .unwrap();
+        let migrated_content = std::fs::read_to_string(&paths.d3dx_ini).unwrap();
+        assert!(migrated_content.contains("loader = XXMI Launcher.exe"));
+        assert!(!migrated_content.contains("loader = liquimod-app.exe"));
     }
 
     #[test]
@@ -860,5 +1181,13 @@ mod tests {
         assert!(temp.path().join("ShaderFixes/fix.hlsl").is_file());
         assert!(temp.path().join("Mods").is_dir());
         assert!(temp.path().join("d3dx.ini").is_file());
+    }
+
+    #[test]
+    fn bundled_core_packages_have_official_layout() {
+        let packages =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/builtin-core/Packages");
+        verify_package_layout(&packages.join("SRMI"), PackageKind::Srmi).unwrap();
+        verify_package_layout(&packages.join("XXMI"), PackageKind::Xxmi).unwrap();
     }
 }
