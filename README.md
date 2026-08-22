@@ -2,7 +2,7 @@
 
 面向《崩坏：星穹铁道》3Dmigoto Mod 的 Windows 桌面管理器。LiquiMod 使用 Rust Core、Tauri 2、Svelte 5 和 Tailwind CSS 构建，提供 Mod 导入、分类、启停、预设、变体选择、风险提示和部署自愈。
 
-[![Release](https://img.shields.io/badge/release-v0.6.0-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.6.0)
+[![Release](https://img.shields.io/badge/release-v0.6.1-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.6.1)
 [![CI](https://github.com/pianhua/liquimod/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pianhua/liquimod/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8.svg)](https://v2.tauri.app/)
@@ -11,11 +11,11 @@
 
 ## 当前版本
 
-`v0.6.0` 是从 `v0.4.0` 重新对齐 XXMI/SRMI 后的稳定基线，面向 Windows 10/11 x64，同时提供 NSIS 安装包与便携式 ZIP 包。发布包内置标准 XXMI/SRMI 核心、主程序和 F10 刷新助手，不包含游戏本体。
+`v0.6.1` 是从 `v0.4.0` 重新对齐 XXMI/SRMI 后的稳定基线修复版，面向 Windows 10/11 x64，同时提供 NSIS 安装包与便携式 ZIP 包。发布包内置标准 XXMI/SRMI 核心、主程序和 F10 刷新助手，不包含游戏本体。
 
-- [下载 v0.6.0](https://github.com/pianhua/liquimod/releases/tag/v0.6.0)
+- [下载 v0.6.1](https://github.com/pianhua/liquimod/releases/tag/v0.6.1)
 - [查看 CI](https://github.com/pianhua/liquimod/actions)
-- [查看 v0.6.0 完整变更](https://github.com/pianhua/liquimod/compare/v0.4.0...v0.6.0)
+- [查看 v0.6.1 完整变更](https://github.com/pianhua/liquimod/compare/v0.4.0...v0.6.1)
 
 ## 功能
 
@@ -23,6 +23,7 @@
 
 - 导入文件夹以及 `.zip`、`.7z`、`.rar` Mod 压缩包
 - 直接连接外部 Mod 文件夹，不复制、不接管、不删除源文件；源目录离线时显示告警并禁止启用
+- 角色详情页“连接外部”是当前外部 Mod 主入口；设置页外部源目录批量扫描暂缓，详见 [DECISIONS.md](DECISIONS.md)
 - 自动识别角色，支持手动归属和未分类 Mod 管理
 - 启用、禁用、重命名、移动、断开外部连接或卸载托管 Mod
 - 自定义封面、立绘预览、搜索、排序、收藏和拖拽排序
@@ -48,7 +49,7 @@
 - 识别 `Option`、编号和 `[Variant]` 等明确命名的变体目录
 - 将基础资源与选中变体合并到运行副本，变体文件覆盖同路径基础文件
 - 同一角色启用一个 Mod 时显示绿灯，启用多个时显示黄灯和详情警告；提示可在设置中关闭
-- Hash 与变量冲突扫描器保留在核心层，当前版本不自动扫描，也不据此限制 Mod 启停
+- Hash 与变量冲突扫描器保留在核心层，当前版本不自动扫描，也不据此限制 Mod 启停；详见 [DECISIONS.md](DECISIONS.md)
 - 运行副本中的全局变量按 Mod ID 隔离，减少跨 Mod 命名冲突
 
 ### 游戏集成与环境诊断
@@ -63,7 +64,7 @@
 
 ## 安装与首次使用
 
-1. 从 [v0.6.0 Release](https://github.com/pianhua/liquimod/releases/tag/v0.6.0) 下载 `LiquiMod-*.exe` 安装包或 `LiquiMod-Windows-x64.zip` 便携包。
+1. 从 [v0.6.1 Release](https://github.com/pianhua/liquimod/releases/tag/v0.6.1) 下载 `LiquiMod-*.exe` 安装包或 `LiquiMod-Windows-x64.zip` 便携包。
 2. 安装包支持选择安装位置；便携包解压后保持 `XXMI Launcher.exe` 与 `liquimod-refresh-helper.exe` 位于同一目录。
 3. 启动 LiquiMod，在设置中确认数据存储根目录。默认位于软件所在盘的 `LiquiModData`，也可以迁移到其他盘符。
 4. 配置游戏可执行文件、3Dmigoto 加载器和运行中的 `Mods` 部署目录。
