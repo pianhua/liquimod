@@ -148,10 +148,12 @@ fn launch_and_inject(game_exe: &str, work_dir: &str, d3d11_dll: &str, loader_dll
             type FnHookLibrary = unsafe extern "system" fn(PCWSTR, *mut HHOOK, *mut HANDLE) -> i32;
             type FnWaitForInjection = unsafe extern "system" fn(PCWSTR, PCWSTR, i32) -> i32;
             type FnUnhookLibrary = unsafe extern "system" fn(*mut HHOOK, *mut HANDLE) -> i32;
+            type FnStartProcess = unsafe extern "system" fn(PCWSTR, PCWSTR, PCWSTR) -> i32;
 
             let p_hook = unsafe { GetProcAddress(h_loader, windows::core::s!("HookLibrary")) };
             let p_wait = unsafe { GetProcAddress(h_loader, windows::core::s!("WaitForInjection")) };
             let p_unhook = unsafe { GetProcAddress(h_loader, windows::core::s!("UnhookLibrary")) };
+            let p_start = unsafe { GetProcAddress(h_loader, windows::core::s!("StartProcess")) };
 
             if let (Some(f_hook), Some(f_wait), Some(f_unhook)) = (p_hook, p_wait, p_unhook) {
                 let fn_hook: FnHookLibrary = unsafe { std::mem::transmute(f_hook) };
@@ -202,7 +204,24 @@ fn launch_and_inject(game_exe: &str, work_dir: &str, d3d11_dll: &str, loader_dll
                         )
                     };
 
-                    if started.is_ok() {
+                    let launched = if started.is_ok() {
+                        true
+                    } else if let Some(f_start) = p_start {
+                        let fn_start: FnStartProcess = unsafe { std::mem::transmute(f_start) };
+                        let empty_wide: Vec<u16> = vec![0];
+                        let res = unsafe {
+                            fn_start(
+                                PCWSTR(app_name_wide.as_ptr()),
+                                PCWSTR(work_dir_wide.as_ptr()),
+                                PCWSTR(empty_wide.as_ptr()),
+                            )
+                        };
+                        res == 0
+                    } else {
+                        false
+                    };
+
+                    if launched {
                         let proc_name = game_path.file_name().unwrap_or_default().to_string_lossy();
                         let proc_wide: Vec<u16> =
                             proc_name.encode_utf16().chain(std::iter::once(0)).collect();

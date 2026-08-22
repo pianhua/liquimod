@@ -8,8 +8,20 @@ use std::path::{Path, PathBuf};
 /// 默认内置的标准 d3dx.ini 模板文本 (对齐 XXMI 1071 行完整规范)
 pub const EMBEDDED_D3DX_INI_TEMPLATE: &str = include_str!("../../../assets/srmi/d3dx.ini");
 
-/// 预置内置的 SRMI 核心套件静态文件映射 (骨骼蒙皮 Compute Shader、字体、通知及帮助)
+/// 预置内置的 SRMI 核心套件静态文件映射 (包含 3dmloader.dll, d3d11.dll, d3dcompiler_47.dll, 骨骼蒙皮 Compute Shader、字体、通知及帮助)
 pub const EMBEDDED_SRMI_FILES: &[(&str, &[u8])] = &[
+    (
+        "3dmloader.dll",
+        include_bytes!("../../../assets/srmi/3dmloader.dll"),
+    ),
+    (
+        "d3d11.dll",
+        include_bytes!("../../../assets/srmi/d3d11.dll"),
+    ),
+    (
+        "d3dcompiler_47.dll",
+        include_bytes!("../../../assets/srmi/d3dcompiler_47.dll"),
+    ),
     ("d3dx.ini", include_bytes!("../../../assets/srmi/d3dx.ini")),
     (
         "Core/SRMI/main.ini",
@@ -188,7 +200,7 @@ pub fn default_managed_migoto_dir() -> PathBuf {
         .join("3DMigoto")
 }
 
-/// 部署内置的完整 SRMI 核心套件到目标目录
+/// 部署内置的完整 SRMI 核心套件到目标目录 (自动校验与升级核心 DLL、蒙皮着色器与 d3dx.ini)
 pub fn deploy_embedded_srmi_suite(target_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(target_dir)?;
     std::fs::create_dir_all(target_dir.join("Mods"))?;
@@ -200,10 +212,38 @@ pub fn deploy_embedded_srmi_suite(target_dir: &Path) -> Result<()> {
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        if !dest.exists() {
+
+        let should_write = if !dest.exists() {
+            true
+        } else if *rel_path == "d3dx.ini" {
+            // d3dx.ini 采用下方专用的智能合并逻辑，不直接覆盖
+            false
+        } else {
+            // 核心 DLL (3dmloader.dll / d3d11.dll / d3dcompiler_47.dll) 与着色器：对比二进制内容，不匹配则自动无感升级
+            match std::fs::read(&dest) {
+                Ok(existing) => existing != *bytes,
+                Err(_) => true,
+            }
+        };
+
+        if should_write {
             std::fs::write(&dest, bytes)?;
         }
     }
+
+    // 针对 d3dx.ini：若存在则做智能合并，确保 [Include] 与渲染参数就绪同时保留用户自定义配置
+    let ini_path = target_dir.join("d3dx.ini");
+    if ini_path.is_file() {
+        if let Ok(existing_ini) = std::fs::read_to_string(&ini_path) {
+            let merged = merge_d3dx_ini(&existing_ini, EMBEDDED_D3DX_INI_TEMPLATE);
+            if merged != existing_ini {
+                let _ = std::fs::write(&ini_path, merged);
+            }
+        }
+    } else {
+        std::fs::write(&ini_path, EMBEDDED_D3DX_INI_TEMPLATE)?;
+    }
+
     Ok(())
 }
 
@@ -438,49 +478,47 @@ pub async fn download_and_install_migoto(
         .build()
         .map_err(|e| LiquiModError::Io(std::io::Error::other(e.to_string())))?;
 
-    // 1. 如果目标目录缺少 d3d11.dll，尝试优先下载 XXMI-Libs-Package
-    if !target_dir.join("d3d11.dll").is_file() {
-        if let Some(tx) = &progress_tx {
-            let _ = tx
-                .send(MigotoDownloadProgress {
-                    stage: "downloading_libs".to_string(),
-                    percent: 0.0,
-                    downloaded_bytes: 0,
-                    total_bytes: None,
-                    message: "正在获取 3DMigoto 核心 DLL 依赖包...".to_string(),
-                })
-                .await;
-        }
+    // 1. 获取并下载 XXMI-Libs-Package (核心 DLL 套件: 3dmloader.dll, d3d11.dll, d3dcompiler_47.dll)
+    if let Some(tx) = &progress_tx {
+        let _ = tx
+            .send(MigotoDownloadProgress {
+                stage: "downloading_libs".to_string(),
+                percent: 0.0,
+                downloaded_bytes: 0,
+                total_bytes: None,
+                message: "正在获取 3DMigoto 核心 DLL 依赖包...".to_string(),
+            })
+            .await;
+    }
 
-        if let Ok(libs_info) = fetch_github_release(
-            "SpectrumQT",
-            "XXMI-Libs-Package",
-            &client,
-            github_token,
-            mirror_url,
-        )
-        .await
-        {
-            if let Some(libs_url) = libs_info.download_url {
-                let libs_bytes = download_zip_stream(
-                    &client,
-                    &libs_url,
-                    mirror_url,
-                    github_token,
-                    "downloading_libs",
-                    &progress_tx,
-                )
-                .await?;
+    if let Ok(libs_info) = fetch_github_release(
+        "SpectrumQT",
+        "XXMI-Libs-Package",
+        &client,
+        github_token,
+        mirror_url,
+    )
+    .await
+    {
+        if let Some(libs_url) = libs_info.download_url {
+            let libs_bytes = download_zip_stream(
+                &client,
+                &libs_url,
+                mirror_url,
+                github_token,
+                "downloading_libs",
+                &progress_tx,
+            )
+            .await?;
 
-                let target_buf = target_dir.to_path_buf();
-                tokio::task::spawn_blocking(move || {
-                    extract_migoto_zip_to_dir(&libs_bytes, &target_buf)
-                })
-                .await
-                .map_err(|e| {
-                    LiquiModError::Io(std::io::Error::other(format!("解压 DLL 失败: {}", e)))
-                })??;
-            }
+            let target_buf = target_dir.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                extract_migoto_zip_to_dir(&libs_bytes, &target_buf)
+            })
+            .await
+            .map_err(|e| {
+                LiquiModError::Io(std::io::Error::other(format!("解压 DLL 失败: {}", e)))
+            })??;
         }
     }
 
@@ -749,6 +787,9 @@ mod tests {
         assert!(is_migoto_workspace(&target));
         assert!(target.join("Mods").is_dir());
         assert!(target.join("ShaderFixes").is_dir());
+        assert!(target.join("3dmloader.dll").is_file());
+        assert!(target.join("d3d11.dll").is_file());
+        assert!(target.join("d3dcompiler_47.dll").is_file());
         assert!(target.join("Core/SRMI/BatchedPose.ini").is_file());
         assert!(target.join("Core/SRMI/main.ini").is_file());
         assert!(target
@@ -761,6 +802,26 @@ mod tests {
         assert!(content.contains("include = Core\\SRMI\\main.ini"));
         assert!(content.contains("include_recursive = Mods"));
         assert!(content.contains("global $costume_mods = 1"));
+    }
+
+    #[test]
+    fn test_deploy_embedded_srmi_suite_upgrades_outdated_dll() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("SRMI");
+        std::fs::create_dir_all(&target).unwrap();
+
+        // 模拟用户目录残留的旧版 2.9MB vanilla d3d11.dll
+        let dummy_old_dll = b"old-vanilla-3dmigoto-dll-content";
+        std::fs::write(target.join("d3d11.dll"), dummy_old_dll).unwrap();
+
+        deploy_embedded_srmi_suite(&target).unwrap();
+
+        let upgraded_bytes = std::fs::read(target.join("d3d11.dll")).unwrap();
+        assert_ne!(upgraded_bytes, dummy_old_dll);
+        assert_eq!(
+            upgraded_bytes.len(),
+            include_bytes!("../../../assets/srmi/d3d11.dll").len()
+        );
     }
 
     #[test]

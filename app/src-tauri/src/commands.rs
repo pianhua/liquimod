@@ -2080,12 +2080,15 @@ pub fn launch_game(
                 .to_path_buf()
         });
 
+    // 1. 确保 3DMigoto 工作区核心套件 (3dmloader.dll, d3d11.dll 3.13MB, 着色器) 完整且自愈升级
+    let _ = liquimod_core::migoto_sync::deploy_embedded_srmi_suite(&migoto_dir);
+
     let work_mode = match work_mode_str.as_str() {
         "dev" => liquimod_core::d3d::MigotoWorkMode::Dev,
         _ => liquimod_core::d3d::MigotoWorkMode::Play,
     };
 
-    // 同步更新 d3dx.ini
+    // 2. 同步更新 d3dx.ini
     if migoto_dir.is_dir() {
         let ini_path = migoto_dir.join("d3dx.ini");
         if ini_path.is_file() {
@@ -2096,28 +2099,34 @@ pub fn launch_game(
 
     let d3d11 = migoto_dir.join("d3d11.dll");
     let loader_dll = migoto_dir.join("3dmloader.dll");
-    let loader_opt = if loader_dll.is_file() {
-        Some(loader_dll.as_path())
-    } else {
-        None
-    };
     let game_dir = game_path.parent();
 
-    // 优先使用 Helper 执行原生无感 Hook 注入启动
-    if d3d11.is_file() && refresh_helper_path().is_some() {
-        if let Ok(()) = launch_game_with_helper(
-            &state.refresh,
+    // 3. 优先使用 Helper 执行原生无感 Hook 注入启动
+    if d3d11.is_file() && loader_dll.is_file() {
+        if refresh_helper_path().is_some() {
+            if let Ok(()) = launch_game_with_helper(
+                &state.refresh,
+                &game_path,
+                game_dir,
+                Some(&d3d11),
+                Some(&loader_dll),
+            ) {
+                return Ok(liquimod_core::launcher::LaunchResult {
+                    success: true,
+                    message: "✨ 已无感加载 3DMigoto 并拉起游戏！".to_string(),
+                    pid: None,
+                });
+            }
+        }
+
+        // 4. 若 Helper 尚未运行或管道异常，直接使用主进程原生 Win32 Hook 注入启动
+        return liquimod_core::launcher::launch_with_hook(
             &game_path,
             game_dir,
-            Some(&d3d11),
-            loader_opt,
-        ) {
-            return Ok(liquimod_core::launcher::LaunchResult {
-                success: true,
-                message: "✨ 已无感加载 3DMigoto 并拉起游戏！".to_string(),
-                pid: None,
-            });
-        }
+            &d3d11,
+            &loader_dll,
+        )
+        .map_err(|e| format!("模组注入拉起游戏失败：{e}"));
     }
 
     let opts = liquimod_core::launcher::GameLaunchOptions {
