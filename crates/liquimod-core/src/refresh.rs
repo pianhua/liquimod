@@ -83,6 +83,7 @@ impl RefreshClient {
                 "游戏进程名无效",
             )));
         }
+        tracing::info!(process = %process_name, "sending F10 refresh request");
         self.pipe.write_all(b"p")?;
         self.pipe.write_all(process_name.as_bytes())?;
         self.pipe.write_all(&[0])?;
@@ -96,6 +97,7 @@ impl RefreshClient {
         }
         let mut ack = [0u8; 1];
         self.pipe.read_exact(&mut ack)?;
+        tracing::info!(process = %process_name, ack = ack[0], "refresh helper replied");
         if ack[0] == b'1' {
             Ok(())
         } else {
