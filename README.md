@@ -2,7 +2,7 @@
 
 面向《崩坏：星穹铁道》3Dmigoto Mod 的 Windows 现代化桌面管理器。LiquiMod 使用 Rust Core、Tauri 2、Svelte 5 和 Tailwind CSS 构建，提供 Mod 导入、分类、启停、预设、变体选择、SRMI 骨骼蒙皮套件、原生 Hook 无感注入和部署自愈。
 
-[![Release](https://img.shields.io/badge/release-v0.5.0-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.5.0)
+[![Release](https://img.shields.io/badge/release-v0.5.1-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.5.1)
 [![CI](https://github.com/pianhua/liquimod/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pianhua/liquimod/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8.svg)](https://v2.tauri.app/)
@@ -11,11 +11,11 @@
 
 ## 当前版本
 
-`v0.5.0` 引入了对标 XXMI 的工业级标准渲染与注入架构，内置完整的 SRMI Compute Shader 骨骼蒙皮套件与标准 `d3dx.ini` 模板，支持原生 Win32 Hook 无感游戏拉起与注入（无需第三方 Loader.exe 弹窗），并提供 3DMigoto 双包流式下载与智能配置合并。
+`v0.5.1` 全面内置并对齐 XXMI 官方专属 3DMigoto 二进制套件（`3dmloader.dll`、`d3d11.dll` 3.13MB、`d3dcompiler_47.dll` 4.92MB），提供自动校验与静默自愈升级能力，并强制启用 100% 原生 Win32 Hook 无感游戏注入（彻底根除第三方 Loader 弹窗及高精角色 Mod 身体隐形问题）。
 
-- [下载 v0.5.0](https://github.com/pianhua/liquimod/releases/tag/v0.5.0)
+- [下载 v0.5.1](https://github.com/pianhua/liquimod/releases/tag/v0.5.1)
 - [查看 CI](https://github.com/pianhua/liquimod/actions)
-- [查看 v0.5.0 完整变更](https://github.com/pianhua/liquimod/compare/v0.4.0...v0.5.0)
+- [查看 v0.5.1 完整变更](https://github.com/pianhua/liquimod/compare/v0.5.0...v0.5.1)
 
 ## 功能
 

@@ -1,6 +1,6 @@
 # LiquiMod UI 设计与交互规范
 
-> 当前基线：v0.5.0 · Svelte 5 + Tailwind CSS v4 + Tauri 2 + WebView2
+> 当前基线：v0.5.1 · Svelte 5 + Tailwind CSS v4 + Tauri 2 + WebView2
 >
 > 目标：在亮色、暗色、角色立绘半透明和高亮背景同时存在时，每一个可操作元素都清楚、稳定、可预测。
 
