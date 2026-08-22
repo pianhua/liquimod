@@ -16,6 +16,9 @@
 - [下载 v0.6.1](https://github.com/pianhua/liquimod/releases/tag/v0.6.1)
 - [查看 CI](https://github.com/pianhua/liquimod/actions)
 - [查看 v0.6.1 完整变更](https://github.com/pianhua/liquimod/compare/v0.4.0...v0.6.1)
+- [文档索引](docs/README.md)
+- [版本历史](docs/releases.md)
+- [贡献与开发规范](CONTRIBUTING.md)
 
 ## 功能
 
@@ -129,10 +132,13 @@ cargo build --release --features tauri/custom-protocol --manifest-path app/src-t
 powershell -ExecutionPolicy Bypass -File .\scripts\build_package.ps1
 ```
 
-产物位于 `dist/`：
+产物位于按版本隔离的 `dist/releases/v<version>/`，脚本不会清空已有的 `dist/` 内容：
 
-- `dist/LiquiMod-Windows-x64.zip`
-- `dist/SHA256SUMS.txt`
+- `dist/releases/v0.6.1/LiquiMod-Windows-x64.zip`
+- `dist/releases/v0.6.1/LiquiMod-Windows-x64-setup.exe`
+- `dist/releases/v0.6.1/SHA256SUMS.txt`
+
+打包脚本会把临时组装目录放在 `dist/.staging/`，成功后自动清理；如果目标版本目录中已有非 LiquiMod 生成的包目录，脚本会停止而不是覆盖。
 
 ## 质量门禁
 
@@ -162,6 +168,7 @@ liquimod/
 ├── app/src/                        Svelte 前端界面与状态管理
 ├── assets/                         内置角色数据与默认资源
 ├── scripts/                        本地构建、打包和维护脚本
+├── docs/                           产品决策、版本历史、排障与开发文档
 └── .github/workflows/              CI 与 Windows Release workflow
 ```
 

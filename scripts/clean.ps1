@@ -1,49 +1,93 @@
+<#
+.SYNOPSIS
+Removes known, regenerable LiquiMod build directories.
+
+.EXAMPLE
+.\scripts\clean.ps1 -DryRun
+#>
+[CmdletBinding()]
 param(
-    [switch]$DebugOnly = $false,
-    [switch]$All = $false
+    [switch]$DebugOnly,
+    [switch]$All,
+    [switch]$DryRun
 )
 
-$ErrorActionPreference = "SilentlyContinue"
+$ErrorActionPreference = "Stop"
+
+if ($DebugOnly -and $All) {
+    throw "-DebugOnly and -All cannot be used together."
+}
+
+$rootDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+Set-Location $rootDir
+
+function Get-FolderSizeMB([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return 0 }
+    $sum = (Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+        Measure-Object -Property Length -Sum).Sum
+    if ($null -eq $sum) { return 0 }
+    return [math]::Round($sum / 1MB, 2)
+}
+
+function Remove-WorkspaceDirectory([string]$Path) {
+    $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+    $rootPrefix = $rootDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $fullPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean a path outside the workspace: $fullPath"
+    }
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        Write-Host "Already absent: $fullPath" -ForegroundColor DarkGray
+        return
+    }
+    if (-not (Get-Item -LiteralPath $fullPath).PSIsContainer) {
+        throw "Refusing to clean a non-directory path: $fullPath"
+    }
+    if ($DryRun) {
+        Write-Host "Would remove: $fullPath" -ForegroundColor Yellow
+        return
+    }
+    [System.IO.Directory]::Delete($fullPath, $true)
+    Write-Host "Removed: $fullPath" -ForegroundColor Green
+}
 
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "  LiquiMod Workspace Disk Cleanup Tool" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
-$rootDir = Split-Path -Parent $PSScriptRoot
-Set-Location $rootDir
-
-function Get-FolderSizeMB ($path) {
-    if (-not (Test-Path $path)) { return 0 }
-    $size = (Get-ChildItem $path -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
-    return [math]::Round($size / 1MB, 2)
-}
-
-$initialDebugSize = Get-FolderSizeMB "$rootDir\target\debug"
-$initialReleaseSize = Get-FolderSizeMB "$rootDir\target\release"
-$initialTotalSize = Get-FolderSizeMB "$rootDir\target"
-
-$debugGB = [math]::Round($initialDebugSize / 1024, 2)
-$totalGB = [math]::Round($initialTotalSize / 1024, 2)
+$targetRoot = Join-Path $rootDir "target"
+$initialDebugSize = Get-FolderSizeMB (Join-Path $targetRoot "debug")
+$initialReleaseSize = Get-FolderSizeMB (Join-Path $targetRoot "release")
+$initialTotalSize = Get-FolderSizeMB $targetRoot
 
 Write-Host "`nCurrent target size:" -ForegroundColor Yellow
-Write-Host "  * target/debug   (test & debug cache): $initialDebugSize MB ($debugGB GB)"
+Write-Host "  * target/debug   (test & debug cache): $initialDebugSize MB"
 Write-Host "  * target/release (production build)  : $initialReleaseSize MB"
-Write-Host "  * target total                       : $initialTotalSize MB ($totalGB GB)"
+Write-Host "  * target total                       : $initialTotalSize MB"
 
 if ($All) {
-    Write-Host "`n[Mode: Full Clean] Cleaning all build caches..." -ForegroundColor Red
-    cargo clean
-    if (Test-Path "$rootDir\app\build") { Remove-Item -Recurse -Force "$rootDir\app\build" }
-    if (Test-Path "$rootDir\app\.svelte-kit") { Remove-Item -Recurse -Force "$rootDir\app\.svelte-kit" }
-    Write-Host "Full clean completed! Target directory reset." -ForegroundColor Green
+    Write-Host "`n[Mode: Full Clean] Removing only known build directories..." -ForegroundColor Yellow
+    $paths = @(
+        (Join-Path $targetRoot "debug"),
+        (Join-Path $targetRoot "release"),
+        (Join-Path $rootDir "app\build"),
+        (Join-Path $rootDir "app\.svelte-kit")
+    )
 } else {
-    Write-Host "`n[Mode: Smart Clean] Removing target/debug (saving 90%+ disk space, keeping Release)..." -ForegroundColor Yellow
-    if (Test-Path "$rootDir\target\debug") {
-        Remove-Item -Recurse -Force "$rootDir\target\debug"
-    }
-    Write-Host "Smart clean completed! Freed $initialDebugSize MB ($debugGB GB) of disk space!" -ForegroundColor Green
-    Write-Host "Note: Release binaries are preserved in target/release." -ForegroundColor DarkGray
+    Write-Host "`n[Mode: Smart Clean] Removing debug caches and keeping release binaries..." -ForegroundColor Yellow
+    $paths = @((Join-Path $targetRoot "debug"))
 }
 
-$finalTotalSize = Get-FolderSizeMB "$rootDir\target"
-Write-Host "`nFinal target size: $finalTotalSize MB`n" -ForegroundColor Cyan
+if ($DebugOnly) {
+    Write-Host "`n[Mode: Debug Only] Removing target/debug only..." -ForegroundColor Yellow
+    $paths = @((Join-Path $targetRoot "debug"))
+}
+
+foreach ($path in $paths) {
+    Remove-WorkspaceDirectory $path
+}
+
+$finalTotalSize = Get-FolderSizeMB $targetRoot
+Write-Host "`nFinal target size: $finalTotalSize MB" -ForegroundColor Cyan
+if ($DryRun) {
+    Write-Host "Dry run complete; no directories were removed." -ForegroundColor Yellow
+}
