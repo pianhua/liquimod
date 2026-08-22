@@ -1,25 +1,34 @@
 # LiquiMod 正式交接说明
 
-> 交接版本：v0.5.1
+> 交接版本：v0.6.1
 >
 > 交接日期：2026-08-22
 >
 > 当前主线：main
 >
-> 当前发布提交：c291857（chore(release): bump version to v0.5.1 and update documentation）
+> 当前发布提交：v0.6.1 tag 指向的 main 合并提交
 >
 > 核心 PR：[pianhua/liquimod#12](https://github.com/pianhua/liquimod/pull/12)
 
-本文件是本阶段工作的正式交接记录。交接后，后续开发者或 Agent 应以仓库代码、测试、CI 和本文件为现状依据；更早版本的交接文档仅作历史参考。
+本文件是当前阶段工作的正式交接记录。交接后，后续开发者或 Agent 应以仓库代码、测试、CI、本文件和 [DECISIONS.md](DECISIONS.md) 为现状依据；更早版本的交接内容仅作历史参考。
 
-## 1. 交接状态
+## 0. v0.6.1 最新收尾状态
+
+- v0.6.1 包含 F10 热重载修复：用户已完成实机验收，顶部“热重载”可正常触发游戏刷新。
+- F10 helper 使用硬件扫描码发送按键，并记录窗口聚焦、进程匹配、管道和 `SendInput` 结果。
+- 设置页“外部 Mod 源目录”批量扫描暂缓；角色详情页“连接外部”作为当前外部 Mod 主入口。
+- Hash/变量冲突诊断与自动策略暂缓；核心检测接口保留，但当前不自动扫描、不阻止、不互斥、不停用 Mod。
+- 两项暂缓决策分别由 [Issue #13](https://github.com/pianhua/liquimod/issues/13) 和 [Issue #10](https://github.com/pianhua/liquimod/issues/10) 长期追踪。
+- 外部 Mod 仍只保存规范化源路径和索引，不复制、移动、接管或删除源文件。
+
+## 1. 历史交接状态（v0.5.1）
 
 - v0.5.1 修复与功能已完整合并到 main。
 - PR：[pianhua/liquimod#12](https://github.com/pianhua/liquimod/pull/12)
 - CI：Frontend Check & Test、Rust Check & Test 均 100% 绿灯通过。
 - GitHub Release 发行状态：[v0.5.1](https://github.com/pianhua/liquimod/releases/tag/v0.5.1) 正式发布（包含 Setup 安装器、便携 Zip 包及 SHA-256 校验文件）。
 
-## 2. v0.5.1 核心修复与技术突破
+## 2. v0.5.1 历史核心修复与技术突破
 
 ### 2.1 彻底解决 Mod 渲染异常（飞霄身体隐形 / Direct3D 11 Compute Shader 蒙皮计算）
 - **根因分析**：此前工作区残留的 `d3d11.dll` 为 2.9MB vanilla 3DMigoto 1.3.16，不支持 Direct3D 11 Compute Shader Hook（`DRAW_TYPE == 8`）、`RWStructuredBuffer` 与 `BatchedPose.ini`，导致高精角色 Mod 无法执行 CS 蒙皮运算。
@@ -193,15 +202,16 @@ Pop-Location
 
 ## 9. 已知边界与后续方向
 
-以下不是 v0.5.1 发布阻塞项，而是后续可独立规划的工作：
+以下不是 v0.6.1 发布阻塞项，而是后续可独立规划的工作：
 
-1. 基于真实 3Dmigoto Mod 样本完善 Hash/变量冲突诊断 UI；没有用户确认前，不升级为自动互斥或自动停用。
-2. 用更多真实游戏进程名、加载器和 Windows 权限环境进行实机验证。
-3. 收集日常使用中的拖拽、主题对比度、外部目录变更和迁移边界问题。
-4. 若未来引入批量操作、预设自动应用或自动 F10，必须单独完成需求对齐、风险评估和开关设计。
+1. 基于真实 3Dmigoto Mod 样本完善 Hash/变量冲突诊断 UI；当前由 Issue #10 追踪，没有用户确认前，不升级为自动互斥或自动停用。
+2. 重设计设置页外部 Mod 源目录批量扫描；当前由 Issue #13 追踪，角色详情页直连为主，不贸然承诺任意深度自动发现。
+3. 用更多真实游戏进程名、加载器和 Windows 权限环境进行实机验证。
+4. 收集日常使用中的拖拽、主题对比度、外部目录变更和迁移边界问题。
+5. 若未来引入批量操作、预设自动应用或自动 F10，必须单独完成需求对齐、风险评估和开关设计。
 
 ## 10. 正式交接结语
 
-本阶段任务到此结束。v0.5.1 已完成代码、测试、PR、合并、构建和 GitHub Release 流程。后续由接手者依据 AGENTS.md 的对齐、分支、检查、合并和发布规则继续进行。
+本阶段任务到此结束。v0.6.1 已完成代码、测试、PR、合并、构建和 GitHub Release 流程。后续由接手者依据 AGENTS.md、DECISIONS.md 的对齐、分支、检查、合并和发布规则继续进行。
 
 交接后的任何新方案都必须先与用户完全对齐，再进入实现；任何“看起来合理”的产品行为都不能替代用户确认。

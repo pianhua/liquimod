@@ -1,10 +1,10 @@
 # LiquiMod 开发与 Agent 协作守则
 
-> 当前基线：v0.5.1（Windows 10/11 x64）
+> 当前基线：v0.6.1（Windows 10/11 x64）
 >
 > 技术栈：Rust workspace + Tauri 2 + Svelte 5 + Tailwind CSS v4 + SQLite + WebView2
 >
-> STYLE.md 负责 UI 规范，HANDOVER.md 负责当前交接状态。本文件约束开发者、自动化 Agent 和后续接手者的工作方式。
+> STYLE.md 负责 UI 规范，HANDOVER.md 负责当前交接状态，DECISIONS.md 负责已确认的产品取舍。本文件约束开发者、自动化 Agent 和后续接手者的工作方式。
 
 ## 1. 总原则：先对齐，再方案，再实现
 
@@ -40,7 +40,7 @@
 
 ### 2.3 存储与外部 Mod
 
-- 配置位于 %APPDATA%/LiquiMod/config.json；它不是大文件 Mod 仓库。
+- 便携版配置位于程序目录下的 `config/config.json`；旧版 `%APPDATA%/LiquiMod` 配置只用于迁移兼容，它不是大文件 Mod 仓库。
 - 默认数据根目录优先为程序所在卷的 LiquiModData；其下为 Library 和托管 3DMigoto 工作区。
 - 设置页可迁移到其他盘符；迁移复制、校验、切换配置并重新对账，旧仓库在用户明确清理前保留。
 - 外部 Mod 只保存规范化来源路径和索引，不复制、移动、接管或删除源文件。
@@ -61,6 +61,7 @@ liquimod/
 ├── .github/workflows/               CI 与 tag 发布流水线
 ├── STYLE.md                         UI 视觉与交互约束
 ├── AGENTS.md                        开发与 Agent 协作守则
+├── DECISIONS.md                     已确认产品决策与暂缓项
 └── HANDOVER.md                      当前版本交接与验收说明
 ~~~
 

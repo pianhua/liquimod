@@ -2563,7 +2563,13 @@ pub async fn trigger_refresh_game(state: tauri::State<'_, AppState>) -> Result<(
             .find(|name| is_game_running(&[name.as_str()]))
             .map(String::as_str)
             .unwrap_or("StarRail.exe");
-        send_refresh_game(&refresh, process_name)
+        tracing::info!(process = %process_name, "F10 refresh command requested");
+        let result = send_refresh_game(&refresh, process_name);
+        match &result {
+            Ok(()) => tracing::info!(process = %process_name, "F10 refresh command completed"),
+            Err(error) => tracing::warn!(process = %process_name, error = %error, "F10 refresh command failed"),
+        }
+        result
     })
     .await
     .map_err(|e| format!("刷新任务失败：{e}"))?

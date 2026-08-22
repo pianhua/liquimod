@@ -6,7 +6,40 @@
 
 use std::io::{Read, Write};
 
+#[cfg(windows)]
+use std::sync::{Mutex, OnceLock};
+#[cfg(windows)]
+use std::time::{SystemTime, UNIX_EPOCH};
+
 const PIPE: &str = r"\\.\pipe\liquimod-refresh";
+
+#[cfg(windows)]
+fn log_event(message: impl AsRef<str>) {
+    static LOG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _lock = LOG_LOCK.get_or_init(|| Mutex::new(())).lock().ok();
+    let Some(exe) = std::env::current_exe().ok() else {
+        return;
+    };
+    let Some(root) = exe.parent() else {
+        return;
+    };
+    let log_dir = root.join("Logs");
+    if std::fs::create_dir_all(&log_dir).is_err() {
+        return;
+    }
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join("refresh-helper.log"))
+    else {
+        return;
+    };
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .unwrap_or_default();
+    let _ = writeln!(file, "[{timestamp}] {}", message.as_ref());
+}
 
 /// 从字节流读取 `p<process-name>\0` 命令并回写是否实际发送成功。
 fn serve(mut read: impl Read, mut write: impl Write, mut on_poke: impl FnMut(&str) -> bool) {
@@ -69,7 +102,8 @@ fn send_f10(process_name: &str) -> bool {
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_F10,
+        SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE,
+        VIRTUAL_KEY,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowThreadProcessId,
@@ -92,6 +126,7 @@ fn send_f10(process_name: &str) -> bool {
         BOOL(1)
     }
 
+    log_event(format!("F10 request process={process_name}"));
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::All, true);
     let pids: Vec<u32> = system
@@ -100,6 +135,7 @@ fn send_f10(process_name: &str) -> bool {
         .filter(|(_, process)| process.name().eq_ignore_ascii_case(process_name))
         .map(|(pid, _)| pid.as_u32())
         .collect();
+    log_event(format!("matched pids={pids:?}"));
     let mut hwnd = None;
     for pid in pids {
         let mut search = WindowSearch { pid, hwnd: None };
@@ -110,6 +146,7 @@ fn send_f10(process_name: &str) -> bool {
         }
     }
     let Some(hwnd) = hwnd else {
+        log_event("no visible game window found");
         return false;
     };
     let _ = unsafe { ShowWindow(hwnd, SW_RESTORE) };
@@ -124,25 +161,36 @@ fn send_f10(process_name: &str) -> bool {
         std::thread::sleep(std::time::Duration::from_millis(80));
     }
     if !focused {
+        log_event(format!("failed to focus game window hwnd={hwnd:?}"));
         return false;
     }
-    std::thread::sleep(std::time::Duration::from_millis(120));
+    log_event(format!("focused game window hwnd={hwnd:?}"));
+    std::thread::sleep(std::time::Duration::from_millis(180));
 
+    // F10 的物理扫描码为 0x44。部分 Unity/DirectInput/3Dmigoto
+    // 路径不会把仅带 wVk 的注入事件当成真实键盘输入。
     let down = INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
             ki: KEYBDINPUT {
-                wVk: VK_F10,
-                wScan: 0,
-                dwFlags: KEYBD_EVENT_FLAGS(0),
+                wVk: VIRTUAL_KEY(0),
+                wScan: 0x44,
+                dwFlags: KEYEVENTF_SCANCODE,
                 time: 0,
                 dwExtraInfo: 0,
             },
         },
     };
     let mut up = down;
-    up.Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
-    (unsafe { SendInput(&[down, up], std::mem::size_of::<INPUT>() as i32) }) == 2
+    up.Anonymous.ki.dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
+    let sent_down = unsafe { SendInput(&[down], std::mem::size_of::<INPUT>() as i32) };
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    let sent_up = unsafe { SendInput(&[up], std::mem::size_of::<INPUT>() as i32) };
+    let success = sent_down == 1 && sent_up == 1;
+    log_event(format!(
+        "SendInput scan_code=0x44 down={sent_down} up={sent_up} success={success}"
+    ));
+    success
 }
 
 #[cfg(not(windows))]
@@ -158,6 +206,7 @@ fn main() {
     use windows::Win32::System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
+    log_event("refresh helper starting");
     let wide: Vec<u16> = PIPE.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
         let handle = CreateNamedPipeW(
@@ -171,16 +220,20 @@ fn main() {
             None,
         );
         if handle == INVALID_HANDLE_VALUE {
+            log_event("CreateNamedPipeW failed");
             std::process::exit(2); // 已在运行或创建失败
         }
         if let Err(e) = ConnectNamedPipe(handle, None) {
             if e.code() != windows::Win32::Foundation::ERROR_PIPE_CONNECTED.into() {
+                log_event(format!("ConnectNamedPipe failed code={:?}", e.code()));
                 std::process::exit(3); // 连接失败
             }
         }
+        log_event("refresh pipe connected");
         let file = std::fs::File::from_raw_handle(handle.0);
         let write = file.try_clone().unwrap_or_else(|_| std::process::exit(4));
         serve(file, write, send_f10);
+        log_event("refresh pipe disconnected");
         // file drop → 句柄关闭 → 进程退出
     }
 }
