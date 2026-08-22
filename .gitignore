@@ -16,8 +16,7 @@ app/.env*
 /temp_research
 /.zcode
 
-# 内部临时计划与本地开发文件
-/docs/
+# 本地临时计划与调试文件；正式文档统一进入 docs/ 并纳入版本控制
 app/README.md
 
 # 操作系统与 IDE 文件

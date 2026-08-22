@@ -8,7 +8,7 @@
 >
 > 当前发布提交：v0.6.1 tag 指向的 main 合并提交
 >
-> 核心 PR：[pianhua/liquimod#12](https://github.com/pianhua/liquimod/pull/12)
+> 当前发布 PR：[pianhua/liquimod#14](https://github.com/pianhua/liquimod/pull/14)
 
 本文件是当前阶段工作的正式交接记录。交接后，后续开发者或 Agent 应以仓库代码、测试、CI、本文件和 [DECISIONS.md](DECISIONS.md) 为现状依据；更早版本的交接内容仅作历史参考。
 
