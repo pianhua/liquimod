@@ -126,7 +126,7 @@ finally {
         [System.IO.Directory]::Delete($stagingRoot, $true)
     }
     $stagingParent = Join-Path $distRoot ".staging"
-    if (Test-Path -LiteralPath $stagingParent -and @(Get-ChildItem -LiteralPath $stagingParent -Force).Count -eq 0) {
+    if ((Test-Path -LiteralPath $stagingParent) -and (@(Get-ChildItem -LiteralPath $stagingParent -Force).Count -eq 0)) {
         [System.IO.Directory]::Delete($stagingParent, $false)
     }
 }
