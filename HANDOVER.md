@@ -6,16 +6,18 @@
 >
 > 当前主线：main
 >
-> 当前发布提交：8d43e85（feat: bundle XXMI binary suite, enable automatic upgrade, and enforce 100% seamless Win32 hook injection (#12)）
+> 当前发布提交：c291857（chore(release): bump version to v0.5.1 and update documentation）
+>
+> 核心 PR：[pianhua/liquimod#12](https://github.com/pianhua/liquimod/pull/12)
 
 本文件是本阶段工作的正式交接记录。交接后，后续开发者或 Agent 应以仓库代码、测试、CI 和本文件为现状依据；更早版本的交接文档仅作历史参考。
 
 ## 1. 交接状态
 
-- v0.5.1 修复已合并到 main。
+- v0.5.1 修复与功能已完整合并到 main。
 - PR：[pianhua/liquimod#12](https://github.com/pianhua/liquimod/pull/12)
 - CI：Frontend Check & Test、Rust Check & Test 均 100% 绿灯通过。
-- 发行标签准备：`v0.5.1`
+- GitHub Release 发行状态：[v0.5.1](https://github.com/pianhua/liquimod/releases/tag/v0.5.1) 正式发布（包含 Setup 安装器、便携 Zip 包及 SHA-256 校验文件）。
 
 ## 2. v0.5.1 核心修复与技术突破
 
@@ -189,17 +191,17 @@ Pop-Location
 - 自定义排序首项、中间项、末项、滚动后拖拽没有错位或上弹抖动。
 - Light/Dark 主题和亮/暗/透明立绘下所有按钮、菜单、弹窗、Toast 可读。
 
-## 8. 已知边界与后续方向
+## 9. 已知边界与后续方向
 
-以下不是 v0.4.0 发布阻塞项，而是后续可独立规划的工作：
+以下不是 v0.5.1 发布阻塞项，而是后续可独立规划的工作：
 
 1. 基于真实 3Dmigoto Mod 样本完善 Hash/变量冲突诊断 UI；没有用户确认前，不升级为自动互斥或自动停用。
 2. 用更多真实游戏进程名、加载器和 Windows 权限环境进行实机验证。
 3. 收集日常使用中的拖拽、主题对比度、外部目录变更和迁移边界问题。
 4. 若未来引入批量操作、预设自动应用或自动 F10，必须单独完成需求对齐、风险评估和开关设计。
 
-## 9. 正式交接结语
+## 10. 正式交接结语
 
-本阶段任务到此结束。v0.4.0 已完成代码、测试、PR、合并、构建和 GitHub Release 流程。后续由接手者依据 AGENTS.md 的对齐、分支、检查、合并和发布规则继续进行。
+本阶段任务到此结束。v0.5.1 已完成代码、测试、PR、合并、构建和 GitHub Release 流程。后续由接手者依据 AGENTS.md 的对齐、分支、检查、合并和发布规则继续进行。
 
 交接后的任何新方案都必须先与用户完全对齐，再进入实现；任何“看起来合理”的产品行为都不能替代用户确认。
