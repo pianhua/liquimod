@@ -44,10 +44,24 @@ if (Test-Path $distRoot) {
 }
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 
-Copy-Item "$rootDir\target\release\liquimod-app.exe" -Destination $distDir
+$mainBinary = "$rootDir\target\release\XXMI Launcher.exe"
+if (-not (Test-Path $mainBinary)) {
+    $legacyMainBinary = "$rootDir\target\release\liquimod-app.exe"
+    if (-not (Test-Path $legacyMainBinary)) {
+        throw "Main application binary was not produced: $mainBinary"
+    }
+    $mainBinary = $legacyMainBinary
+}
+Copy-Item $mainBinary -Destination "$distDir\XXMI Launcher.exe"
 Copy-Item "$rootDir\target\release\liquimod-refresh-helper.exe" -Destination $distDir
 Copy-Item "$rootDir\LICENSE" -Destination $distDir
 Copy-Item "$rootDir\README.md" -Destination $distDir
+
+$builtinPackages = "$rootDir\assets\builtin-core\Packages"
+if (-not (Test-Path $builtinPackages)) {
+    throw "Bundled SRMI/XXMI packages are missing: $builtinPackages"
+}
+Copy-Item $builtinPackages -Destination "$distDir\Packages" -Recurse -Force
 
 $zipPath = "$distRoot\LiquiMod-Windows-x64.zip"
 Compress-Archive -Path "$distDir\*" -DestinationPath $zipPath -Force

@@ -10,7 +10,7 @@ impl DeployStrategy {
     pub fn label(self) -> &'static str {
         match self {
             Self::Junction => "NTFS 极速软链接模式",
-            Self::CopyFallback => "移动驱动器复制兼容模式",
+            Self::CopyFallback => "不可用：需要 NTFS/ReFS Junction",
         }
     }
 }
@@ -131,6 +131,6 @@ mod tests {
     #[test]
     fn strategy_has_user_facing_labels() {
         assert!(DeployStrategy::Junction.label().contains("软链接"));
-        assert!(DeployStrategy::CopyFallback.label().contains("复制"));
+        assert!(DeployStrategy::CopyFallback.label().contains("Junction"));
     }
 }

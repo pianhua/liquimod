@@ -2,7 +2,7 @@
 
 面向《崩坏：星穹铁道》3Dmigoto Mod 的 Windows 桌面管理器。LiquiMod 使用 Rust Core、Tauri 2、Svelte 5 和 Tailwind CSS 构建，提供 Mod 导入、分类、启停、预设、变体选择、风险提示和部署自愈。
 
-[![Release](https://img.shields.io/badge/release-v0.4.0-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.4.0)
+[![Release](https://img.shields.io/badge/release-v0.6.0-blue.svg)](https://github.com/pianhua/liquimod/releases/tag/v0.6.0)
 [![CI](https://github.com/pianhua/liquimod/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pianhua/liquimod/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8.svg)](https://v2.tauri.app/)
@@ -11,11 +11,11 @@
 
 ## 当前版本
 
-`v0.4.0` 是面向 Windows 10/11 x64 的首个正式存储架构版本，同时提供 NSIS 安装包与便携式 ZIP 包。发布包包含主程序、F10 刷新助手、README 和许可证，不包含游戏本体或 3Dmigoto。
+`v0.6.0` 是从 `v0.4.0` 重新对齐 XXMI/SRMI 后的稳定基线，面向 Windows 10/11 x64，同时提供 NSIS 安装包与便携式 ZIP 包。发布包内置标准 XXMI/SRMI 核心、主程序和 F10 刷新助手，不包含游戏本体。
 
-- [下载 v0.4.0](https://github.com/pianhua/liquimod/releases/tag/v0.4.0)
+- [下载 v0.6.0](https://github.com/pianhua/liquimod/releases/tag/v0.6.0)
 - [查看 CI](https://github.com/pianhua/liquimod/actions)
-- [查看 v0.4.0 完整变更](https://github.com/pianhua/liquimod/compare/v0.3.1...v0.4.0)
+- [查看 v0.6.0 完整变更](https://github.com/pianhua/liquimod/compare/v0.4.0...v0.6.0)
 
 ## 功能
 
@@ -63,13 +63,13 @@
 
 ## 安装与首次使用
 
-1. 从 [v0.4.0 Release](https://github.com/pianhua/liquimod/releases/tag/v0.4.0) 下载 `LiquiMod-*.exe` 安装包或 `LiquiMod-Windows-x64.zip` 便携包。
-2. 安装包支持选择安装位置；便携包解压后保持 `liquimod-app.exe` 与 `liquimod-refresh-helper.exe` 位于同一目录。
+1. 从 [v0.6.0 Release](https://github.com/pianhua/liquimod/releases/tag/v0.6.0) 下载 `LiquiMod-*.exe` 安装包或 `LiquiMod-Windows-x64.zip` 便携包。
+2. 安装包支持选择安装位置；便携包解压后保持 `XXMI Launcher.exe` 与 `liquimod-refresh-helper.exe` 位于同一目录。
 3. 启动 LiquiMod，在设置中确认数据存储根目录。默认位于软件所在盘的 `LiquiModData`，也可以迁移到其他盘符。
 4. 配置游戏可执行文件、3Dmigoto 加载器和运行中的 `Mods` 部署目录。
-5. 导入 Mod；若不希望复制文件，可在角色详情中使用“连接外部”直接挂载已有文件夹。
+5. 导入 Mod；主界面顶部的“导入”按钮可选择 `.zip`、`.7z`、`.rar` 安装包，角色详情中还可以导入文件夹或使用“连接外部”直接挂载已有文件夹。
 
-3Dmigoto 和游戏文件需要用户自行准备。首次使用前建议先在设置页完成环境诊断；涉及 Junction、CopyFallback 或 F10 刷新的操作可能触发管理员权限提示。
+3Dmigoto 和游戏文件需要用户自行准备。由于《崩坏：星穹铁道》主进程要求管理员权限，Windows 发布版 `XXMI Launcher.exe` 会在启动时请求一次 UAC；开发版和测试命令不会强制提权。管理员窗口可能被 Windows 阻止接收普通资源管理器的拖放，这是系统完整性级别限制，不是 Mod 压缩包格式错误；遇到拖放无反应时使用顶部“导入”按钮即可。首次使用前建议先在设置页完成环境诊断。
 
 ## 安全边界
 
@@ -117,7 +117,7 @@ cargo build --release --features tauri/custom-protocol --manifest-path app/src-t
 
 构建产物：
 
-- `target/release/liquimod-app.exe`
+- `target/release/XXMI Launcher.exe`
 - `target/release/liquimod-refresh-helper.exe`
 
 ### 生成便携 ZIP

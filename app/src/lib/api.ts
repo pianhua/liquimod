@@ -5,6 +5,7 @@ export interface ConfigDto {
   library_root: string;
   previous_library_root: string | null;
   mods_dir: string | null;
+  mod_sources: string[];
   auto_enable: boolean;
   warn_multiple_mods: boolean;
   theme: string;
@@ -27,6 +28,17 @@ export interface MigotoReleaseInfoDto {
   download_url: string | null;
   asset_name: string | null;
   size_bytes: number | null;
+  package?: string;
+  signature?: string | null;
+  manifest_url?: string | null;
+}
+
+export interface CorePackageStatusDto {
+  package: "SRMI" | "XXMI";
+  installed_version: string | null;
+  package_dir: string;
+  ready: boolean;
+  missing_files: string[];
 }
 
 export interface GameStatusDto {
@@ -203,6 +215,7 @@ const mockConfig: ConfigDto = {
   library_root: "C:/mock/Library",
   previous_library_root: null,
   mods_dir: null,
+  mod_sources: [],
   auto_enable: false,
   warn_multiple_mods: true,
   theme: "auto",
@@ -211,7 +224,7 @@ const mockConfig: ConfigDto = {
   loader_exe: null,
   favorite_characters: [],
   work_mode: "play",
-  injection_delay_ms: 500,
+  injection_delay_ms: 0,
   github_token: "",
   github_mirror: "",
   migoto_version: null,
@@ -448,17 +461,25 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       }
       case "read_log":
         return "2026-08-18T10:00:00 INFO LiquiMod starting\n2026-08-18T10:01:00 INFO installed mod 99" as T;
-      case "choose_game_exe":
-      case "choose_loader_exe": {
+      case "choose_game_exe": {
         const p = String(args?.path ?? "");
         if (!p.toLowerCase().endsWith(".exe")) throw "请选择 .exe 可执行文件";
-        if (cmd === "choose_game_exe") mockConfig.game_exe = p;
-        else mockConfig.loader_exe = p;
+        mockConfig.game_exe = p;
         return structuredClone(mockConfig) as T;
       }
       case "choose_mods_dir":
         mockConfig.mods_dir = String(args?.path ?? "");
         return structuredClone(mockConfig) as T;
+      case "add_mod_source": {
+        const path = String(args?.path ?? "");
+        if (path && !mockConfig.mod_sources.includes(path)) mockConfig.mod_sources.push(path);
+        return structuredClone(mockConfig) as T;
+      }
+      case "remove_mod_source": {
+        const path = String(args?.path ?? "");
+        mockConfig.mod_sources = mockConfig.mod_sources.filter((source) => source !== path);
+        return structuredClone(mockConfig) as T;
+      }
       case "get_storage_info":
         return {
           storage_root: mockConfig.storage_root,
@@ -490,8 +511,6 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       case "launch_game_native":
       case "launch_official_launcher":
         throw "未配置游戏路径，请在设置中配置";
-      case "launch_loader":
-        throw "未配置加载器路径，请在设置中配置";
       case "inspect_3dmigoto_dir":
         return {
           root: String(args?.path ?? ""),
@@ -511,7 +530,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
           theme: "auto",
           character_category_name: "角色",
           game_exe: "D:/Games/Star Rail/Game/StarRail.exe",
-          loader_exe: `${String(args?.path ?? "")}/3DMigoto Loader.exe`,
+          loader_exe: null,
         } as T;
       case "get_mod_keys":
         return [
@@ -624,8 +643,27 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
           asset_name: "3DMigoto-mock.zip",
           size_bytes: 1024,
         } as T;
+      case "check_xxmi_update":
+        return {
+          tag_name: "v1.0.0-mock",
+          name: "XXMI Mock Release",
+          body: "Browser preview release",
+          published_at: "2026-08-18T00:00:00Z",
+          download_url: "https://example.invalid/xxmi-mock.zip",
+          asset_name: "XXMI-PACKAGE-v1.0.0.zip",
+          size_bytes: 1024,
+          package: "XXMI",
+        } as T;
+      case "get_core_package_status":
+        return [
+          { package: "SRMI", installed_version: "2.4.2", package_dir: "C:/mock/Packages/SRMI", ready: true, missing_files: [] },
+          { package: "XXMI", installed_version: "1.0.4", package_dir: "C:/mock/Packages/XXMI", ready: true, missing_files: [] },
+        ] as T;
       case "install_migoto_update":
         mockConfig.migoto_version = String(args?.versionTag ?? "v1.0.0-mock");
+        return structuredClone(mockConfig) as T;
+      case "install_srmi_update":
+      case "install_xxmi_update":
         return structuredClone(mockConfig) as T;
       case "migrate_mods_from_old_migoto":
         return { total_found: 0, migrated_count: 0, failed_count: 0, errors: [] } as T;
@@ -633,7 +671,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         mockConfig.work_mode = args?.mode === "dev" ? "dev" : "play";
         return structuredClone(mockConfig) as T;
       case "set_injection_delay":
-        mockConfig.injection_delay_ms = Math.max(0, Number(args?.delayMs ?? 500));
+        mockConfig.injection_delay_ms = Math.max(0, Number(args?.delayMs ?? 0));
         return structuredClone(mockConfig) as T;
       case "set_github_token":
         mockConfig.github_token = String(args?.token ?? "");
@@ -651,6 +689,8 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 export const api = {
   getConfig: () => call<ConfigDto>("get_config"),
   chooseModsDir: (path: string) => call<ConfigDto>("choose_mods_dir", { path }),
+  addModSource: (path: string) => call<ConfigDto>("add_mod_source", { path }),
+  removeModSource: (path: string) => call<ConfigDto>("remove_mod_source", { path }),
   getStorageInfo: () => call<StorageInfoDto>("get_storage_info"),
   migrateStorage: (targetRoot: string) =>
     call<StorageMigrationDto>("migrate_storage", { targetRoot }),
@@ -697,11 +737,9 @@ export const api = {
   readLog: () => call<string>("read_log"),
   chooseGameExe: (path: string) => call<ConfigDto>("choose_game_exe", { path }),
   getGameStatus: () => call<GameStatusDto>("get_game_status"),
-  chooseLoaderExe: (path: string) => call<ConfigDto>("choose_loader_exe", { path }),
   launchGame: () => call<LaunchResultDto>("launch_game"),
   launchGameNative: () => call<LaunchResultDto>("launch_game_native"),
   launchOfficialLauncher: () => call<LaunchResultDto>("launch_official_launcher"),
-  launchLoader: () => call<void>("launch_loader"),
   inspect3dMigotoDir: (path: string) =>
     call<MigotoInfoDto>("inspect_3dmigoto_dir", { path }),
   import3dMigotoDir: (path: string) =>
@@ -737,8 +775,12 @@ export const api = {
   initMigotoWorkspace: (targetDir: string) =>
     call<string>("init_migoto_workspace", { targetDir }),
   checkMigotoUpdate: () => call<MigotoReleaseInfoDto>("check_migoto_update"),
+  checkXxmiUpdate: () => call<MigotoReleaseInfoDto>("check_xxmi_update"),
+  getCorePackageStatus: () => call<CorePackageStatusDto[]>("get_core_package_status"),
   installMigotoUpdate: (downloadUrl: string, versionTag?: string) =>
     call<ConfigDto>("install_migoto_update", { downloadUrl, versionTag: versionTag ?? null }),
+  installSrmiUpdate: () => call<ConfigDto>("install_srmi_update"),
+  installXxmiUpdate: () => call<ConfigDto>("install_xxmi_update"),
   switchToManagedMigoto: () => call<ConfigDto>("switch_to_managed_migoto"),
   migrateModsFromOldMigoto: (oldDir: string) =>
     call<MigrateResultDto>("migrate_mods_from_old_migoto", { oldDir }),

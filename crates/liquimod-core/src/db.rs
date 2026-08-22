@@ -137,6 +137,45 @@ impl Database {
         Ok(self.conn.last_insert_rowid())
     }
 
+    pub fn find_external_source(&self, source_path: &str) -> Result<Option<ModEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, character, name, rel_path, enabled, installed_at, size_bytes, file_count, category_id, note, cover_image, is_favorite, sort_order, active_variant, storage_kind, source_path FROM mods WHERE storage_kind = 'external' AND source_path = ?1",
+        )?;
+        let mut rows = stmt.query([source_path])?;
+        rows.next()?
+            .map(Self::row_to_entry)
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub fn upsert_external_mod(
+        &self,
+        character: &str,
+        name: &str,
+        source_path: &str,
+    ) -> Result<i64> {
+        if let Some(existing) = self.find_external_source(source_path)? {
+            if self.name_taken(character, name, existing.id)? {
+                return Err(LiquiModError::DestinationExists {
+                    character: character.to_owned(),
+                    name: name.to_owned(),
+                });
+            }
+            self.conn.execute(
+                "UPDATE mods SET character = ?1, name = ?2, rel_path = '', source_path = ?3 WHERE id = ?4",
+                rusqlite::params![character, name, source_path, existing.id],
+            )?;
+            return Ok(existing.id);
+        }
+        if self.name_taken(character, name, -1)? {
+            return Err(LiquiModError::DestinationExists {
+                character: character.to_owned(),
+                name: name.to_owned(),
+            });
+        }
+        self.insert_external_mod(character, name, source_path)
+    }
+
     pub fn external_path_taken(&self, source_path: &str) -> Result<bool> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM mods WHERE storage_kind = 'external' AND source_path = ?1",

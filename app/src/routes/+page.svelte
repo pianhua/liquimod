@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
   import { listen } from "@tauri-apps/api/event";
   import {
     api,
@@ -301,6 +302,26 @@
     }
   }
 
+  async function importModPackage() {
+    if (!isTauri()) {
+      toast("浏览器预览不支持原生文件选择，请在桌面版操作");
+      return;
+    }
+    try {
+      const selected = await open({
+        multiple: true,
+        directory: false,
+        title: "选择 Mod 压缩包",
+        filters: [{ name: "Mod 压缩包", extensions: ["zip", "7z", "rar"] }],
+      });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      enqueueInstalls(paths, installTarget, refresh);
+    } catch (e) {
+      toast(String(e));
+    }
+  }
+
   import ContextMenu, { type MenuItem } from "$lib/components/ContextMenu.svelte";
 
   let contextMenu = $state<{
@@ -541,7 +562,10 @@
           if (cancelled) u();
           else unlisten = u;
         })
-        .catch(() => {});
+        .catch((e) => {
+          console.error("[file-drop] native listener registration failed", e);
+          toast("系统拖放不可用，请使用顶部“导入”按钮选择 Mod 压缩包");
+        });
     });
     let unlistenChanged: (() => void) | undefined;
     let unlistenToast: (() => void) | undefined;
@@ -631,6 +655,7 @@
           onlaunchnativegame={launchGameNative}
           onlaunchofficial={launchOfficialLauncher}
           onrefreshgame={refreshGame}
+          onimport={importModPackage}
           ontogglesettings={() => (showSettings ? closeSettings() : openSettings())}
           onapplied={refresh}
         />

@@ -1,4 +1,4 @@
-//! F10 刷新提权 helper：监听命名管道，收到 "1" 向系统注入一次 F10。
+//! F10 刷新提权 helper：监听命名管道，收到进程名后向对应窗口注入一次 F10。
 //! 客户端（主 app）断开管道即退出，随 app 生命周期。
 //! 由主 app 以 ShellExecuteW runas 提权启动（无清单，无键盘监听，无网络）。
 
@@ -8,17 +8,54 @@ use std::io::{Read, Write};
 
 const PIPE: &str = r"\\.\pipe\liquimod-refresh";
 
-/// 从字节流读数据，每批含 b'1' 即触发一次 on_poke，并回写是否实际发送成功。
-fn serve(mut read: impl Read, mut write: impl Write, mut on_poke: impl FnMut() -> bool) {
+/// 从字节流读取 `p<process-name>\0` 命令并回写是否实际发送成功。
+fn serve(mut read: impl Read, mut write: impl Write, mut on_poke: impl FnMut(&str) -> bool) {
     let mut buf = [0u8; 64];
+    let mut pending = Vec::new();
     loop {
         match read.read(&mut buf) {
             Ok(0) | Err(_) => return,
             Ok(n) => {
-                if buf[..n].contains(&b'1') {
-                    let ack = if on_poke() { b'1' } else { b'0' };
-                    if write.write_all(&[ack]).is_err() || write.flush().is_err() {
-                        return;
+                pending.extend_from_slice(&buf[..n]);
+                loop {
+                    match pending.first().copied() {
+                        Some(b'1') => {
+                            pending.drain(..1);
+                            let ack = if on_poke("StarRail.exe") { b'1' } else { b'0' };
+                            if write.write_all(&[ack]).is_err() || write.flush().is_err() {
+                                return;
+                            }
+                        }
+                        Some(b'p') => {
+                            let Some(end) = pending.iter().position(|byte| *byte == 0) else {
+                                break;
+                            };
+                            let command: Vec<u8> = pending.drain(..=end).collect();
+                            let process_name = command
+                                .strip_prefix(b"p")
+                                .and_then(|value| value.strip_suffix(&[0]))
+                                .and_then(|value| std::str::from_utf8(value).ok())
+                                .filter(|value| !value.trim().is_empty())
+                                .unwrap_or("StarRail.exe");
+                            let ack = if on_poke(process_name) { b'1' } else { b'0' };
+                            if write.write_all(&[ack]).is_err() || write.flush().is_err() {
+                                return;
+                            }
+                        }
+                        Some(_) => {
+                            // 兼容旧客户端可能残留的无效字节，但不要把进程名中的数字 1
+                            // 误判为旧协议命令。
+                            let next_command = pending
+                                .iter()
+                                .position(|byte| *byte == b'1' || *byte == b'p');
+                            match next_command {
+                                Some(index) => {
+                                    pending.drain(..index);
+                                }
+                                None => pending.clear(),
+                            }
+                        }
+                        None => break,
                     }
                 }
             }
@@ -27,7 +64,7 @@ fn serve(mut read: impl Read, mut write: impl Write, mut on_poke: impl FnMut() -
 }
 
 #[cfg(windows)]
-fn send_f10() -> bool {
+fn send_f10(process_name: &str) -> bool {
     use sysinfo::{ProcessesToUpdate, System};
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM};
@@ -35,8 +72,8 @@ fn send_f10() -> bool {
         SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_F10,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow, ShowWindow,
-        SW_RESTORE,
+        BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowThreadProcessId,
+        IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
     };
 
     struct WindowSearch {
@@ -57,21 +94,36 @@ fn send_f10() -> bool {
 
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::All, true);
-    let Some(pid) = system.processes().iter().find_map(|(pid, process)| {
-        process
-            .name()
-            .eq_ignore_ascii_case("StarRail.exe")
-            .then(|| pid.as_u32())
-    }) else {
-        return false;
-    };
-    let mut search = WindowSearch { pid, hwnd: None };
-    let _ = unsafe { EnumWindows(Some(find_window), LPARAM(&mut search as *mut _ as isize)) };
-    let Some(hwnd) = search.hwnd else {
+    let pids: Vec<u32> = system
+        .processes()
+        .iter()
+        .filter(|(_, process)| process.name().eq_ignore_ascii_case(process_name))
+        .map(|(pid, _)| pid.as_u32())
+        .collect();
+    let mut hwnd = None;
+    for pid in pids {
+        let mut search = WindowSearch { pid, hwnd: None };
+        let _ = unsafe { EnumWindows(Some(find_window), LPARAM(&mut search as *mut _ as isize)) };
+        if search.hwnd.is_some() {
+            hwnd = search.hwnd;
+            break;
+        }
+    }
+    let Some(hwnd) = hwnd else {
         return false;
     };
     let _ = unsafe { ShowWindow(hwnd, SW_RESTORE) };
-    if !unsafe { SetForegroundWindow(hwnd).as_bool() } {
+    let mut focused = false;
+    for _ in 0..5 {
+        let _ = unsafe { BringWindowToTop(hwnd) };
+        focused = unsafe { SetForegroundWindow(hwnd).as_bool() }
+            || unsafe { GetForegroundWindow() } == hwnd;
+        if focused {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(80));
+    }
+    if !focused {
         return false;
     }
     std::thread::sleep(std::time::Duration::from_millis(120));
@@ -142,13 +194,16 @@ mod tests {
 
     #[test]
     fn each_batch_with_one_triggers_once_and_eof_stops() {
-        let data = b"111xx1"; // Cursor 一次 read 返回全部 6 字节（64 > 6），含 b'1' → 触发 1 次
         let mut count = 0;
         let mut output = Vec::new();
-        serve(std::io::Cursor::new(data.to_vec()), &mut output, || {
-            count += 1;
-            true
-        });
+        serve(
+            std::io::Cursor::new(b"pStarRail.exe\0".to_vec()),
+            &mut output,
+            |_| {
+                count += 1;
+                true
+            },
+        );
         assert_eq!(count, 1);
         assert_eq!(output, b"1");
     }
@@ -156,7 +211,7 @@ mod tests {
     #[test]
     fn batch_without_one_does_not_trigger() {
         let mut count = 0;
-        serve(std::io::Cursor::new(b"hello".to_vec()), Vec::new(), || {
+        serve(std::io::Cursor::new(b"hello".to_vec()), Vec::new(), |_| {
             count += 1;
             true
         });
@@ -181,13 +236,14 @@ mod tests {
             }
         }
         let chunks = Chunked(vec![
-            std::io::Cursor::new(b"1".to_vec()),
+            std::io::Cursor::new(b"pStarRail".to_vec()),
             std::io::Cursor::new(b"zz".to_vec()),
-            std::io::Cursor::new(b"1".to_vec()),
+            std::io::Cursor::new(b".exe\0".to_vec()),
+            std::io::Cursor::new(b"pStarRail.exe\0".to_vec()),
         ]);
         let mut count = 0;
         let mut output = Vec::new();
-        serve(chunks, &mut output, || {
+        serve(chunks, &mut output, |_| {
             count += 1;
             true
         });
@@ -198,7 +254,27 @@ mod tests {
     #[test]
     fn failed_poke_writes_negative_ack() {
         let mut output = Vec::new();
-        serve(std::io::Cursor::new(b"1".to_vec()), &mut output, || false);
+        serve(
+            std::io::Cursor::new(b"pStarRail.exe\0".to_vec()),
+            &mut output,
+            |_| false,
+        );
         assert_eq!(output, b"0");
+    }
+
+    #[test]
+    fn process_names_containing_one_are_not_legacy_commands() {
+        let mut output = Vec::new();
+        let mut received = String::new();
+        serve(
+            std::io::Cursor::new(b"pGame1.exe\0".to_vec()),
+            &mut output,
+            |process| {
+                received = process.to_string();
+                true
+            },
+        );
+        assert_eq!(received, "Game1.exe");
+        assert_eq!(output, b"1");
     }
 }

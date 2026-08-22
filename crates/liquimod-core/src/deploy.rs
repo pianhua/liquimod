@@ -137,13 +137,16 @@ impl<'a> Deployer<'a> {
                 junction::create(source, link)
                     .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
             }
-            DeployStrategy::CopyFallback => {
-                Self::prepare_copy_destination(link)?;
-                copy_dir_recursive(source, link)?;
-                std::fs::write(link.join(COPY_MARKER), b"LiquiMod managed deployment\n")?;
-            }
+            DeployStrategy::CopyFallback => return Err(Self::junction_required_error()),
         }
         Ok(())
+    }
+
+    fn junction_required_error() -> crate::error::LiquiModError {
+        crate::error::LiquiModError::Junction(
+            "LiquiMod 只使用 3DMigoto Junction，不再创建 Mod 的复制副本；请将应用数据根与 3DMigoto Mods 放在同一 NTFS/ReFS 卷后重试"
+                .to_string(),
+        )
     }
 
     fn cleanup_runtime(&self, id: i64) -> Result<()> {
@@ -192,23 +195,6 @@ impl<'a> Deployer<'a> {
                 )));
             }
         }
-        Ok(())
-    }
-
-    fn prepare_copy_destination(link: &Path) -> Result<()> {
-        if junction::exists(link).unwrap_or(false) {
-            Self::remove_deployed_path(link, DeployStrategy::Junction)?;
-        } else if link.exists() {
-            if link.is_dir() && link.join(COPY_MARKER).is_file() {
-                std::fs::remove_dir_all(link)?;
-            } else {
-                return Err(crate::error::LiquiModError::Junction(format!(
-                    "path occupied by unmanaged content: {}",
-                    link.display()
-                )));
-            }
-        }
-        std::fs::create_dir_all(link)?;
         Ok(())
     }
 
@@ -296,25 +282,6 @@ impl<'a> Deployer<'a> {
         }
         Ok(())
     }
-}
-
-fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = dest.join(entry.file_name());
-        let ft = entry.file_type()?;
-        if ft.is_symlink() {
-            continue;
-        }
-        if ft.is_dir() {
-            std::fs::create_dir_all(&to)?;
-            copy_dir_recursive(&from, &to)?;
-        } else if ft.is_file() {
-            std::fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

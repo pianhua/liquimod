@@ -31,6 +31,7 @@ const config: import("$lib/api").ConfigDto = {
   library_root: "C:/mock/Library",
   previous_library_root: null,
   mods_dir: "D:/game/Mods",
+  mod_sources: [],
   auto_enable: false,
   warn_multiple_mods: true,
   theme: "auto",
@@ -48,6 +49,7 @@ const testConfig: import("$lib/api").ConfigDto = {
   library_root: "C:/L",
   previous_library_root: null,
   mods_dir: null,
+  mod_sources: [],
   auto_enable: false,
   warn_multiple_mods: true,
   theme: "auto",
@@ -76,7 +78,7 @@ describe("Settings", () => {
 
   it("显示目录配置", () => {
     render(Settings, { props: { config, onback: () => {}, onchanged: () => {} } });
-    expect(screen.getByText("C:/mock/Library")).toBeTruthy();
+    expect(screen.getByText("LiquiMod/Library")).toBeTruthy();
     expect(screen.getByText("D:/game/Mods")).toBeTruthy();
   });
 

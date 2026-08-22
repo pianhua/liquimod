@@ -22,6 +22,16 @@ pub fn reconcile_and_diff_with_deploy(
     mods_dir: Option<&std::path::Path>,
     deploy: bool,
 ) -> Result<(usize, usize), String> {
+    reconcile_and_diff_with_sources(lib, mods_dir, &[], deploy)
+}
+
+/// 扫描托管库与配置的外部源，并按需重建 3Dmigoto 运行入口。
+pub fn reconcile_and_diff_with_sources(
+    lib: &liquimod_core::library::Library,
+    mods_dir: Option<&std::path::Path>,
+    external_sources: &[std::path::PathBuf],
+    deploy: bool,
+) -> Result<(usize, usize), String> {
     use std::collections::HashSet;
     let key = |m: &liquimod_core::models::ModEntry| (m.character.clone(), m.name.clone());
     let before: HashSet<_> = lib
@@ -30,6 +40,8 @@ pub fn reconcile_and_diff_with_deploy(
         .iter()
         .map(key)
         .collect();
+    lib.scan_external_sources(external_sources, liquimod_core::games::hsr::Hsr::shared())
+        .map_err(|e| format!("外部 Mod 源扫描失败：{e}"))?;
     lib.scan().map_err(|e| e.to_string())?;
     // 扫描后统一归类（仅对未分类 Mod 赋初始分类）
     commands::sync_mod_categories(lib, liquimod_core::games::hsr::Hsr::shared())
@@ -56,27 +68,39 @@ pub fn reconcile_and_diff_with_deploy(
 /// （重）启动目录监控：变动 → 对账 → emit library-changed（added/removed 为 Mod 增量）。
 /// 绝不改动用户文件：scan 只对账 DB，reconcile 只清指向仓库内的孤儿链接。
 pub fn start_watcher(app: &tauri::AppHandle, state: &AppState) {
-    let (root, mods_dir) = {
+    let (root, mods_dir, configured_sources) = {
         let cfg = state.config.lock().unwrap();
-        (cfg.library_root.clone(), cfg.mods_dir.clone())
+        (
+            cfg.library_root.clone(),
+            cfg.mods_dir.clone(),
+            cfg.mod_sources.clone(),
+        )
     };
     let library = Arc::clone(&state.library);
-    let external_sources = library
-        .lock()
-        .unwrap()
-        .list()
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|entry| entry.source_path.map(std::path::PathBuf::from))
-        .filter(|path| path.is_dir())
-        .collect();
+    let mut external_sources = configured_sources.clone();
+    external_sources.extend(
+        library
+            .lock()
+            .unwrap()
+            .list()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|entry| entry.source_path.map(std::path::PathBuf::from))
+            .filter(|path| path.is_dir()),
+    );
     let game_running = Arc::clone(&state.game_running);
     let app2 = app.clone();
     let mods_dir2 = mods_dir.clone();
+    let external_sources2 = configured_sources.clone();
     let watcher = liquimod_core::watch::start(root, mods_dir, external_sources, move || {
         let lib = library.lock().unwrap();
         let deploy = !game_running.load(std::sync::atomic::Ordering::Relaxed);
-        match reconcile_and_diff_with_deploy(&lib, mods_dir2.as_deref(), deploy) {
+        match reconcile_and_diff_with_sources(
+            &lib,
+            mods_dir2.as_deref(),
+            &external_sources2,
+            deploy,
+        ) {
             Ok((added, removed)) => {
                 drop(lib);
                 tracing::info!("reconcile: +{added} / -{removed}");
@@ -131,7 +155,10 @@ pub fn start_game_watchdog(app: &tauri::AppHandle, state: &AppState) {
                 let deferred_runtime_cleanup = Arc::clone(&deferred_runtime_cleanup);
                 let app3 = app2.clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    let mods_dir = config.lock().unwrap().mods_dir.clone();
+                    let (mods_dir, sources) = {
+                        let cfg = config.lock().unwrap();
+                        (cfg.mods_dir.clone(), cfg.mod_sources.clone())
+                    };
                     let lib = library.lock().unwrap();
                     if let Some(dir) = mods_dir.as_deref() {
                         if let Err(error) =
@@ -141,7 +168,8 @@ pub fn start_game_watchdog(app: &tauri::AppHandle, state: &AppState) {
                                 .emit("liquimod-toast", format!("游戏退出后事务恢复失败：{error}"));
                         }
                     }
-                    match reconcile_and_diff(&lib, mods_dir.as_deref()) {
+                    match reconcile_and_diff_with_sources(&lib, mods_dir.as_deref(), &sources, true)
+                    {
                         Ok((added, removed)) if added > 0 || removed > 0 => {
                             deferred_runtime_cleanup.lock().unwrap().clear();
                             let _ = app3.emit(
@@ -215,7 +243,8 @@ pub fn run() {
             {
                 let lib = state.library.lock().unwrap();
                 let deploy = !running;
-                match reconcile_and_diff_with_deploy(&lib, mods_dir.as_deref(), deploy) {
+                let sources = state.config.lock().unwrap().mod_sources.clone();
+                match reconcile_and_diff_with_sources(&lib, mods_dir.as_deref(), &sources, deploy) {
                     Ok((added, removed)) => tracing::info!("startup scan: +{added} / -{removed}"),
                     Err(e) => tracing::warn!("startup scan failed: {e}"),
                 }
@@ -228,6 +257,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::choose_mods_dir,
+            commands::add_mod_source,
+            commands::remove_mod_source,
             commands::get_storage_info,
             commands::migrate_storage,
             commands::cleanup_previous_library,
@@ -263,11 +294,9 @@ pub fn run() {
             commands::set_character_category_name,
             commands::choose_game_exe,
             commands::get_game_status,
-            commands::choose_loader_exe,
             commands::launch_game,
             commands::launch_game_native,
             commands::launch_official_launcher,
-            commands::launch_loader,
             commands::inspect_3dmigoto_dir,
             commands::import_3dmigoto_dir,
             commands::get_mod_keys,
@@ -297,7 +326,11 @@ pub fn run() {
             commands::auto_detect_game_exe,
             commands::init_migoto_workspace,
             commands::check_migoto_update,
+            commands::check_xxmi_update,
+            commands::get_core_package_status,
             commands::install_migoto_update,
+            commands::install_srmi_update,
+            commands::install_xxmi_update,
             commands::switch_to_managed_migoto,
             commands::migrate_mods_from_old_migoto,
             commands::set_work_mode,

@@ -26,6 +26,26 @@ pub struct Hsr {
     characters: RwLock<Arc<[CharacterInfo]>>,
 }
 
+fn asset_root_override() -> &'static RwLock<Option<PathBuf>> {
+    static ROOT: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+    ROOT.get_or_init(|| RwLock::new(None))
+}
+
+fn asset_root() -> PathBuf {
+    if let Some(root) = asset_root_override()
+        .read()
+        .ok()
+        .and_then(|root| root.clone())
+    {
+        return root;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("GameAssets")
+}
+
 impl Hsr {
     pub fn new() -> Self {
         let chars = Self::load_characters();
@@ -59,12 +79,8 @@ impl Hsr {
             vendored_map.insert(c.internal_name.to_lowercase(), idx);
         }
 
-        // 2. 尝试从 LocalAppData/LiquiMod/GameAssets/Honkai/characters.json 读取云端同步资产
-        let local_asset_dir = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("LiquiMod")
-            .join("GameAssets")
-            .join("Honkai");
+        // 2. 尝试从便携数据根/GameAssets/Honkai/characters.json 读取云端同步资产
+        let local_asset_dir = asset_root().join("Honkai");
 
         let custom_file = local_asset_dir.join("characters.json");
         if custom_file.exists() {
@@ -134,6 +150,13 @@ impl Hsr {
         let updated = Self::load_characters();
         if let Ok(mut guard) = self.characters.write() {
             *guard = Arc::from(updated.into_boxed_slice());
+        }
+    }
+
+    /// 设置便携数据根下的角色资产目录；应用迁移数据根后调用并 reload。
+    pub fn set_asset_root(root: PathBuf) {
+        if let Ok(mut guard) = asset_root_override().write() {
+            *guard = Some(root);
         }
     }
 

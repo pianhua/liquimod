@@ -113,8 +113,8 @@ pub fn copy_managed_directory(source: &Path, destination: &Path) -> Result<()> {
     std::fs::create_dir_all(parent)?;
     let staging = parent.join(format!(".liquimod-copying-{}", uuid::Uuid::new_v4()));
     let result = (|| {
-        copy_tree(source, &staging, false)?;
-        let source_stats = tree_stats(source)?;
+        copy_tree_managed_runtime(source, &staging)?;
+        let source_stats = managed_tree_stats(source)?;
         let target_stats = tree_stats(&staging)?;
         if source_stats != target_stats {
             return Err(invalid_input("托管 3DMigoto 目录复制校验失败"));
@@ -129,11 +129,29 @@ pub fn copy_managed_directory(source: &Path, destination: &Path) -> Result<()> {
 }
 
 fn copy_tree(source: &Path, destination: &Path, library_root: bool) -> Result<()> {
+    copy_tree_inner(source, destination, library_root, false)
+}
+
+/// Copy the managed 3DMigoto runtime without copying the physical Mod payload.
+/// `Mods` is only a Junction entrypoint in a portable LiquiMod workspace.
+fn copy_tree_managed_runtime(source: &Path, destination: &Path) -> Result<()> {
+    copy_tree_inner(source, destination, false, true)
+}
+
+fn copy_tree_inner(
+    source: &Path,
+    destination: &Path,
+    library_root: bool,
+    skip_mods_entrypoint: bool,
+) -> Result<()> {
     std::fs::create_dir_all(destination)?;
     for entry in std::fs::read_dir(source)? {
         let entry = entry?;
         let name = entry.file_name();
         if library_root && should_skip_library_entry(&name.to_string_lossy()) {
+            continue;
+        }
+        if skip_mods_entrypoint && name.to_string_lossy().eq_ignore_ascii_case("Mods") {
             continue;
         }
         let path = entry.path();
@@ -143,7 +161,7 @@ fn copy_tree(source: &Path, destination: &Path, library_root: bool) -> Result<()
         }
         let target = destination.join(&name);
         if metadata.is_dir() {
-            copy_tree(&path, &target, false)?;
+            copy_tree_inner(&path, &target, false, false)?;
         } else if metadata.is_file() {
             std::fs::copy(path, target)?;
         }
@@ -152,6 +170,14 @@ fn copy_tree(source: &Path, destination: &Path, library_root: bool) -> Result<()
 }
 
 fn tree_stats(root: &Path) -> Result<(u64, u64)> {
+    tree_stats_inner(root, false)
+}
+
+fn managed_tree_stats(root: &Path) -> Result<(u64, u64)> {
+    tree_stats_inner(root, true)
+}
+
+fn tree_stats_inner(root: &Path, skip_mods_entrypoint: bool) -> Result<(u64, u64)> {
     if !root.exists() {
         return Ok((0, 0));
     }
@@ -163,6 +189,12 @@ fn tree_stats(root: &Path) -> Result<(u64, u64)> {
             let entry = entry?;
             let name = entry.file_name();
             if is_root && should_skip_library_entry(&name.to_string_lossy()) {
+                continue;
+            }
+            if is_root
+                && skip_mods_entrypoint
+                && name.to_string_lossy().eq_ignore_ascii_case("Mods")
+            {
                 continue;
             }
             let path = entry.path();
