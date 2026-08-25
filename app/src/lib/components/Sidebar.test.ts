@@ -1,0 +1,75 @@
+import { render, screen, fireEvent } from "@testing-library/svelte";
+import { describe, expect, it, vi } from "vitest";
+import Sidebar from "./Sidebar.svelte";
+import type { CategoryDto } from "$lib/api";
+import type { View } from "$lib/view";
+
+const cats: CategoryDto[] = [
+  { id: 1, name: "光锥", ord: 1, kind: "lightcone", mod_count: 2 },
+  { id: 2, name: "立绘", ord: 2, kind: "portrait", mod_count: 0 },
+  { id: 3, name: "场景", ord: 3, kind: "scene", mod_count: 0 },
+  { id: 4, name: "NPC", ord: 4, kind: "npc", mod_count: 1 },
+  { id: 5, name: "其他", ord: 5, kind: "other", mod_count: 0 },
+  { id: 9, name: "武器", ord: 6, kind: null, mod_count: 3 },
+];
+
+type SidebarProps = {
+  view: View;
+  categories: CategoryDto[];
+  charCatName: string;
+  charCount: number;
+  collapsed?: boolean;
+  onnavigate: (v: View) => void;
+};
+
+function props(over: Partial<SidebarProps> = {}) {
+  return {
+    view: { kind: "home" } as const,
+    categories: cats,
+    charCatName: "角色",
+    charCount: 3,
+    collapsed: false,
+    onnavigate: vi.fn(),
+    ...over,
+  };
+}
+
+describe("Sidebar", () => {
+  it("渲染核心库与分类导航", () => {
+    render(Sidebar, { props: props() });
+    expect(screen.getByText("角色")).toBeTruthy();
+    expect(screen.getByText("光锥")).toBeTruthy();
+    expect(screen.getByText("立绘")).toBeTruthy();
+    expect(screen.getByText("场景")).toBeTruthy();
+    expect(screen.getByText("NPC")).toBeTruthy();
+    expect(screen.getByText("其他")).toBeTruthy();
+    expect(screen.getByText("武器")).toBeTruthy();
+  });
+
+  it("显示各类计数", () => {
+    render(Sidebar, { props: props() });
+    expect(screen.getByText("2")).toBeTruthy();
+    expect(screen.getByText("1")).toBeTruthy();
+    expect(screen.getAllByText("3").length).toBe(2);
+  });
+
+  it("点击角色导航到 home", async () => {
+    const p = props();
+    render(Sidebar, { props: p });
+    await fireEvent.click(screen.getByText("角色"));
+    expect(p.onnavigate).toHaveBeenCalledWith({ kind: "home" });
+  });
+
+  it("点击实体类导航到 type", async () => {
+    const p = props();
+    render(Sidebar, { props: p });
+    await fireEvent.click(screen.getByText("光锥"));
+    expect(p.onnavigate).toHaveBeenCalledWith({ kind: "type", id: 1, name: "光锥" });
+  });
+
+  it("当前 type 视图高亮", () => {
+    render(Sidebar, { props: props({ view: { kind: "type", id: 1, name: "光锥" } }) });
+    const btn = screen.getByText("光锥").closest("button")!;
+    expect(btn.getAttribute("aria-current")).toBe("page");
+  });
+});

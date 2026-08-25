@@ -1,0 +1,34 @@
+[package]
+name = "liquimod-core"
+version = "0.1.0-beta.1"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+thiserror = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+junction = "1"
+zip = { version = "8.6.0", features = ["aes-crypto", "deflate"] }
+sevenz-rust2 = { version = "0.21.5", features = ["aes256", "util"] }
+unrar = "0.5.8"
+uuid = { version = "1.24.1", features = ["v4"] }
+notify = "8"
+sysinfo = "0.33"
+windows = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_IO", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+rayon = "1.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "fs", "io-util"] }
+futures-util = "0.3"
+dirs = "6"
+fs2 = "0.4"
+p384 = { version = "0.13", features = ["ecdsa", "pem"] }
+sha2 = "0.10"
+libloading = "0.8"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

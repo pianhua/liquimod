@@ -1,0 +1,942 @@
+use crate::db::Database;
+use crate::error::Result;
+use crate::games::Game;
+use crate::models::{ModEntry, ModStorageKind};
+use crate::paths::{is_valid_segment, LibraryLayout};
+use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
+
+pub(crate) const INSTALLING_MARKER: &str = ".liquimod-installing";
+pub(crate) static INSTALL_LOCK: Mutex<()> = Mutex::new(());
+
+pub struct Library {
+    pub layout: LibraryLayout,
+    pub db: Database,
+}
+
+impl Library {
+    pub fn init(root: &Path) -> Result<Self> {
+        let layout = LibraryLayout::new(root);
+        std::fs::create_dir_all(layout.mods_root())?;
+        let db = Database::open(&layout.db_path())?;
+        clean_temp_dirs(&layout.root.join("tmp"))?;
+        recover_pending_installs(&layout, &db)?;
+        Ok(Self { layout, db })
+    }
+
+    pub fn open(root: &Path) -> Result<Self> {
+        let layout = LibraryLayout::new(root);
+        let db = Database::open(&layout.db_path())?;
+        clean_temp_dirs(&layout.root.join("tmp"))?;
+        recover_pending_installs(&layout, &db)?;
+        Ok(Self { layout, db })
+    }
+
+    pub fn list(&self) -> Result<Vec<ModEntry>> {
+        self.db.list_mods()
+    }
+
+    pub fn scan(&self) -> Result<Vec<ModEntry>> {
+        use rayon::prelude::*;
+
+        recover_pending_installs(&self.layout, &self.db)?;
+        let mut seen: Vec<(String, String)> = Vec::new();
+        let mods_root = self.layout.mods_root();
+        if !mods_root.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("library mods root missing: {}", mods_root.display()),
+            )
+            .into());
+        }
+
+        struct ModCandidate {
+            character: String,
+            name: String,
+            path: PathBuf,
+        }
+
+        struct ModScanResult {
+            character: String,
+            name: String,
+            size: i64,
+            count: i64,
+        }
+
+        let mut candidates = Vec::new();
+        for char_entry in std::fs::read_dir(&mods_root)? {
+            let char_entry = char_entry?;
+            let character = char_entry.file_name().to_string_lossy().into_owned();
+            let ft = char_entry.file_type()?;
+            if !ft.is_dir() || ft.is_symlink() || !is_valid_segment(&character) {
+                continue;
+            }
+            for mod_entry in std::fs::read_dir(char_entry.path())? {
+                let mod_entry = mod_entry?;
+                let name = mod_entry.file_name().to_string_lossy().into_owned();
+                let ft = mod_entry.file_type()?;
+                if !ft.is_dir() || ft.is_symlink() || !is_valid_segment(&name) {
+                    continue;
+                }
+                candidates.push(ModCandidate {
+                    character: character.clone(),
+                    name,
+                    path: mod_entry.path(),
+                });
+            }
+        }
+
+        // Rayon 多核并行计算各个 Mod 的统计数据（文件数与占用体积）
+        let results: Vec<ModScanResult> = candidates
+            .into_par_iter()
+            .map(|c| {
+                let (size, count) = dir_stats(&c.path);
+                ModScanResult {
+                    character: c.character,
+                    name: c.name,
+                    size,
+                    count,
+                }
+            })
+            .collect();
+
+        // 统一写入数据库
+        for item in &results {
+            if self
+                .db
+                .find_mod(&item.character, &item.name)?
+                .is_some_and(|entry| entry.storage_kind == ModStorageKind::External)
+            {
+                continue;
+            }
+            let rel = format!("mods/{}/{}", item.character, item.name);
+            let id = self.db.upsert_mod(&item.character, &item.name, &rel)?;
+            if (item.size, item.count) != (-1, -1) {
+                self.db.update_stats(id, item.size, item.count)?;
+            }
+            let current = self.db.get_mod(id)?;
+            let root = self.layout.mod_dir(&item.character, &item.name);
+            let active =
+                crate::variants::active_variant_name(&root, current.active_variant.as_deref());
+            if active != current.active_variant {
+                self.db.set_active_variant(id, active.as_deref())?;
+            }
+            seen.push((item.character.clone(), item.name.clone()));
+        }
+
+        for m in self.db.list_mods()? {
+            if m.storage_kind == ModStorageKind::External {
+                if let Ok(root) = self.entry_source_dir(&m) {
+                    refresh_stats(&self.db, m.id, &root)?;
+                    let active =
+                        crate::variants::active_variant_name(&root, m.active_variant.as_deref());
+                    if active != m.active_variant {
+                        self.db.set_active_variant(m.id, active.as_deref())?;
+                    }
+                }
+                continue;
+            }
+            if !seen.contains(&(m.character.clone(), m.name.clone())) {
+                self.db.remove_mod(m.id)?;
+                crate::thumbs::remove_thumbnail(&self.layout.root, m.id);
+            }
+        }
+        // 回收孤儿缩略图：索引对齐后，清理已不存在 mod 的缓存（防 rowid 复用/残留累积）
+        let valid_ids: std::collections::HashSet<i64> =
+            self.db.list_mods()?.iter().map(|m| m.id).collect();
+        crate::thumbs::gc_thumbnails(&self.layout.root, &valid_ids);
+        self.db.list_mods()
+    }
+
+    /// 扫描用户配置的外部 Mod 源目录。
+    ///
+    /// 每个源支持两种常见布局：
+    /// - 源目录本身就是一个 Mod；
+    /// - 源目录下直接放 Mod，或按“角色/Mod”放置。
+    ///
+    /// 只建立索引，不复制、移动、重命名或删除源文件。
+    pub fn scan_external_sources(&self, roots: &[PathBuf], game: &dyn Game) -> Result<usize> {
+        let library_root = self.layout.root.canonicalize()?;
+        let mut discovered = 0;
+        let mut seen_sources = std::collections::HashSet::new();
+
+        for configured_root in roots {
+            let Ok(root) = configured_root.canonicalize() else {
+                continue;
+            };
+            if !root.is_dir()
+                || root == library_root
+                || root.starts_with(&library_root)
+                || library_root.starts_with(&root)
+            {
+                continue;
+            }
+
+            let mut candidates: Vec<(PathBuf, Option<String>)> = Vec::new();
+            if looks_like_mod_folder(&root) {
+                candidates.push((root.clone(), None));
+            } else if let Ok(first_level) = std::fs::read_dir(&root) {
+                for first in first_level.flatten() {
+                    let first_path = first.path();
+                    if !first.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                        continue;
+                    }
+                    if looks_like_mod_folder(&first_path) {
+                        candidates.push((first_path, None));
+                        continue;
+                    }
+                    let character_hint = first.file_name().to_string_lossy().into_owned();
+                    if let Ok(second_level) = std::fs::read_dir(&first_path) {
+                        for second in second_level.flatten() {
+                            let second_path = second.path();
+                            if second.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                                && looks_like_mod_folder(&second_path)
+                            {
+                                candidates.push((second_path, Some(character_hint.clone())));
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (source, character_hint) in candidates {
+                let source = source.canonicalize()?;
+                let source_text = source
+                    .to_string_lossy()
+                    .trim_start_matches(r"\\?\")
+                    .to_string();
+                if !seen_sources.insert(source_text.clone()) {
+                    continue;
+                }
+                let name = source
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .filter(|value| is_valid_segment(value))
+                    .unwrap_or("External Mod")
+                    .to_string();
+                let character = character_hint
+                    .filter(|value| is_valid_segment(value))
+                    .or_else(|| crate::games::infer_character(&source, game))
+                    .unwrap_or_else(|| "Others".to_string());
+                let existed = self.db.find_external_source(&source_text)?.is_some();
+                let id = self
+                    .db
+                    .upsert_external_mod(&character, &name, &source_text)?;
+                refresh_stats(&self.db, id, &source)?;
+                let current = self.db.get_mod(id)?;
+                let active = crate::variants::active_variant_name(
+                    &source,
+                    current.active_variant.as_deref(),
+                );
+                if active != current.active_variant {
+                    self.db.set_active_variant(id, active.as_deref())?;
+                }
+                if !existed {
+                    discovered += 1;
+                }
+            }
+        }
+        Ok(discovered)
+    }
+
+    /// 把外部文件夹复制进仓库并收录索引。已存在同名 mod 则覆盖式合并。
+    pub fn add_folder(&self, src: &Path, character: &str, name: &str) -> Result<ModEntry> {
+        if !is_valid_segment(character) {
+            return Err(crate::error::LiquiModError::InvalidName(character.into()));
+        }
+        if !is_valid_segment(name) {
+            return Err(crate::error::LiquiModError::InvalidName(name.into()));
+        }
+        let dest = self.layout.mod_dir(character, name);
+        let src_canon = src.canonicalize()?;
+        std::fs::create_dir_all(&dest)?;
+        let dest_canon = dest.canonicalize()?;
+        if src_canon.starts_with(&dest_canon) || dest_canon.starts_with(&src_canon) {
+            let _ = std::fs::remove_dir_all(&dest);
+            return Err(crate::error::LiquiModError::InvalidName(name.into()));
+        }
+        if let Err(e) = copy_dir_recursive(&src_canon, &dest_canon) {
+            let _ = std::fs::remove_dir_all(&dest);
+            return Err(e);
+        }
+        let rel = format!("mods/{}/{}", character, name);
+        let id = self.db.upsert_mod(character, name, &rel)?;
+        refresh_stats(&self.db, id, &dest)?;
+        self.db.get_mod(id)
+    }
+
+    /// 连接外部 Mod，不复制也不取得源目录所有权。
+    pub fn add_external_folder(&self, src: &Path, character: &str, name: &str) -> Result<ModEntry> {
+        if !is_valid_segment(character) {
+            return Err(crate::error::LiquiModError::InvalidName(character.into()));
+        }
+        if !is_valid_segment(name) {
+            return Err(crate::error::LiquiModError::InvalidName(name.into()));
+        }
+        if !src.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("external mod folder missing: {}", src.display()),
+            )
+            .into());
+        }
+        let source = src.canonicalize()?;
+        let library = self.layout.root.canonicalize()?;
+        if source.starts_with(&library) || library.starts_with(&source) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "external mod folder overlaps the managed library",
+            )
+            .into());
+        }
+        if self.db.name_taken(character, name, -1)? {
+            return Err(crate::error::LiquiModError::DestinationExists {
+                character: character.into(),
+                name: name.into(),
+            });
+        }
+        let source_text = source
+            .to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .to_string();
+        if self.db.external_path_taken(&source_text)? {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "external mod folder is already connected",
+            )
+            .into());
+        }
+        let id = self.db.insert_external_mod(character, name, &source_text)?;
+        refresh_stats(&self.db, id, &source)?;
+        let active = crate::variants::active_variant_name(&source, None);
+        self.db.set_active_variant(id, active.as_deref())?;
+        self.db.get_mod(id)
+    }
+
+    pub fn entry_source_dir(&self, entry: &ModEntry) -> Result<PathBuf> {
+        match entry.storage_kind {
+            ModStorageKind::Managed => {
+                let path = self.layout.root.join(&entry.rel_path);
+                if path.is_dir() {
+                    Ok(path)
+                } else {
+                    Err(crate::error::LiquiModError::ModNotFound(
+                        path.display().to_string(),
+                    ))
+                }
+            }
+            ModStorageKind::External => {
+                let path = entry
+                    .source_path
+                    .as_deref()
+                    .map(PathBuf::from)
+                    .filter(|path| path.is_dir())
+                    .ok_or_else(|| {
+                        crate::error::LiquiModError::ModNotFound(format!(
+                            "external source unavailable: {}",
+                            entry.source_path.as_deref().unwrap_or("unknown")
+                        ))
+                    })?;
+                Ok(path.canonicalize().unwrap_or(path))
+            }
+        }
+    }
+
+    /// 重命名仓库内 Mod（只动文件系统与 DB；Junction 重建由调用方负责）。
+    /// 校验失败/冲突时目录保持原样。
+    pub fn rename_mod(&self, id: i64, new_name: &str) -> Result<ModEntry> {
+        if !is_valid_segment(new_name) {
+            return Err(crate::error::LiquiModError::InvalidName(new_name.into()));
+        }
+        let entry = self.db.get_mod(id)?;
+        if entry.name == new_name {
+            return Ok(entry);
+        }
+        if self.db.name_taken(&entry.character, new_name, id)? {
+            return Err(crate::error::LiquiModError::DestinationExists {
+                character: entry.character.clone(),
+                name: new_name.into(),
+            });
+        }
+        if entry.storage_kind == ModStorageKind::External {
+            self.db.rename_mod(id, new_name, &entry.rel_path)?;
+            return self.db.get_mod(id);
+        }
+        let old_dir = self.layout.root.join(&entry.rel_path);
+        let new_rel = format!("mods/{}/{}", entry.character, new_name);
+        let new_dir = self.layout.root.join(&new_rel);
+        std::fs::rename(&old_dir, &new_dir)?;
+        if let Err(e) = self.db.rename_mod(id, new_name, &new_rel) {
+            let _ = std::fs::rename(&new_dir, &old_dir); // DB 失败回滚目录
+            return Err(e);
+        }
+        self.db.get_mod(id)
+    }
+
+    /// 将仓库内 Mod 移动到另一个角色目录下（物理移动目录 + 更新 DB；Junction 重建由调用方负责）。
+    /// 目标角色不存在时会自动创建其根目录。
+    pub fn reassign_character(&self, id: i64, new_character: &str) -> Result<ModEntry> {
+        if !is_valid_segment(new_character) {
+            return Err(crate::error::LiquiModError::InvalidName(
+                new_character.into(),
+            ));
+        }
+        let entry = self.db.get_mod(id)?;
+        if entry.character == new_character {
+            return Ok(entry);
+        }
+        if self.db.name_taken(new_character, &entry.name, id)? {
+            return Err(crate::error::LiquiModError::DestinationExists {
+                character: new_character.into(),
+                name: entry.name.clone(),
+            });
+        }
+        if entry.storage_kind == ModStorageKind::External {
+            self.db
+                .reassign_character(id, new_character, &entry.rel_path)?;
+            return self.db.get_mod(id);
+        }
+        let old_dir = self.layout.root.join(&entry.rel_path);
+        let new_rel = format!("mods/{}/{}", new_character, entry.name);
+        let new_dir = self.layout.root.join(&new_rel);
+        if let Some(parent) = new_dir.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::rename(&old_dir, &new_dir)?;
+        if let Err(e) = self.db.reassign_character(id, new_character, &new_rel) {
+            let _ = std::fs::rename(&new_dir, &old_dir); // DB 失败回滚目录
+            return Err(e);
+        }
+        self.db.get_mod(id)
+    }
+}
+
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        let ft = entry.file_type()?;
+        // 跳过符号链接，与 scan 策略一致
+        if ft.is_symlink() {
+            continue;
+        }
+        if ft.is_dir() {
+            std::fs::create_dir_all(&to)?;
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+fn looks_like_mod_folder(path: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+        let kind = entry.file_type().ok();
+        if kind.as_ref().is_some_and(|value| value.is_dir())
+            && matches!(
+                name.as_str(),
+                "res" | "resources" | "texture" | "textures" | "shaderfixes"
+            )
+        {
+            return true;
+        }
+        if kind.as_ref().is_some_and(|value| value.is_file())
+            && matches!(
+                std::path::Path::new(&name)
+                    .extension()
+                    .and_then(|value| value.to_str()),
+                Some("ini" | "buf" | "ib" | "dds" | "hlsl" | "json")
+            )
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// 递归统计目录（总字节, 文件数）；任何一级读不了就返回 (-1, -1)（前端显示 "—"）。
+fn dir_stats(dir: &std::path::Path) -> (i64, i64) {
+    let mut stack = vec![dir.to_path_buf()];
+    let (mut size, mut count) = (0i64, 0i64);
+    while let Some(d) = stack.pop() {
+        let rd = match std::fs::read_dir(&d) {
+            Ok(r) => r,
+            Err(_) => return (-1, -1),
+        };
+        for e in rd.flatten() {
+            let ft = match e.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_dir() && !ft.is_symlink() {
+                stack.push(e.path());
+            } else if ft.is_file() {
+                count += 1;
+                size += e.metadata().map(|m| m.len()).unwrap_or(0) as i64;
+            }
+        }
+    }
+    (size, count)
+}
+
+/// 刷新 mod 统计：仅统计成功（非 -1）时更新 DB，失败保留旧值。
+fn refresh_stats(db: &Database, id: i64, path: &Path) -> Result<()> {
+    let (size, count) = dir_stats(path);
+    if (size, count) != (-1, -1) {
+        db.update_stats(id, size, count)?;
+    }
+    Ok(())
+}
+
+fn recover_pending_installs(layout: &LibraryLayout, db: &Database) -> Result<()> {
+    let _install_lock = INSTALL_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    for (op_id, op, payload) in db.pending_ops()? {
+        if op != "install" {
+            continue;
+        }
+        if let Some(destination) = install_destination(layout, &payload) {
+            let marker = destination.join(INSTALLING_MARKER);
+            if matches!(
+                std::fs::symlink_metadata(marker),
+                Ok(metadata) if metadata.file_type().is_file()
+            ) {
+                remove_path_if_present(&destination)?;
+            }
+        }
+        db.remove_op(op_id)?;
+    }
+    Ok(())
+}
+
+fn clean_temp_dirs(tmp_root: &Path) -> Result<()> {
+    let entries = match std::fs::read_dir(tmp_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_name().to_string_lossy().starts_with("liquimod-") {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+fn install_destination(layout: &LibraryLayout, payload: &str) -> Option<PathBuf> {
+    let payload_path = Path::new(payload);
+    let relative = if payload_path.is_absolute() {
+        payload_path.strip_prefix(&layout.root).ok()?
+    } else {
+        payload_path
+    };
+    let mut components = relative.components();
+    let Component::Normal(root) = components.next()? else {
+        return None;
+    };
+    let Component::Normal(character) = components.next()? else {
+        return None;
+    };
+    let Component::Normal(name) = components.next()? else {
+        return None;
+    };
+    if components.next().is_some() {
+        return None;
+    }
+    let root = root.to_str()?;
+    let character = character.to_str()?;
+    let name = name.to_str()?;
+    if root != "mods" || !is_valid_segment(character) || !is_valid_segment(name) {
+        return None;
+    }
+    Some(layout.mod_dir(character, name))
+}
+
+fn remove_path_if_present(path: &Path) -> Result<()> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        std::fs::remove_dir_all(path)?;
+    } else {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn init_creates_layout_and_scan_reconciles() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        assert!(lib.layout.mods_root().is_dir());
+        assert!(lib.layout.db_path().is_file());
+
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        fs::create_dir_all(lib.layout.mod_dir("Acheron", "Black")).unwrap();
+        let mods = lib.scan().unwrap();
+        assert_eq!(mods.len(), 2);
+
+        fs::remove_dir_all(lib.layout.mod_dir("Acheron", "Black")).unwrap();
+        let mods = lib.scan().unwrap();
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].character, "Firefly");
+
+        let lib2 = Library::open(tmp.path()).unwrap();
+        assert_eq!(lib2.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn add_folder_copies_and_indexes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(&tmp.path().join("lib")).unwrap();
+
+        let src = tmp.path().join("download/MyMod");
+        fs::create_dir_all(src.join("textures")).unwrap();
+        fs::write(src.join("mod.ini"), b"[Constants]").unwrap();
+        fs::write(src.join("textures/a.dds"), b"dds").unwrap();
+
+        let entry = lib.add_folder(&src, "Firefly", "MyMod").unwrap();
+        assert_eq!(entry.character, "Firefly");
+        assert!(lib
+            .layout
+            .mod_dir("Firefly", "MyMod")
+            .join("mod.ini")
+            .is_file());
+        assert!(lib
+            .layout
+            .mod_dir("Firefly", "MyMod")
+            .join("textures/a.dds")
+            .is_file());
+
+        assert!(lib.add_folder(&src, "bad/name", "x").is_err());
+        assert!(lib.add_folder(&src, "Firefly", "..").is_err());
+    }
+
+    #[test]
+    fn add_folder_rejects_overlapping_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(&tmp.path().join("lib")).unwrap();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "MyMod")).unwrap();
+        fs::write(lib.layout.mod_dir("Firefly", "MyMod").join("mod.ini"), b"x").unwrap();
+
+        // src 就是 dest
+        assert!(lib
+            .add_folder(&lib.layout.mod_dir("Firefly", "MyMod"), "Firefly", "MyMod")
+            .is_err());
+        // src 是 dest 的祖先
+        assert!(lib
+            .add_folder(&lib.layout.character_dir("Firefly"), "Firefly", "Sub")
+            .is_err());
+    }
+
+    #[cfg(windows)]
+    #[ignore = "需要创建符号链接的特权（开发者模式/管理员），有权限时用 --ignored 运行"]
+    #[test]
+    fn add_folder_skips_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(&tmp.path().join("lib")).unwrap();
+
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret.txt"), b"secret").unwrap();
+
+        let src = tmp.path().join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("mod.ini"), b"[Constants]").unwrap();
+        std::os::windows::fs::symlink_file(outside.join("secret.txt"), src.join("link.txt"))
+            .unwrap();
+
+        let entry = lib.add_folder(&src, "Firefly", "LinkTest").unwrap();
+        assert_eq!(entry.name, "LinkTest");
+        let dest = lib.layout.mod_dir("Firefly", "LinkTest");
+        assert!(dest.join("mod.ini").is_file());
+        assert!(!dest.join("link.txt").exists());
+    }
+
+    #[test]
+    fn scan_skips_files_and_invalid_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        fs::write(lib.layout.mods_root().join("loose.txt"), b"x").unwrap();
+        fs::write(lib.layout.character_dir("Firefly").join("note.txt"), b"x").unwrap();
+
+        let mods = lib.scan().unwrap();
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].character, "Firefly");
+        assert_eq!(mods[0].name, "Summer");
+    }
+
+    #[test]
+    fn scan_errors_when_mods_root_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Summer")).unwrap();
+        lib.scan().unwrap();
+        assert_eq!(lib.list().unwrap().len(), 1);
+
+        fs::remove_dir_all(lib.layout.mods_root()).unwrap();
+        assert!(lib.scan().is_err());
+        assert_eq!(lib.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn init_cleans_temp_dirs_on_startup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("library");
+        let temp_dir = root.join("tmp/liquimod-startup");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        Library::init(&root).unwrap();
+
+        assert!(!temp_dir.exists());
+    }
+
+    #[test]
+    fn scan_does_not_clean_active_temp_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let temp_dir = tmp.path().join("tmp/liquimod-active");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        lib.scan().unwrap();
+
+        assert!(temp_dir.exists());
+    }
+
+    #[test]
+    fn open_recovers_interrupted_install() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("library");
+        let lib = Library::init(&root).unwrap();
+        let destination = lib.layout.mod_dir("Firefly", "CrashedMod");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(destination.join("partial.txt"), b"partial").unwrap();
+        std::fs::write(destination.join(".liquimod-installing"), b"").unwrap();
+        let temp_dir = root.join("tmp/liquimod-crashed");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("partial.txt"), b"partial").unwrap();
+        lib.db
+            .op_begin("install", "mods/Firefly/CrashedMod")
+            .unwrap();
+        drop(lib);
+
+        let recovered = Library::open(&root).unwrap();
+
+        assert!(!destination.exists());
+        assert!(!temp_dir.exists());
+        assert!(recovered.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn open_preserves_unmarked_interrupted_install_destination() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("library");
+        let lib = Library::init(&root).unwrap();
+        let destination = lib.layout.mod_dir("Firefly", "ManualMod");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(destination.join("partial.txt"), b"partial").unwrap();
+        lib.db
+            .op_begin("install", "mods/Firefly/ManualMod")
+            .unwrap();
+        drop(lib);
+
+        let recovered = Library::open(&root).unwrap();
+
+        assert!(destination.exists());
+        assert!(destination.join("partial.txt").is_file());
+        assert!(recovered.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn dir_stats_counts_files_and_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.bin"), vec![0u8; 100]).unwrap();
+        std::fs::create_dir(tmp.path().join("sub")).unwrap();
+        std::fs::write(tmp.path().join("sub/b.bin"), vec![0u8; 50]).unwrap();
+        assert_eq!(dir_stats(tmp.path()), (150, 2));
+    }
+
+    #[test]
+    fn dir_stats_missing_dir_returns_minus_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(dir_stats(&tmp.path().join("nope")), (-1, -1));
+    }
+
+    #[test]
+    fn rename_mod_moves_dir_and_updates_db() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "A", "old").unwrap();
+        let renamed = lib.rename_mod(m.id, "new").unwrap();
+        assert_eq!(renamed.name, "new");
+        assert!(lib.layout.mod_dir("A", "new").is_dir());
+        assert!(!lib.layout.mod_dir("A", "old").exists());
+    }
+
+    #[test]
+    fn rename_mod_rejects_conflict_and_invalid() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m1 = lib.add_folder(src.path(), "A", "m1").unwrap();
+        lib.add_folder(src.path(), "A", "m2").unwrap();
+        assert!(matches!(
+            lib.rename_mod(m1.id, "m2"),
+            Err(crate::error::LiquiModError::DestinationExists { .. })
+        ));
+        assert!(matches!(
+            lib.rename_mod(m1.id, "a/b"),
+            Err(crate::error::LiquiModError::InvalidName(_))
+        ));
+        // 冲突失败后目录原样
+        assert!(lib.layout.mod_dir("A", "m1").is_dir());
+    }
+
+    #[test]
+    fn reassign_character_moves_dir_and_updates_db() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m = lib.add_folder(src.path(), "Others", "KafkaDress").unwrap();
+        let reassigned = lib.reassign_character(m.id, "Kafka").unwrap();
+        assert_eq!(reassigned.character, "Kafka");
+        assert_eq!(reassigned.name, "KafkaDress");
+        assert!(lib.layout.mod_dir("Kafka", "KafkaDress").is_dir());
+        assert!(!lib.layout.mod_dir("Others", "KafkaDress").exists());
+    }
+
+    #[test]
+    fn reassign_character_rejects_conflict_and_invalid() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), b"x").unwrap();
+        let m1 = lib.add_folder(src.path(), "Others", "Mod1").unwrap();
+        lib.add_folder(src.path(), "Kafka", "Mod1").unwrap();
+        assert!(matches!(
+            lib.reassign_character(m1.id, "Kafka"),
+            Err(crate::error::LiquiModError::DestinationExists { .. })
+        ));
+        assert!(matches!(
+            lib.reassign_character(m1.id, "bad/char/name"),
+            Err(crate::error::LiquiModError::InvalidName(_))
+        ));
+    }
+
+    #[test]
+    fn scan_updates_stats() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let dir = lib.layout.mod_dir("A", "m1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("f.bin"), vec![0u8; 42]).unwrap();
+        lib.scan().unwrap();
+        let m = &lib.list().unwrap()[0];
+        assert_eq!((m.size_bytes, m.file_count), (42, 1));
+    }
+
+    #[test]
+    fn refresh_stats_preserves_old_values_on_failure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let id = lib.db.upsert_mod("A", "m", "mods/A/m").unwrap();
+        lib.db.update_stats(id, 999, 9).unwrap();
+        // 路径不存在 → 统计失败，保留旧值
+        refresh_stats(&lib.db, id, &tmp.path().join("nope")).unwrap();
+        let m = lib.db.get_mod(id).unwrap();
+        assert_eq!((m.size_bytes, m.file_count), (999, 9));
+    }
+
+    #[test]
+    fn refresh_stats_overwrites_on_success() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let id = lib.db.upsert_mod("A", "m", "mods/A/m").unwrap();
+        lib.db.update_stats(id, 999, 9).unwrap();
+        let dir = lib.layout.mod_dir("A", "m");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("f.bin"), vec![0u8; 42]).unwrap();
+        // 统计成功 → 覆盖旧值
+        refresh_stats(&lib.db, id, &dir).unwrap();
+        let m = lib.db.get_mod(id).unwrap();
+        assert_eq!((m.size_bytes, m.file_count), (42, 1));
+    }
+
+    #[test]
+    fn add_folder_sets_stats_immediately() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("mod.ini"), vec![0u8; 7]).unwrap();
+        let m = lib.add_folder(src.path(), "A", "m1").unwrap();
+        assert!((m.size_bytes, m.file_count) != (-1, -1));
+        let got = lib.db.get_mod(m.id).unwrap();
+        assert!((got.size_bytes, got.file_count) != (-1, -1));
+    }
+
+    #[test]
+    fn external_folder_is_not_copied_and_survives_offline_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source_parent = tempfile::tempdir().unwrap();
+        let source = source_parent.path().join("SummerExternal");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("mod.ini"), b"[Constants]").unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let entry = lib
+            .add_external_folder(&source, "Firefly", "SummerExternal")
+            .unwrap();
+        assert_eq!(entry.storage_kind, ModStorageKind::External);
+        assert_eq!(
+            lib.entry_source_dir(&entry).unwrap(),
+            source.canonicalize().unwrap()
+        );
+        assert!(!lib.layout.mod_dir("Firefly", "SummerExternal").exists());
+
+        std::fs::remove_dir_all(&source).unwrap();
+        lib.scan().unwrap();
+        let offline = lib.db.get_mod(entry.id).unwrap();
+        assert_eq!(offline.storage_kind, ModStorageKind::External);
+        assert!(lib.entry_source_dir(&offline).is_err());
+    }
+
+    #[test]
+    fn external_rename_and_reassign_only_change_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("mod.ini"), b"x").unwrap();
+        let lib = Library::init(tmp.path()).unwrap();
+        let entry = lib
+            .add_external_folder(source.path(), "Others", "External")
+            .unwrap();
+        let renamed = lib.rename_mod(entry.id, "External Renamed").unwrap();
+        let reassigned = lib.reassign_character(entry.id, "Kafka").unwrap();
+        assert_eq!(renamed.source_path, reassigned.source_path);
+        assert_eq!(reassigned.character, "Kafka");
+        assert_eq!(reassigned.name, "External Renamed");
+        assert!(source.path().join("mod.ini").is_file());
+    }
+}

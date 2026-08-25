@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/liquimod-core", "crates/liquimod-cli", "crates/liquimod-refresh-helper", "app/src-tauri"]
+
+# 优化开发构建配置，限制 PDB 符号体积，避免 debug 缓存膨胀至数十 GB
+[profile.dev]
+debug = 1
+
+[profile.test]
+debug = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

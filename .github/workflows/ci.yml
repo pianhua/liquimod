@@ -1,0 +1,85 @@
+name: CI Quality Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-audit:
+    name: Cargo Security Audit (Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit locked dependencies
+        run: cargo audit
+
+  frontend-check:
+    name: Frontend Check & Test (Fast Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Frontend Diagnostics Check
+        working-directory: app
+        run: npm run check
+
+      - name: Frontend Vitest Tests
+        working-directory: app
+        run: npm test
+
+  rust-check:
+    name: Rust Check & Test (Windows Native)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache (Incremental)
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rust Format Check
+        run: cargo fmt --all -- --check
+
+      - name: Prepare Bundled Refresh Helper
+        run: cargo build --release -p liquimod-refresh-helper
+
+      - name: Rust Clippy Lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust Unit & Integration Tests
+        run: cargo test --workspace

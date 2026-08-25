@@ -1,0 +1,860 @@
+use super::{extract_recursive, resolve_content_root, ExtractReport, PasswordBook};
+use crate::db::Database;
+use crate::error::{LiquiModError, Result};
+use crate::games::{infer_character, Game};
+use crate::library::{Library, INSTALL_LOCK};
+use crate::paths::is_valid_segment;
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum InstallOutcome {
+    Installed {
+        mod_id: i64,
+        name: String,
+        character: String,
+        warnings: Vec<String>,
+    },
+    NeedsPassword,
+}
+
+/// 指定角色安装（CLI 与前端确认角色后使用）。
+pub fn install_archive(
+    db: &Database,
+    library: &Library,
+    archive_path: &Path,
+    character: &str,
+    explicit_password: Option<&str>,
+) -> Result<InstallOutcome> {
+    let character = character.to_owned();
+    install_inner(db, library, archive_path, explicit_password, |_| {
+        Ok(character)
+    })
+}
+
+/// 自动推断角色安装：解压后从内容推断，无线索时归入 "Others"。
+pub fn install_archive_inferred(
+    db: &Database,
+    library: &Library,
+    game: &dyn Game,
+    archive_path: &Path,
+    explicit_password: Option<&str>,
+) -> Result<InstallOutcome> {
+    install_inner(db, library, archive_path, explicit_password, |temp| {
+        Ok(infer_character(temp, game).unwrap_or_else(|| "Others".to_string()))
+    })
+}
+
+/// 指定角色安装外部文件夹（Folder-based Mod）。
+pub fn install_folder(
+    db: &Database,
+    library: &Library,
+    folder_path: &Path,
+    character: &str,
+) -> Result<InstallOutcome> {
+    let character = character.to_owned();
+    install_folder_inner(db, library, folder_path, |_| Ok(character))
+}
+
+/// 自动推断角色安装外部文件夹（Folder-based Mod）。
+pub fn install_folder_inferred(
+    db: &Database,
+    library: &Library,
+    game: &dyn Game,
+    folder_path: &Path,
+) -> Result<InstallOutcome> {
+    install_folder_inner(db, library, folder_path, |root| {
+        Ok(infer_character(root, game).unwrap_or_else(|| "Others".to_string()))
+    })
+}
+
+fn install_folder_inner(
+    db: &Database,
+    library: &Library,
+    folder_path: &Path,
+    resolve_character: impl FnOnce(&Path) -> Result<String>,
+) -> Result<InstallOutcome> {
+    if !folder_path.is_dir() {
+        return Err(LiquiModError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("不是有效的文件夹: {}", folder_path.display()),
+        )));
+    }
+    let name = folder_path
+        .file_name()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("folder has no name: {}", folder_path.display()),
+            )
+        })?;
+    let content_root = resolve_content_root(folder_path)?;
+    let character = resolve_character(&content_root)?;
+    commit_install_to_library(db, library, &content_root, &name, character, Vec::new())
+}
+
+/// Installs an archive into the library. Destination ownership checking, copying, and rollback are
+/// protected by a process-local mutex; simultaneous operations from multiple processes on the same
+/// library are outside the protection scope because the desktop application is single-instance.
+/// Successful nested extraction keeps both each `__nested_<n>/` result and the original nested
+/// archive file under the installed content root.
+/// 单阶段安装：解压（含密码本重试）→ 解析角色 → 复制入库 → 写 DB。
+fn install_inner(
+    db: &Database,
+    library: &Library,
+    archive_path: &Path,
+    explicit_password: Option<&str>,
+    resolve_character: impl FnOnce(&Path) -> Result<String>,
+) -> Result<InstallOutcome> {
+    let name = archive_path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("archive has no file stem: {}", archive_path.display()),
+            )
+        })?;
+    let temp_dir = TempExtractionDir::new(&library.layout.root);
+    let password_book = PasswordBook::new(db);
+    let mut candidates = vec![None];
+    if let Some(password) = explicit_password {
+        add_candidate(&mut candidates, Some(password.to_owned()));
+    }
+    for password in password_book.candidates()? {
+        add_candidate(&mut candidates, Some(password));
+    }
+
+    let mut successful_password: Option<Option<String>> = None;
+    let mut report = ExtractReport {
+        nested_warnings: Vec::new(),
+    };
+    for candidate in candidates {
+        temp_dir.prepare()?;
+        let mut attempt_report = ExtractReport {
+            nested_warnings: Vec::new(),
+        };
+        match extract_recursive(
+            archive_path,
+            temp_dir.path(),
+            candidate.as_deref(),
+            &mut attempt_report,
+        ) {
+            Ok(()) => {
+                successful_password = Some(candidate);
+                report = attempt_report;
+                break;
+            }
+            Err(LiquiModError::WrongPassword(_)) | Err(LiquiModError::PasswordRequired(_)) => {
+                temp_dir.clean()?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    let Some(password) = successful_password else {
+        return Ok(InstallOutcome::NeedsPassword);
+    };
+    let character = resolve_character(temp_dir.path())?;
+    let content_root = resolve_content_root(temp_dir.path())?;
+    let mut outcome = commit_install_to_library(
+        db,
+        library,
+        &content_root,
+        &name,
+        character,
+        report.nested_warnings,
+    )?;
+    if let InstallOutcome::Installed {
+        ref mut warnings, ..
+    } = outcome
+    {
+        if let Some(password) = password {
+            if password_book.learn(&password).is_err() {
+                warnings.push("密码未记住".to_string());
+            }
+        }
+    }
+    Ok(outcome)
+}
+
+fn commit_install_to_library(
+    db: &Database,
+    library: &Library,
+    content_root: &Path,
+    name: &str,
+    character: String,
+    warnings: Vec<String>,
+) -> Result<InstallOutcome> {
+    let _install_lock = INSTALL_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !is_valid_segment(&character) {
+        return Err(LiquiModError::InvalidName(character));
+    }
+    if !is_valid_segment(name) {
+        return Err(LiquiModError::InvalidName(name.to_string()));
+    }
+    let destination = library.layout.mod_dir(&character, name);
+    match std::fs::symlink_metadata(&destination) {
+        Ok(_) => {
+            return Err(LiquiModError::DestinationExists {
+                character: character.clone(),
+                name: name.to_string(),
+            });
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let op = db.op_begin("install", &format!("mods/{character}/{name}"))?;
+    let marker = destination.join(crate::library::INSTALLING_MARKER);
+    std::fs::create_dir_all(&destination)?;
+    std::fs::File::create(&marker)?;
+    let entry = match library.add_folder(content_root, &character, name) {
+        Ok(entry) => entry,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&destination);
+            return Err(error);
+        }
+    };
+    if let Err(error) = db.op_finish(op) {
+        let _ = library.db.remove_mod(entry.id);
+        return Err(error);
+    }
+    let _ = std::fs::remove_file(&marker);
+    Ok(InstallOutcome::Installed {
+        mod_id: entry.id,
+        name: entry.name,
+        character,
+        warnings,
+    })
+}
+
+fn add_candidate(candidates: &mut Vec<Option<String>>, candidate: Option<String>) {
+    if !candidates
+        .iter()
+        .any(|existing| existing.as_deref() == candidate.as_deref())
+    {
+        candidates.push(candidate);
+    }
+}
+
+struct TempExtractionDir {
+    path: PathBuf,
+}
+
+impl TempExtractionDir {
+    fn new(app_data: &Path) -> Self {
+        Self {
+            path: app_data
+                .to_path_buf()
+                .join("tmp")
+                .join(format!("liquimod-{}", Uuid::new_v4())),
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn prepare(&self) -> Result<()> {
+        self.clean()?;
+        std::fs::create_dir_all(&self.path)?;
+        Ok(())
+    }
+
+    fn clean(&self) -> Result<()> {
+        match std::fs::remove_dir_all(&self.path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+impl Drop for TempExtractionDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::archive::PasswordBook;
+    use crate::error::LiquiModError;
+    use crate::library::Library;
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use std::sync::{mpsc, Arc, Barrier, Mutex};
+    use std::thread;
+    use std::time::Duration;
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+
+    fn setup() -> (tempfile::TempDir, Library) {
+        let tmp = tempfile::tempdir().unwrap();
+        let library = Library::init(&tmp.path().join("library")).unwrap();
+        (tmp, library)
+    }
+
+    fn write_zip(path: &Path, files: &[(&str, &[u8])], password: Option<&str>) {
+        let file = File::create(path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        for (name, contents) in files {
+            let options = match password {
+                Some(password) => {
+                    SimpleFileOptions::default().with_aes_encryption(zip::AesMode::Aes256, password)
+                }
+                None => SimpleFileOptions::default(),
+            };
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(contents).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    fn zip_bytes(files: &[(&str, &[u8])], password: Option<&str>) -> Vec<u8> {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("nested.zip");
+        write_zip(&path, files, password);
+        std::fs::read(path).unwrap()
+    }
+
+    fn install_dirs(library: &Library) -> Vec<PathBuf> {
+        let tmp_root = library.layout.root.join("tmp");
+        let Ok(entries) = std::fs::read_dir(tmp_root) else {
+            return Vec::new();
+        };
+        entries
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("liquimod-"))
+            .map(|entry| entry.path())
+            .collect()
+    }
+
+    #[test]
+    fn installs_plain_zip_into_library() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("PlainMod.zip");
+        write_zip(&archive, &[("mod.ini", b"[Constants]")], None);
+
+        let outcome = install_archive(&library.db, &library, &archive, "Firefly", None).unwrap();
+
+        let InstallOutcome::Installed {
+            mod_id,
+            name,
+            character,
+            warnings,
+        } = outcome
+        else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(name, "PlainMod");
+        assert_eq!(character, "Firefly");
+        assert!(mod_id > 0);
+        assert!(warnings.is_empty());
+        assert!(library
+            .layout
+            .mod_dir("Firefly", "PlainMod")
+            .join("mod.ini")
+            .is_file());
+        assert!(!library
+            .layout
+            .mod_dir("Firefly", "PlainMod")
+            .join(".liquimod-installing")
+            .exists());
+        assert_eq!(library.list().unwrap().len(), 1);
+        assert!(install_dirs(&library).is_empty());
+    }
+
+    #[test]
+    fn wrong_book_then_explicit_password_works() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("SecretMod.zip");
+        write_zip(&archive, &[("secret.txt", b"secret")], Some("correct"));
+        library.db.add_password("wrong").unwrap();
+
+        let outcome =
+            install_archive(&library.db, &library, &archive, "Firefly", Some("correct")).unwrap();
+        assert!(matches!(outcome, InstallOutcome::Installed { .. }));
+        assert_eq!(
+            PasswordBook::new(&library.db).candidates().unwrap(),
+            ["wrong", "correct"]
+        );
+
+        let second_archive = tmp.path().join("SecondSecretMod.zip");
+        write_zip(
+            &second_archive,
+            &[("secret.txt", b"secret")],
+            Some("correct"),
+        );
+        let second =
+            install_archive(&library.db, &library, &second_archive, "Firefly", None).unwrap();
+        assert!(matches!(second, InstallOutcome::Installed { .. }));
+        assert_eq!(
+            PasswordBook::new(&library.db).candidates().unwrap(),
+            ["wrong", "correct"]
+        );
+    }
+
+    #[test]
+    fn all_passwords_fail_returns_needs_password() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("SecretMod.zip");
+        write_zip(&archive, &[("secret.txt", b"secret")], Some("correct"));
+        library.db.add_password("book-wrong").unwrap();
+
+        let outcome = install_archive(
+            &library.db,
+            &library,
+            &archive,
+            "Others",
+            Some("explicit-wrong"),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, InstallOutcome::NeedsPassword));
+        assert!(install_dirs(&library).is_empty());
+        assert!(library.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unencrypted_archive_needs_no_password() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("PlainMod.zip");
+        write_zip(&archive, &[("mod.ini", b"plain")], None);
+        library.db.add_password("unused").unwrap();
+
+        let outcome = install_archive(&library.db, &library, &archive, "Others", None).unwrap();
+
+        assert!(matches!(outcome, InstallOutcome::Installed { .. }));
+        assert_eq!(
+            PasswordBook::new(&library.db).candidates().unwrap(),
+            ["unused"]
+        );
+    }
+
+    #[test]
+    fn temp_dir_cleaned_on_failure() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("not-an-archive.bin");
+        std::fs::write(&archive, b"not an archive").unwrap();
+
+        let error = install_archive(&library.db, &library, &archive, "Others", None).unwrap_err();
+
+        assert!(matches!(error, LiquiModError::UnsupportedArchive(_)));
+        assert!(install_dirs(&library).is_empty());
+    }
+
+    #[test]
+    fn failed_add_folder_rolls_back_library_destination() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("PlainMod.zip");
+        write_zip(&archive, &[("mod.ini", b"plain")], None);
+
+        let error = install_archive(&library.db, &library, &archive, "bad/name", None).unwrap_err();
+
+        assert!(matches!(error, LiquiModError::InvalidName(_)));
+        assert!(install_dirs(&library).is_empty());
+        assert!(!library.layout.mod_dir("bad/name", "PlainMod").exists());
+        assert!(library.layout.character_dir("bad").read_dir().is_err());
+    }
+
+    #[test]
+    fn existing_destination_is_rejected_and_preserved() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("ExistingMod.zip");
+        write_zip(
+            &archive,
+            &[("readme.txt", b"new"), ("conflict/file.txt", b"new")],
+            None,
+        );
+        let destination = library.layout.mod_dir("Firefly", "ExistingMod");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(destination.join("marker.txt"), b"keep").unwrap();
+        std::fs::write(destination.join("conflict"), b"keep").unwrap();
+
+        let error = install_archive(&library.db, &library, &archive, "Firefly", None).unwrap_err();
+
+        assert!(matches!(error, LiquiModError::DestinationExists { .. }));
+        assert_eq!(
+            std::fs::read(destination.join("marker.txt")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(
+            std::fs::read(destination.join("conflict")).unwrap(),
+            b"keep"
+        );
+        assert!(install_dirs(&library).is_empty());
+    }
+
+    #[test]
+    fn failed_install_does_not_learn_password() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("SecretMod.zip");
+        write_zip(&archive, &[("secret.txt", b"secret")], Some("correct"));
+
+        let error = install_archive(&library.db, &library, &archive, "bad/name", Some("correct"))
+            .unwrap_err();
+
+        assert!(matches!(error, LiquiModError::InvalidName(_)));
+        assert!(PasswordBook::new(&library.db)
+            .candidates()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn learn_failure_is_reported_as_warning_after_install() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("SecretMod.zip");
+        write_zip(&archive, &[("secret.txt", b"secret")], Some("correct"));
+        let connection = rusqlite::Connection::open(library.layout.db_path()).unwrap();
+        connection
+            .execute_batch(
+                "DROP TABLE passwords;
+                 CREATE VIEW passwords AS
+                 SELECT CAST(NULL AS TEXT) AS value,
+                        CAST(NULL AS INTEGER) AS rowid
+                 WHERE 0;",
+            )
+            .unwrap();
+        drop(connection);
+
+        let outcome =
+            install_archive(&library.db, &library, &archive, "Others", Some("correct")).unwrap();
+
+        let InstallOutcome::Installed { warnings, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("密码未记住")));
+        assert!(library
+            .layout
+            .mod_dir("Others", "SecretMod")
+            .join("secret.txt")
+            .is_file());
+        assert_eq!(library.list().unwrap().len(), 1);
+        assert!(library.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn new_destination_is_removed_when_database_write_fails() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("DbFailureMod.zip");
+        write_zip(&archive, &[("mod.ini", b"plain")], None);
+        let connection = rusqlite::Connection::open(library.layout.db_path()).unwrap();
+        connection.execute("DROP TABLE mods", []).unwrap();
+
+        let error = install_archive(&library.db, &library, &archive, "Others", None).unwrap_err();
+
+        assert!(matches!(error, LiquiModError::Db(_)));
+        assert!(!library.layout.mod_dir("Others", "DbFailureMod").exists());
+        assert!(install_dirs(&library).is_empty());
+    }
+
+    #[test]
+    fn encrypted_nested_archive_warns_and_is_kept() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("OuterMod.zip");
+        let nested = zip_bytes(&[("secret.txt", b"secret")], Some("nested-password"));
+        write_zip(
+            &archive,
+            &[("plain.txt", b"plain"), ("nested.zip", nested.as_slice())],
+            None,
+        );
+
+        let outcome = install_archive(&library.db, &library, &archive, "Others", None).unwrap();
+
+        let InstallOutcome::Installed { warnings, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("nested.zip") && warning.contains("password")));
+        assert!(warnings
+            .iter()
+            .all(|warning| !warning.contains(tmp.path().to_string_lossy().as_ref())));
+        let destination = library.layout.mod_dir("Others", "OuterMod");
+        assert_eq!(
+            std::fs::read_to_string(destination.join("plain.txt")).unwrap(),
+            "plain"
+        );
+        assert!(destination.join("nested.zip").is_file());
+        assert!(!std::fs::read_dir(&destination).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("__nested_")));
+    }
+
+    #[test]
+    fn successful_nested_archive_keeps_package_and_extracted_content() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("OuterMod.zip");
+        let nested = zip_bytes(&[("inner.txt", b"nested")], None);
+        write_zip(
+            &archive,
+            &[("plain.txt", b"plain"), ("nested.zip", nested.as_slice())],
+            None,
+        );
+
+        let outcome = install_archive(&library.db, &library, &archive, "Others", None).unwrap();
+
+        assert!(matches!(outcome, InstallOutcome::Installed { .. }));
+        let destination = library.layout.mod_dir("Others", "OuterMod");
+        assert!(destination.join("nested.zip").is_file());
+        assert_eq!(
+            std::fs::read_to_string(destination.join("__nested_0/inner.txt")).unwrap(),
+            "nested"
+        );
+    }
+
+    #[test]
+    fn concurrent_install_of_different_mods_succeeds() {
+        let (first_tmp, first_library) = setup();
+        let (second_tmp, second_library) = setup();
+        let first_archive = first_tmp.path().join("FirstMod.zip");
+        let second_archive = second_tmp.path().join("SecondMod.zip");
+        write_zip(&first_archive, &[("first.txt", b"first")], None);
+        write_zip(&second_archive, &[("second.txt", b"second")], None);
+        let first_library = Arc::new(Mutex::new(first_library));
+        let second_library = Arc::new(Mutex::new(second_library));
+        let barrier = Arc::new(Barrier::new(2));
+
+        let first_handle = {
+            let library = Arc::clone(&first_library);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                let library = library.lock().unwrap();
+                install_archive(&library.db, &library, &first_archive, "Firefly", None)
+            })
+        };
+        let second_handle = {
+            let library = Arc::clone(&second_library);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                let library = library.lock().unwrap();
+                install_archive(&library.db, &library, &second_archive, "Others", None)
+            })
+        };
+
+        assert!(matches!(
+            first_handle.join().unwrap(),
+            Ok(InstallOutcome::Installed { .. })
+        ));
+        assert!(matches!(
+            second_handle.join().unwrap(),
+            Ok(InstallOutcome::Installed { .. })
+        ));
+        let first_library = first_library.lock().unwrap();
+        let second_library = second_library.lock().unwrap();
+        assert!(first_library
+            .layout
+            .mod_dir("Firefly", "FirstMod")
+            .join("first.txt")
+            .is_file());
+        assert!(second_library
+            .layout
+            .mod_dir("Others", "SecondMod")
+            .join("second.txt")
+            .is_file());
+    }
+
+    #[test]
+    fn scan_waits_for_install_lock_during_pending_recovery() {
+        let (tmp, library) = setup();
+        let destination = library.layout.mod_dir("Firefly", "PendingMod");
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(destination.join(crate::library::INSTALLING_MARKER), b"").unwrap();
+        let op_id = library
+            .db
+            .op_begin("install", "mods/Firefly/PendingMod")
+            .unwrap();
+        let db_path = library.layout.db_path();
+
+        let install_lock = INSTALL_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let scan_handle = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            finished_tx.send(library.scan().is_ok()).unwrap();
+        });
+
+        started_rx.recv().unwrap();
+        assert!(finished_rx
+            .recv_timeout(Duration::from_millis(100))
+            .is_err());
+        assert!(destination.exists());
+        let db = Database::open(&db_path).unwrap();
+        assert_eq!(
+            db.pending_ops().unwrap(),
+            vec![(
+                op_id,
+                "install".to_string(),
+                "mods/Firefly/PendingMod".to_string()
+            )]
+        );
+
+        drop(install_lock);
+        assert!(finished_rx.recv_timeout(Duration::from_secs(1)).unwrap());
+        scan_handle.join().unwrap();
+
+        assert!(!destination.exists());
+        assert!(Database::open(&db_path)
+            .unwrap()
+            .pending_ops()
+            .unwrap()
+            .is_empty());
+        drop(tmp);
+    }
+
+    #[test]
+    fn wrapper_dir_unwrapped() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("WrappedMod.zip");
+        write_zip(
+            &archive,
+            &[("FooMod-v1/FooMod/mod.ini", b"[Constants]")],
+            None,
+        );
+
+        let outcome = install_archive(&library.db, &library, &archive, "Firefly", None).unwrap();
+
+        assert!(matches!(outcome, InstallOutcome::Installed { .. }));
+        let destination = library.layout.mod_dir("Firefly", "WrappedMod");
+        assert!(destination.join("mod.ini").is_file());
+        assert!(!destination.join("FooMod-v1").exists());
+        assert!(!destination.join("FooMod").exists());
+    }
+
+    #[test]
+    fn inferred_install_picks_character_from_ini() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("MysteryMod.zip");
+        write_zip(
+            &archive,
+            &[("mod.ini", b"; firefly skin\nglobal $firefly = 1")],
+            None,
+        );
+
+        let outcome = install_archive_inferred(
+            &library.db,
+            &library,
+            crate::games::hsr::Hsr::shared(),
+            &archive,
+            None,
+        )
+        .unwrap();
+
+        let InstallOutcome::Installed { character, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(character, "Firefly");
+        assert!(library.layout.mod_dir("Firefly", "MysteryMod").is_dir());
+    }
+
+    #[test]
+    fn inferred_install_falls_back_to_others() {
+        let (tmp, library) = setup();
+        let archive = tmp.path().join("UnknownMod.zip");
+        write_zip(&archive, &[("mod.ini", b"[Constants]")], None);
+
+        let outcome = install_archive_inferred(
+            &library.db,
+            &library,
+            crate::games::hsr::Hsr::shared(),
+            &archive,
+            None,
+        )
+        .unwrap();
+
+        let InstallOutcome::Installed { character, .. } = outcome else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(character, "Others");
+        assert!(library.layout.mod_dir("Others", "UnknownMod").is_dir());
+    }
+
+    #[test]
+    fn folder_install_with_explicit_character() {
+        let (tmp, library) = setup();
+        let folder = tmp.path().join("Kafka_Dress_Mod");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("Kafka.ini"), b"[Constants]").unwrap();
+
+        let outcome = install_folder(&library.db, &library, &folder, "Kafka").unwrap();
+
+        let InstallOutcome::Installed {
+            character, name, ..
+        } = outcome
+        else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(character, "Kafka");
+        assert_eq!(name, "Kafka_Dress_Mod");
+        assert!(library
+            .layout
+            .mod_dir("Kafka", "Kafka_Dress_Mod")
+            .join("Kafka.ini")
+            .is_file());
+    }
+
+    #[test]
+    fn folder_install_inferred_character() {
+        let (tmp, library) = setup();
+        let folder = tmp.path().join("Acheron_Katana");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("mod.ini"),
+            b"; acheron weapon\nglobal $acheron = 1",
+        )
+        .unwrap();
+
+        let outcome = install_folder_inferred(
+            &library.db,
+            &library,
+            crate::games::hsr::Hsr::shared(),
+            &folder,
+        )
+        .unwrap();
+
+        let InstallOutcome::Installed {
+            character, name, ..
+        } = outcome
+        else {
+            panic!("expected installed outcome");
+        };
+        assert_eq!(character, "Acheron");
+        assert_eq!(name, "Acheron_Katana");
+        assert!(library
+            .layout
+            .mod_dir("Acheron", "Acheron_Katana")
+            .join("mod.ini")
+            .is_file());
+    }
+
+    #[test]
+    fn folder_install_unwraps_nested_folders() {
+        let (tmp, library) = setup();
+        let folder = tmp.path().join("OuterPackage");
+        let nested = folder.join("InnerSubfolder").join("KafkaMod");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("Kafka.ini"), b"[Constants]").unwrap();
+
+        let outcome = install_folder(&library.db, &library, &folder, "Kafka").unwrap();
+
+        assert!(matches!(outcome, InstallOutcome::Installed { .. }));
+        let destination = library.layout.mod_dir("Kafka", "OuterPackage");
+        assert!(destination.join("Kafka.ini").is_file());
+        assert!(!destination.join("InnerSubfolder").exists());
+    }
+}

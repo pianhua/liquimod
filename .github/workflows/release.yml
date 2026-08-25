@@ -1,0 +1,122 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache (Incremental)
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Frontend Dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Frontend Type Check
+        working-directory: app
+        run: npm run check
+
+      - name: Frontend Tests
+        working-directory: app
+        run: npm test
+
+      - name: Build Frontend
+        working-directory: app
+        run: npm run build
+
+      - name: Rust Format Check
+        run: cargo fmt --all -- --check
+
+      - name: Prepare Bundled Refresh Helper
+        run: cargo build --locked --release -p liquimod-refresh-helper
+
+      - name: Rust Clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Rust Tests
+        run: cargo test --locked --workspace
+
+      - name: Build LiquiMod App Release
+        run: cargo build --locked --release --features tauri/custom-protocol --manifest-path app/src-tauri/Cargo.toml
+
+      - name: Build NSIS Installer
+        working-directory: app
+        run: npx --no-install tauri build --bundles nsis
+
+      - name: Assemble Release Package
+        shell: pwsh
+        run: |
+          $packageDir = "dist/LiquiMod-Windows-x64"
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+          Copy-Item -Path "target/release/XXMI Launcher.exe" -Destination $packageDir
+          Copy-Item -Path "target/release/liquimod-refresh-helper.exe" -Destination $packageDir
+          Copy-Item -Path "README.md" -Destination $packageDir
+          Copy-Item -Path "LICENSE" -Destination $packageDir
+          Copy-Item -Path "assets/builtin-core/Packages" -Destination "$packageDir/Packages" -Recurse -Force
+          $required = @(
+            "$packageDir/XXMI Launcher.exe",
+            "$packageDir/liquimod-refresh-helper.exe",
+            "$packageDir/README.md",
+            "$packageDir/LICENSE",
+            "$packageDir/Packages/SRMI/Manifest.json",
+            "$packageDir/Packages/XXMI/Manifest.json"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) { throw "Missing release package file: $path" }
+          }
+          Compress-Archive -Path "$packageDir/*" -DestinationPath "LiquiMod-Windows-x64.zip" -Force
+          $hash = (Get-FileHash -Path "LiquiMod-Windows-x64.zip" -Algorithm SHA256).Hash
+          "$hash  LiquiMod-Windows-x64.zip" | Out-File -FilePath "LiquiMod-Windows-x64.zip.sha256" -Encoding utf8
+          $installer = Get-ChildItem -Path "target", "app/src-tauri/target" -Filter "*-setup.exe" -File -Recurse -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer was not produced" }
+          Copy-Item $installer.FullName -Destination "LiquiMod-Windows-x64-setup.exe" -Force
+          $installerHash = (Get-FileHash -Path "LiquiMod-Windows-x64-setup.exe" -Algorithm SHA256).Hash
+          "$installerHash  LiquiMod-Windows-x64-setup.exe" | Out-File -FilePath "LiquiMod-Windows-x64-setup.exe.sha256" -Encoding utf8
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiquiMod-Windows-x64
+          path: |
+            LiquiMod-Windows-x64.zip
+            LiquiMod-Windows-x64.zip.sha256
+            LiquiMod-Windows-x64-setup.exe
+            LiquiMod-Windows-x64-setup.exe.sha256
+          retention-days: 14
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            LiquiMod-Windows-x64.zip
+            LiquiMod-Windows-x64.zip.sha256
+            LiquiMod-Windows-x64-setup.exe
+            LiquiMod-Windows-x64-setup.exe.sha256
+          generate_release_notes: true

@@ -1,0 +1,25 @@
+[package]
+name = "liquimod-refresh-helper"
+version = "0.1.0-beta.1"
+edition = "2021"
+
+[dependencies]
+liquimod-core = { path = "../liquimod-core" }
+sysinfo = "0.33"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+tracing-appender = "0.2"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Pipes",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = "3"
