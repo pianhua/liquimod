@@ -119,4 +119,5 @@ jobs:
             LiquiMod-Windows-x64.zip.sha256
             LiquiMod-Windows-x64-setup.exe
             LiquiMod-Windows-x64-setup.exe.sha256
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
