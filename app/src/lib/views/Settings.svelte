@@ -13,6 +13,29 @@
   import { toast } from "$lib/toast.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import Toggle from "$lib/components/Toggle.svelte";
+  import {
+    IconArrowLeft,
+    IconSun,
+    IconMoon,
+    IconMonitor,
+    IconFolder,
+    IconFolderOpen,
+    IconShieldCheck,
+    IconArrowRightLeft,
+    IconBroom,
+    IconLock,
+    IconKey,
+    IconClose,
+    IconCheckCircle,
+    IconAlertTriangle,
+    IconInfo,
+    IconRefresh,
+    IconKeyboard,
+    IconPackage,
+    IconLink,
+    IconSearch,
+    IconSparkles,
+  } from "$lib/components/icons";
 
   let {
     config,
@@ -590,13 +613,13 @@
 <div class="flex flex-col h-full min-h-0">
   <div class="flex items-center gap-3 px-8 pt-3 pb-4 shrink-0 max-w-3xl w-full mx-auto">
     <button
-      class="glass radius-pill pl-2.5 pr-3.5 h-8 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-transform hover:-translate-x-0.5"
+      class="glass-liquid-btn radius-pill pl-2.5 pr-3.5 h-8 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-transform hover:-translate-x-0.5 text-secondary hover:text-[var(--text)]"
       onclick={onback}
     >
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-        <path d="M7 1L2.5 5L7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-      <span>返回</span>
+      <span class="z-10 flex items-center gap-1.5">
+        <IconArrowLeft size={13} />
+        <span>返回</span>
+      </span>
     </button>
     <h2 class="text-[28px] leading-8 font-bold tracking-tight">偏好设置</h2>
   </div>
@@ -611,15 +634,22 @@
           <p class="text-sm font-medium">界面主题</p>
           <p class="text-xs text-secondary mt-0.5">选择高对比度亮色、纯净深色或跟随系统</p>
         </div>
-        <div class="flex gap-1 p-0.5 radius-pill shrink-0" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+        <div class="flex gap-1 p-0.5 glass-liquid-capsule shrink-0">
           {#each [["auto", "跟随系统"], ["light", "亮色"], ["dark", "暗色"]] as [value, label] (value)}
             <button
-              class="radius-pill h-7 px-3 text-xs cursor-pointer transition-colors"
+              class="radius-pill h-7 px-3 text-xs cursor-pointer transition-colors z-10 flex items-center gap-1.5"
               class:accent-fill={config?.theme === value}
               class:accent-text={config?.theme === value}
               onclick={() => pickTheme(value)}
             >
-              {label}
+              {#if value === "auto"}
+                <IconMonitor size={12} />
+              {:else if value === "light"}
+                <IconSun size={12} />
+              {:else}
+                <IconMoon size={12} />
+              {/if}
+              <span>{label}</span>
             </button>
           {/each}
         </div>
@@ -659,11 +689,11 @@
             onkeydown={(e) => e.key === "Enter" && saveCatName()}
           />
           <button
-            class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+            class="glass-liquid-btn-accent radius-pill h-8 px-4 text-xs font-semibold cursor-pointer disabled:opacity-50"
             disabled={!catNameDraft.trim() || catNameDraft.trim() === config?.character_category_name}
             onclick={saveCatName}
           >
-            保存
+            <span class="z-10">保存</span>
           </button>
         </div>
       </div>
@@ -680,15 +710,10 @@
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <button
           class="glass radius-card p-4 flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95 group"
-          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
           onclick={handleInitMigoto}
         >
           <div class="w-9 h-9 rounded-xl grid place-items-center bg-[var(--input-bg)] text-[var(--accent)] group-hover:scale-110 transition-transform">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-              <line x1="12" y1="22.08" x2="12" y2="12"/>
-            </svg>
+            <IconPackage size={20} />
           </div>
           <span class="text-xs font-semibold text-[var(--text)]">初始化本地运行时</span>
           <span class="text-[11px] text-secondary">只创建标准入口，不复制 Mod</span>
@@ -696,15 +721,10 @@
 
         <button
           class="glass radius-card p-4 flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95 group"
-          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
           onclick={handleMigrateOldMigoto}
         >
           <div class="w-9 h-9 rounded-xl grid place-items-center bg-[var(--input-bg)] text-emerald-500 group-hover:scale-110 transition-transform">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/>
-              <polyline points="16 3 21 3 21 8"/>
-              <line x1="10" y1="14" x2="21" y2="3"/>
-            </svg>
+            <IconArrowRightLeft size={20} />
           </div>
           <span class="text-xs font-semibold text-[var(--text)]">迁移旧版 Mod</span>
           <span class="text-[11px] text-secondary">批量导入旧目录资产</span>
@@ -712,17 +732,13 @@
 
         <button
           class="glass radius-card p-4 flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02] hover:bg-[var(--item-hover)] active:scale-95 group"
-          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)"
           onclick={addModSource}
         >
           <div class="w-9 h-9 rounded-xl grid place-items-center bg-[var(--input-bg)] text-amber-500 group-hover:scale-110 transition-transform">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3v3m0 12v3M3 12h3m12 0h3m-2.64-6.36l-2.12 2.12m-6.48 6.48l-2.12 2.12m0-10.72l2.12 2.12m6.48 6.48l2.12 2.12"/>
-              <circle cx="12" cy="12" r="4"/>
-            </svg>
+            <IconLink size={20} />
           </div>
-          <span class="text-xs font-semibold text-[var(--text)]">连接外部 Mod 源</span>
-          <span class="text-[11px] text-secondary">任意磁盘均可索引与启用</span>
+          <span class="text-xs font-semibold text-[var(--text)]">关联外部源</span>
+          <span class="text-[11px] text-secondary">添加外部只读文件夹</span>
         </button>
       </div>
 
@@ -736,37 +752,37 @@
           </div>
           <div class="flex items-center justify-end gap-1.5 shrink-0">
             <button
-              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)]"
+              class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5"
               disabled={detectingGame}
               onclick={autoDetectGame}
               title="自动从注册表和运行日志嗅探 StarRail.exe"
             >
-              {#if detectingGame}
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin text-[var(--accent)]">
-                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-                </svg>
-                <span>探测中…</span>
-              {:else}
-                <span>🔍</span>
-                <span>自动探测</span>
-              {/if}
+              <span class="z-10 flex items-center gap-1.5">
+                {#if detectingGame}
+                  <IconRefresh size={12} class="animate-spin text-[var(--accent)]" />
+                  <span>探测中…</span>
+                {:else}
+                  <IconSearch size={12} />
+                  <span>自动探测</span>
+                {/if}
+              </span>
             </button>
             {#if config?.game_exe}
               <button
-                class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
+                class="glass-liquid-btn radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)]"
                 title="在资源管理器中定位"
                 onclick={() => config?.game_exe && api.openPathInExplorer(config.game_exe)}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                <IconFolderOpen size={12} class="z-10" />
               </button>
             {/if}
-            <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]" onclick={() => pickExe("game")}>
-              选择…
+            <button class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer" onclick={() => pickExe("game")}>
+              <span class="z-10">选择…</span>
             </button>
           </div>
         </div>
 
-        <!-- XXMI 原生 Hook 核心：不再配置或启动 Loader.exe -->
+        <!-- XXMI 原生 Hook 核心 -->
         <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex flex-col gap-3">
           <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
             <div class="min-w-0 flex-1">
@@ -774,20 +790,20 @@
               <p class="text-xs text-secondary mt-0.5">启动 Mod 时由 3dmloader.dll 直接挂钩游戏进程，不再弹出或依赖 3DMigoto Loader.exe。</p>
             </div>
             <div class="flex items-center gap-1.5 shrink-0">
-              <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)] disabled:opacity-50" disabled={checkingSrmi || installingCore !== null} onclick={handleCheckSrmiUpdate}>
-                {checkingSrmi ? "检查中…" : "检查 SRMI 更新"}
+              <button class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer disabled:opacity-50" disabled={checkingSrmi || installingCore !== null} onclick={handleCheckSrmiUpdate}>
+                <span class="z-10">{checkingSrmi ? "检查中…" : "检查 SRMI 更新"}</span>
               </button>
-              <button class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)] disabled:opacity-50" disabled={checkingXxmi || installingCore !== null} onclick={handleCheckXxmiUpdate}>
-                {checkingXxmi ? "检查中…" : "检查 XXMI 更新"}
+              <button class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer disabled:opacity-50" disabled={checkingXxmi || installingCore !== null} onclick={handleCheckXxmiUpdate}>
+                <span class="z-10">{checkingXxmi ? "检查中…" : "检查 XXMI 更新"}</span>
               </button>
-              <button class="accent-fill accent-text radius-pill h-8 px-3 text-xs font-semibold cursor-pointer disabled:opacity-50" disabled={installingCore !== null} onclick={() => installCore("XXMI")}>
-                {installingCore === "XXMI" ? "安装中…" : "安装 / 修复"}
+              <button class="glass-liquid-btn-accent radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer disabled:opacity-50" disabled={installingCore !== null} onclick={() => installCore("XXMI")}>
+                <span class="z-10">{installingCore === "XXMI" ? "安装中…" : "安装 / 修复"}</span>
               </button>
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {#each coreStatuses as status (status.package)}
-              <div class="p-3 radius-card" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+              <div class="p-3 radius-card glass">
                 <div class="flex items-center justify-between gap-2">
                   <span class="text-xs font-semibold">{status.package} 官方套件</span>
                   <span class="text-[11px] font-semibold" class:text-emerald-500={status.ready} class:text-amber-500={!status.ready}>{status.ready ? "已就绪" : "缺少文件"}</span>
@@ -795,7 +811,9 @@
                 <p class="text-[11px] text-secondary font-mono truncate mt-1" title={status.package_dir}>{compactPath(status.package_dir)}</p>
                 <div class="flex items-center justify-between gap-2 mt-2">
                   <span class="text-[11px] text-secondary">版本 {status.installed_version ?? "未安装"}</span>
-                  <button class="glass radius-pill h-7 px-2.5 text-[11px] cursor-pointer hover:bg-[var(--item-hover)] disabled:opacity-50" disabled={installingCore !== null} onclick={() => installCore(status.package)}>{installingCore === status.package ? "处理中…" : "修复"}</button>
+                  <button class="glass-liquid-btn radius-pill h-7 px-3 text-[11px] font-medium cursor-pointer disabled:opacity-50" disabled={installingCore !== null} onclick={() => installCore(status.package)}>
+                    <span class="z-10">{installingCore === status.package ? "处理中…" : "修复"}</span>
+                  </button>
                 </div>
               </div>
             {/each}
@@ -814,21 +832,21 @@
           <div class="flex items-center justify-end gap-1.5 shrink-0">
             {#if config?.mods_dir}
               <button
-                class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]"
+                class="glass-liquid-btn radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)]"
                 title="在资源管理器中打开"
                 onclick={() => config?.mods_dir && api.openPathInExplorer(config.mods_dir)}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="z-10"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
               </button>
             {/if}
             <span class="px-2.5 h-7 flex items-center radius-pill text-[11px] font-semibold text-emerald-500" style="background: color-mix(in srgb, #10b981 12%, transparent)">
               {config?.mods_dir ? "LiquiMod 托管" : "尚未初始化"}
             </span>
             <button
-              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer hover:bg-[var(--item-hover)]"
+              class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer"
               onclick={handleInitMigoto}
             >
-              {config?.mods_dir ? "修复入口" : "初始化"}
+              <span class="z-10">{config?.mods_dir ? "修复入口" : "初始化"}</span>
             </button>
           </div>
         </div>
@@ -840,7 +858,9 @@
               <p class="text-sm font-medium">外部 Mod 源目录</p>
               <p class="text-xs text-secondary mt-0.5">Mod 可以分散在任意磁盘；添加源目录后会自动扫描、索引并按需建立 Junction。解除连接不会删除源文件。</p>
             </div>
-            <button class="accent-fill accent-text radius-pill h-8 px-3 text-xs font-semibold cursor-pointer disabled:opacity-50" disabled={sourceBusy} onclick={addModSource}>{sourceBusy ? "处理中…" : "添加目录"}</button>
+            <button class="glass-liquid-btn-accent radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer disabled:opacity-50" disabled={sourceBusy} onclick={addModSource}>
+              <span class="z-10">{sourceBusy ? "处理中…" : "添加目录"}</span>
+            </button>
           </div>
           {#if config?.mod_sources?.length}
             <div class="flex flex-col gap-1.5">
@@ -848,12 +868,14 @@
                 <div class="glass radius-card min-h-9 px-3 py-2 flex items-center gap-2">
                   <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></span>
                   <span class="font-mono text-[11px] truncate flex-1" title={source}>{source}</span>
-                  <button class="glass radius-pill h-7 px-2.5 text-[11px] text-secondary hover:text-[var(--danger)] hover:bg-[var(--item-hover)] cursor-pointer disabled:opacity-50" aria-label={`解除外部 Mod 源 ${source}`} disabled={sourceBusy} onclick={() => removeModSource(source)}>解除</button>
+                  <button class="glass-liquid-btn-danger radius-pill h-7 px-2.5 text-[11px] cursor-pointer disabled:opacity-50" aria-label={`解除外部 Mod 源 ${source}`} disabled={sourceBusy} onclick={() => removeModSource(source)}>
+                    <span class="z-10">解除</span>
+                  </button>
                 </div>
               {/each}
             </div>
           {:else}
-            <div class="p-3 radius-card text-xs text-secondary" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">尚未添加外部源。应用内安装的 Mod 默认保存在当前数据根下的 Library。</div>
+            <div class="p-3 radius-card text-xs text-secondary glass">尚未添加外部源。应用内安装的 Mod 默认保存在当前数据根下的 Library。</div>
           {/if}
         </div>
 
@@ -865,10 +887,12 @@
           </div>
           <div class="flex items-center justify-end shrink-0">
             <button
-              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-[var(--item-hover)]"
+              class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1"
               onclick={() => config?.library_root && api.openPathInExplorer(config.library_root)}
             >
-              <span>📂</span> 打开仓库
+              <span class="z-10 flex items-center gap-1">
+                <span>📂</span> 打开仓库
+              </span>
             </button>
           </div>
         </div>
@@ -885,33 +909,33 @@
             </div>
             <div class="flex items-center justify-end gap-1.5 shrink-0">
               <button
-                class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-[var(--item-hover)] disabled:opacity-50"
+                class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1 disabled:opacity-50"
                 disabled={storageBusy}
                 onclick={pickStorageRoot}
               >
-                {storageBusy ? "处理中…" : "迁移到…"}
+                <span class="z-10">{storageBusy ? "处理中…" : "迁移到…"}</span>
               </button>
               <button
-                class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] disabled:opacity-50"
+                class="glass-liquid-btn radius-pill w-8 h-8 grid place-items-center cursor-pointer text-secondary hover:text-[var(--text)] disabled:opacity-50"
                 title="打开数据存储目录"
                 disabled={!storageInfo?.storage_root || storageBusy}
                 onclick={() => storageInfo?.storage_root && api.openPathInExplorer(storageInfo.storage_root)}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="z-10"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
               </button>
             </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-            <div class="min-w-0 p-2.5 radius-card" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+            <div class="min-w-0 p-2.5 radius-card glass">
               <p class="text-secondary">当前数据根</p>
               <p class="font-mono truncate mt-1" title={storageInfo?.storage_root ?? config?.storage_root ?? "读取中…"}>{storageInfo?.storage_root ?? config?.storage_root ?? "读取中…"}</p>
             </div>
-            <div class="p-2.5 radius-card" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+            <div class="p-2.5 radius-card glass">
               <p class="text-secondary">仓库占用</p>
               <p class="font-mono mt-1">{formatBytes(storageInfo?.bytes)} · {storageInfo?.files ?? "—"} 文件</p>
             </div>
-            <div class="p-2.5 radius-card" style="background: var(--input-bg); box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+            <div class="p-2.5 radius-card glass">
               <p class="text-secondary">所在盘可用空间</p>
               <p class="font-mono mt-1">{formatBytes(storageInfo?.available_bytes)}</p>
             </div>
@@ -925,11 +949,11 @@
                 <p class="font-mono truncate mt-0.5" title={storageInfo.previous_library_root}>{storageInfo.previous_library_root}</p>
               </div>
               <button
-                class="radius-pill h-8 px-3 text-xs font-medium border border-amber-500/40 hover:bg-amber-500/10 cursor-pointer shrink-0 disabled:opacity-50"
+                class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer shrink-0 disabled:opacity-50"
                 disabled={storageBusy}
                 onclick={cleanupPreviousStorage}
               >
-                清理旧仓库
+                <span class="z-10">清理旧仓库</span>
               </button>
             </div>
           {/if}
@@ -991,10 +1015,10 @@
         </div>
         <div class="flex justify-end">
           <button
-            class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer"
+            class="glass-liquid-btn-accent radius-pill h-8 px-4 text-xs font-semibold cursor-pointer"
             onclick={saveGithubSettings}
           >
-            保存加速配置
+            <span class="z-10">保存加速配置</span>
           </button>
         </div>
       </div>
@@ -1018,9 +1042,7 @@
                 disabled={busy}
                 onclick={() => removePassword(p)}
               >
-                <svg width="8" height="8" viewBox="0 0 9 9" fill="none">
-                  <path d="M2 2l5 5M7 2L2 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-                </svg>
+                <IconClose size={10} />
               </button>
             </div>
           {/each}
@@ -1038,11 +1060,11 @@
           onkeydown={(e) => e.key === "Enter" && addPassword()}
         />
         <button
-          class="accent-fill accent-text radius-pill h-8 px-4 text-xs font-semibold cursor-pointer disabled:opacity-50"
+          class="glass-liquid-btn-accent radius-pill h-8 px-4 text-xs font-semibold cursor-pointer disabled:opacity-50"
           disabled={!newPassword.trim() || busy}
           onclick={addPassword}
         >
-          添加
+          <span class="z-10">添加</span>
         </button>
       </div>
     </section>
@@ -1056,14 +1078,14 @@
 
       <!-- 诊断指示灯 -->
       <div class="grid grid-cols-2 gap-2.5 text-xs">
-        <div class="p-3 rounded-xl flex items-center justify-between" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)">
+        <div class="p-3 rounded-xl flex items-center justify-between glass">
           <span class="text-secondary font-medium">F10 游戏内热刷新</span>
           <span class="flex items-center gap-1.5 font-medium {diagStatus?.helper_ready ? 'text-emerald-500' : 'text-amber-500'}">
             <span class="w-2 h-2 rounded-full {diagStatus?.helper_ready ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]' : 'bg-amber-500'}"></span>
             {diagStatus?.helper_ready ? "就绪" : "未启动/缺组件"}
           </span>
         </div>
-        <div class="p-3 rounded-xl flex items-center justify-between" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)">
+        <div class="p-3 rounded-xl flex items-center justify-between glass">
           <span class="text-secondary font-medium">3Dmigoto 关联</span>
           <span class="flex items-center gap-1.5 font-medium {diagStatus?.mods_dir_configured ? 'text-emerald-500' : 'text-zinc-400'}">
             <span class="w-2 h-2 rounded-full {diagStatus?.mods_dir_configured ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]' : 'bg-zinc-400'}"></span>
@@ -1075,10 +1097,7 @@
       {#if diagStatus}
         <div class="flex flex-col gap-2">
           {#each diagStatus.checks as check (check.id)}
-            <div
-              class="radius-card p-3 flex flex-col gap-1.5"
-              style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)"
-            >
+            <div class="radius-card p-3 flex flex-col gap-1.5 glass">
               <div class="flex items-center justify-between gap-3 text-xs">
                 <span class="flex min-w-0 items-center gap-2 font-medium">
                   <span class="w-2 h-2 shrink-0 rounded-full {checkDot(check.state)}"></span>
@@ -1092,10 +1111,10 @@
               {/if}
               {#if check.id === "webview2" && check.state === "fail"}
                 <button
-                  class="self-start glass radius-pill h-7 px-2.5 text-[11px] font-medium cursor-pointer"
+                  class="self-start glass-liquid-btn radius-pill h-7 px-3 text-[11px] font-medium cursor-pointer"
                   onclick={openWebView2Download}
                 >
-                  打开 WebView2 下载页
+                  <span class="z-10">打开 WebView2 下载页</span>
                 </button>
               {/if}
             </div>
@@ -1103,7 +1122,7 @@
         </div>
 
         {#if diagStatus.filesystem || diagStatus.deploy_strategy}
-          <div class="radius-card p-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)">
+          <div class="radius-card p-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] glass">
             {#if diagStatus.filesystem}
               <span class="text-secondary">文件系统：<strong class="text-[var(--text)]">{diagStatus.filesystem}</strong></span>
             {/if}
@@ -1114,10 +1133,12 @@
         {/if}
 
         {#if diagStatus.defender_command}
-          <div class="radius-card p-3 flex flex-col gap-2" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)">
+          <div class="radius-card p-3 flex flex-col gap-2 glass">
             <div class="flex items-center justify-between gap-3">
               <span class="text-xs font-medium">Defender 排除项命令</span>
-              <button class="glass radius-pill h-7 px-2.5 text-[11px] font-medium cursor-pointer" onclick={copyDefenderCommand}>复制命令</button>
+              <button class="glass-liquid-btn radius-pill h-7 px-2.5 text-[11px] font-medium cursor-pointer" onclick={copyDefenderCommand}>
+                <span class="z-10">复制命令</span>
+              </button>
             </div>
             <code class="text-[10px] text-secondary break-all select-text">{diagStatus.defender_command}</code>
           </div>
@@ -1127,34 +1148,34 @@
       <!-- 维护动作按钮组 -->
       <div class="border-t border-[var(--glass-stroke)] pt-3.5 flex items-center gap-2">
         <button
-          class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
+          class="glass-liquid-btn radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
           disabled={busy}
           onclick={handleRescan}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-          </svg>
-          <span>全库扫描与对齐</span>
+          <span class="z-10 flex items-center gap-1.5">
+            <IconRefresh size={13} />
+            <span>全库扫描与对齐</span>
+          </span>
         </button>
         <button
-          class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
+          class="glass-liquid-btn radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
           disabled={busy}
           onclick={handleCleanCache}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-          </svg>
-          <span>清理封面缓存</span>
+          <span class="z-10 flex items-center gap-1.5">
+            <IconBroom size={13} />
+            <span>清理封面缓存</span>
+          </span>
         </button>
         <button
-          class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
+          class="glass-liquid-btn radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
           disabled={busy || !diagStatus?.mods_dir_configured}
           onclick={handleRepairDeployment}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.2 2.2-2.8-.6-.6-2.8 2.6-1.8Z"/>
-          </svg>
-          <span>修复 Mod 部署</span>
+          <span class="z-10 flex items-center gap-1.5">
+            <IconShieldCheck size={13} />
+            <span>修复 Mod 部署</span>
+          </span>
         </button>
       </div>
 
@@ -1163,9 +1184,7 @@
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium flex items-center gap-1.5">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--accent)]">
-                <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
-              </svg>
+              <IconSparkles size={15} class="text-[var(--accent)]" />
               <span>崩坏：星穹铁道 角色数据云端同步</span>
             </p>
             <p class="text-xs text-secondary mt-0.5">
@@ -1174,31 +1193,30 @@
           </div>
           <div class="flex items-center gap-2">
             <button
-              class="glass radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 hover:bg-[var(--item-hover)] disabled:opacity-50"
+              class="glass-liquid-btn radius-pill h-8 px-3 text-xs font-medium cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               disabled={checkingUpdate || syncing}
               onclick={handleCheckAssetUpdate}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="11" cy="11" r="8"/>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <span>{checkingUpdate ? "检查中…" : "检查更新"}</span>
+              <span class="z-10 flex items-center gap-1.5">
+                <IconSearch size={12} />
+                <span>{checkingUpdate ? "检查中…" : "检查更新"}</span>
+              </span>
             </button>
             <button
-              class="accent-fill accent-text radius-pill h-8 px-3.5 text-xs font-semibold cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              class="glass-liquid-btn-accent radius-pill h-8 px-4 text-xs font-semibold cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               disabled={syncing || checkingUpdate}
               onclick={handleSyncAssets}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-              </svg>
-              <span>{syncing ? "正在同步…" : "同步星铁数据"}</span>
+              <span class="z-10 flex items-center gap-1.5">
+                <IconSparkles size={12} />
+                <span>{syncing ? "正在同步…" : "同步星铁数据"}</span>
+              </span>
             </button>
           </div>
         </div>
 
         {#if syncProgress}
-          <div class="p-3.5 radius-card flex flex-col gap-1.5 bg-[var(--glass-tint)]" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+          <div class="p-3.5 radius-card flex flex-col gap-1.5 glass">
             <div class="flex items-center justify-between text-xs">
               <span class="text-secondary truncate max-w-[320px]">{syncProgress.message}</span>
               <span class="font-mono font-medium">{syncProgress.percent}%</span>
@@ -1218,13 +1236,12 @@
         <div class="flex items-center justify-between">
           <p class="text-sm font-medium">运行日志</p>
           <div class="flex gap-1.5">
-            <button class="glass radius-pill h-7 px-2.5 text-xs cursor-pointer" onclick={refreshLog}>刷新</button>
-            <button class="glass radius-pill h-7 px-2.5 text-xs cursor-pointer" onclick={copyLog}>复制</button>
+            <button class="glass-liquid-btn radius-pill h-7 px-3 text-xs cursor-pointer" onclick={refreshLog}><span class="z-10">刷新</span></button>
+            <button class="glass-liquid-btn radius-pill h-7 px-3 text-xs cursor-pointer" onclick={copyLog}><span class="z-10">复制</span></button>
           </div>
         </div>
         <pre
-          class="text-[11px] font-mono rounded-xl p-3 max-h-40 overflow-auto whitespace-pre-wrap break-all select-text leading-relaxed opacity-85"
-          style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--input-bg)"
+          class="text-[11px] font-mono rounded-xl p-3 max-h-40 overflow-auto whitespace-pre-wrap break-all select-text leading-relaxed opacity-85 glass"
         >{formatLog(logText) || "（暂无日志）"}</pre>
       </div>
 

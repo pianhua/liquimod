@@ -1,5 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import {
+    IconHeart,
+    IconHeartOff,
+    IconUser,
+    IconPower,
+    IconPowerOff,
+    IconFolderOpen,
+    IconTag,
+    IconPencil,
+    IconTrash,
+    IconChevronRight,
+  } from "$lib/components/icons";
 
   export interface MenuItem {
     id: string;
@@ -140,46 +152,23 @@
             {#if item.icon}
               <div class="w-4 h-4 shrink-0 grid place-items-center">
                 {#if item.icon === "💖" || item.icon === "fav"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" class="text-rose-500">
-                    <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
-                  </svg>
+                  <IconHeart size={13} class="text-rose-500" />
                 {:else if item.icon === "💔" || item.icon === "unfav"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-secondary">
-                    <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
-                    <line x1="2" y1="2" x2="22" y2="22"/>
-                  </svg>
+                  <IconHeartOff size={13} class="text-secondary" />
                 {:else if item.icon === "🎯" || item.icon === "detail"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-[var(--accent)]">
-                    <circle cx="12" cy="12" r="10"/>
-                    <circle cx="12" cy="12" r="6"/>
-                    <circle cx="12" cy="12" r="2"/>
-                  </svg>
+                  <IconUser size={13} class="text-[var(--accent)]" />
                 {:else if item.icon === "⚡" || item.icon === "enable"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-amber-500">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                  </svg>
+                  <IconPower size={13} class="text-amber-500" />
                 {:else if item.icon === "🚫" || item.icon === "disable"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-secondary">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-                  </svg>
+                  <IconPowerOff size={13} class="text-secondary" />
                 {:else if item.icon === "📂" || item.icon === "open"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-sky-500">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
+                  <IconFolderOpen size={13} class="text-sky-500" />
                 {:else if item.icon === "🏷️" || item.icon === "tag"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-indigo-400">
-                    <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/>
-                    <circle cx="7" cy="7" r="1" fill="currentColor"/>
-                  </svg>
+                  <IconTag size={13} class="text-indigo-400" />
                 {:else if item.icon === "✏️" || item.icon === "rename"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-teal-400">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                  </svg>
+                  <IconPencil size={13} class="text-teal-400" />
                 {:else if item.icon === "🗑️" || item.icon === "uninstall"}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-rose-500">
-                    <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                  </svg>
+                  <IconTrash size={13} class="text-rose-500" />
                 {:else}
                   <span class="text-sm leading-none">{item.icon}</span>
                 {/if}
@@ -195,9 +184,7 @@
               </kbd>
             {/if}
             {#if item.children}
-              <svg width="8" height="8" viewBox="0 0 10 10" fill="none" class="text-secondary">
-                <path d="M3 1.5L6.5 5L3 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <IconChevronRight size={10} class="text-secondary" />
             {/if}
           </div>
         </button>

@@ -34,3 +34,27 @@ export function dispatchEscape(): boolean {
   }
   return false;
 }
+
+/**
+ * 全局浮层互斥协调器 (Popover Coordinator)
+ * 确保同一时刻仅有唯一的下拉菜单/浮动面板处于打开状态，打开新浮层时自动收回其他浮层。
+ */
+type PopoverCloseHandler = () => void;
+const popoverCloseHandlers = new Set<PopoverCloseHandler>();
+
+export function registerPopover(closeHandler: PopoverCloseHandler): () => void {
+  popoverCloseHandlers.add(closeHandler);
+  return () => {
+    popoverCloseHandlers.delete(closeHandler);
+  };
+}
+
+export function notifyPopoverOpened(currentCloseHandler?: PopoverCloseHandler) {
+  for (const handler of popoverCloseHandlers) {
+    if (handler !== currentCloseHandler) {
+      try {
+        handler();
+      } catch {}
+    }
+  }
+}

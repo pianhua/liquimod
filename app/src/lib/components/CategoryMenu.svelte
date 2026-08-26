@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CategoryDto } from "$lib/api";
+  import { IconFolderPlus, IconCheckCircle } from "$lib/components/icons";
 
   let {
     categories,
@@ -38,10 +39,7 @@
     aria-expanded={open}
     onclick={() => (open = !open)}
   >
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-      <path d="M1.5 3.5a1 1 0 0 1 1-1h2.6l1 1.2h5.4a1 1 0 0 1 1 1v5.8a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1v-6Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-      <path d="M5 8h3.5M7.3 6.8 8.7 8l-1.4 1.2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
-    </svg>
+    <IconFolderPlus size={13} />
   </button>
   {#if open}
     <button
@@ -56,7 +54,7 @@
         onclick={() => pick(null)}
       >
         <span>角色（默认）</span>
-        {#if current === null}<span class="accent-text text-xs">✓</span>{/if}
+        {#if current === null}<IconCheckCircle size={13} class="text-[var(--accent)]" />{/if}
       </button>
       {#each categories as c (c.id)}
         <button
@@ -64,7 +62,7 @@
           onclick={() => pick(c.id)}
         >
           <span class="truncate">{c.name}</span>
-          {#if current === c.id}<span class="accent-text text-xs">✓</span>{/if}
+          {#if current === c.id}<IconCheckCircle size={13} class="text-[var(--accent)]" />{/if}
         </button>
       {/each}
       {#if categories.length === 0}

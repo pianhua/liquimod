@@ -14,13 +14,14 @@
   ];
 </script>
 
-<div class="flex gap-1 p-0.5 radius-pill w-fit" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke)">
+<div class="flex items-center glass-liquid-capsule p-0.5" role="group" aria-label="Mod 状态筛选">
   {#each options as [v, label] (v)}
+    {@const active = value === v}
     <button
-      class="radius-pill h-7 px-3 text-xs cursor-pointer transition-colors"
-      class:accent-fill={value === v}
-      class:accent-text={value === v}
-      aria-pressed={value === v}
+      class="h-7 px-3 text-xs font-semibold rounded-full cursor-pointer transition-all active:scale-95 z-10 {active
+        ? 'accent-fill accent-text shadow-xs font-bold'
+        : 'text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]'}"
+      aria-pressed={active}
       onclick={() => (value = v)}
     >
       {label}

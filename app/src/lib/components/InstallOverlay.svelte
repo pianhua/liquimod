@@ -8,6 +8,12 @@
     type InstallJob,
   } from "$lib/install.svelte";
   import type { CategoryDto, CharacterSummary } from "$lib/api";
+  import {
+    IconCheckCircle,
+    IconAlertCircle,
+    IconLock,
+    IconPackage,
+  } from "$lib/components/icons";
 
   let {
     jobs,
@@ -87,6 +93,14 @@
         <div class="flex items-center gap-3 min-h-9">
           {#if job.stage === "installing"}
             <span class="spinner shrink-0"></span>
+          {:else if job.stage === "done"}
+            <IconCheckCircle size={16} class="text-emerald-500 shrink-0" />
+          {:else if job.stage === "error"}
+            <IconAlertCircle size={16} class="text-rose-500 shrink-0" />
+          {:else if job.stage === "needs-password"}
+            <IconLock size={16} class="text-amber-500 shrink-0" />
+          {:else}
+            <IconPackage size={16} class="text-[var(--accent)] shrink-0" />
           {/if}
           <span class="text-sm font-semibold truncate flex-1 min-w-0 tracking-tight text-[var(--text)]">{job.fileName}</span>
 

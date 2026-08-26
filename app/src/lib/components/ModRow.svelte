@@ -2,8 +2,14 @@
   import type { CategoryDto, ModDto } from "$lib/api";
   import Toggle from "./Toggle.svelte";
   import CategoryMenu from "./CategoryMenu.svelte";
-  import IconGrip from "./icons/IconGrip.svelte";
-  import IconStar from "./icons/IconStar.svelte";
+  import {
+    IconGrip,
+    IconStar,
+    IconFolderOpen,
+    IconPencil,
+    IconTrash,
+    IconCheckCircle,
+  } from "$lib/components/icons";
 
   let {
     mod,
@@ -310,9 +316,7 @@
           disabled={sourceOffline}
           onclick={onopen}
         >
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <path d="M1.5 3.5a1 1 0 0 1 1-1h2.6l1 1.2h5.4a1 1 0 0 1 1 1v5.8a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1v-6Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-          </svg>
+          <IconFolderOpen size={13} />
         </button>
         <button
           class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer"
@@ -321,9 +325,7 @@
           disabled={mutationLocked}
           onclick={startRename}
         >
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <path d="M8.6 2.2 10.8 4.4 4.7 10.5l-2.9.7.7-2.9 6.1-6.1Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-          </svg>
+          <IconPencil size={13} />
         </button>
         <CategoryMenu
           {categories}
@@ -338,9 +340,7 @@
           disabled={mutationLocked}
           onclick={() => (confirming = true)}
         >
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <path d="M2 3.5h9M5 3.5V2.3a.8.8 0 0 1 .8-.8h1.4a.8.8 0 0 1 .8.8v1.2M3.2 3.5l.5 7a1 1 0 0 0 1 .9h3.6a1 1 0 0 0 1-.9l.5-7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+          <IconTrash size={13} />
         </button>
       </div>
     {/if}

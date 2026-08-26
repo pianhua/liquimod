@@ -12,6 +12,24 @@
   import CategoryMenu from "./CategoryMenu.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { pushEscHandler } from "$lib/esc";
+  import {
+    IconFolder,
+    IconFolderOpen,
+    IconTrash,
+    IconPencil,
+    IconPackage,
+    IconClose,
+    IconCheckCircle,
+    IconAlertTriangle,
+    IconInfo,
+    IconKeyboard,
+    IconSparkles,
+    IconSidebar,
+    IconLink,
+    IconChevronRight,
+    IconUpload,
+    IconRefresh,
+  } from "$lib/components/icons";
 
   let {
     mod,
@@ -512,11 +530,7 @@
         </div>
       {:else}
         <div class="flex flex-col items-center gap-2 text-secondary opacity-60 z-10">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
+          <IconFolder size={40} />
           <span class="text-xs">暂无预览图</span>
         </div>
       {/if}
@@ -536,11 +550,7 @@
           disabled={isExternal}
           onclick={pickCustomCover}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
+          <IconUpload size={12} />
           本地封面
         </button>
         {#if mod.cover_image}
@@ -551,12 +561,7 @@
             disabled={isExternal}
             onclick={resetCover}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-              <path d="M21 3v5h-5"/>
-              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-              <path d="M8 16H3v5"/>
-            </svg>
+            <IconRefresh size={12} />
             恢复默认
           </button>
         {/if}
@@ -609,33 +614,18 @@
               disabled={mutationLocked}
               onclick={startRename}
             >
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <path d="M8.6 2.2 10.8 4.4 4.7 10.5l-2.9.7.7-2.9 6.1-6.1Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-              </svg>
+              <IconPencil size={13} />
             </button>
           </div>
-          <div class="flex items-center gap-1.5 mt-0.5 min-w-0">
+          <div class="flex items-center gap-1.5 mt-1 min-w-0">
             <p class="text-xs text-secondary truncate flex-1 min-w-0" title={mod.path}>
               {mod.path}
             </p>
-            <button
-              class="glass radius-pill h-5 px-2 text-[10px] text-secondary hover:text-[var(--text)] flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
-              title="在 Windows 资源管理器中打开此文件夹"
-              disabled={sourceOffline}
-              onclick={openModFolder}
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-              打开
-            </button>
           </div>
         {/if}
       </div>
 
-      <div class="shrink-0 flex items-center gap-2">
+      <div class="shrink-0 flex items-center self-center">
         <Toggle
           checked={mod.enabled}
           disabled={sourceOffline}
@@ -720,10 +710,7 @@
     <div class="flex flex-col gap-2 p-3.5 radius-card shrink-0" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)">
       <div class="flex items-center justify-between">
         <span class="text-xs font-semibold text-secondary flex items-center gap-1.5">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-          </svg>
+          <IconPencil size={13} />
           Mod 备忘 / 备注
         </span>
         {#if savingNote}
@@ -752,11 +739,7 @@
     <div class="flex flex-col gap-2 p-3.5 radius-card shrink-0" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)">
       <div class="flex items-center justify-between">
         <span class="text-xs font-semibold text-secondary flex items-center gap-1.5">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
+          <IconFolder size={13} />
           内置图集画廊 {loadingImages ? "（扫描中…）" : `(${images.length})`}
         </span>
         {#if images.length > 0}
@@ -830,10 +813,7 @@
     <div class="flex flex-col gap-2 p-3.5 radius-card shrink-0" style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)">
       <div class="flex items-center justify-between">
         <span class="text-xs font-semibold text-secondary flex items-center gap-1.5">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="6" width="20" height="12" rx="2"/>
-            <path d="M6 12h4m-2-2v4m9-2h.01m3-2h.01"/>
-          </svg>
+          <IconKeyboard size={13} />
           动态切换热键
         </span>
         {#if loadingKeys}
@@ -895,15 +875,15 @@
           <p class="text-xs text-red-500 font-medium">{isExternal ? "确定要断开此外部 Mod 吗？源文件不会被删除。" : "确定要彻底卸载此 Mod 吗？所有相关文件将被物理删除。"}</p>
           <div class="flex items-center gap-2 justify-end">
             <button
-              class="radius-pill h-8 px-3.5 text-xs font-medium text-white cursor-pointer disabled:opacity-50"
-              style="background: var(--danger)"
+              class="radius-pill h-8 px-3.5 text-xs font-semibold text-white cursor-pointer disabled:opacity-50 transition-all active:scale-95 shadow-sm"
+              style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.4), 0 4px 12px rgba(239, 68, 68, 0.35);"
               disabled={busy}
               onclick={confirmUninstall}
             >
               {isExternal ? "确认断开" : "确定删除"}
             </button>
             <button
-              class="glass radius-pill h-8 px-3.5 text-xs font-medium cursor-pointer"
+              class="glass-liquid-btn h-8 px-3.5 text-xs font-medium cursor-pointer transition-all active:scale-95"
               onclick={() => (confirming = false)}
             >
               取消
@@ -915,24 +895,23 @@
           <div class="flex items-center gap-2">
             <CategoryMenu {categories} current={mod.category_id} label="移到分类" onpick={(catId: number | null) => onmove(catId)} />
             <button
-              class="glass radius-pill h-8 px-3 text-xs text-secondary hover:text-[var(--text)] cursor-pointer flex items-center gap-1.5 transition-colors"
+              class="glass-liquid-btn h-8 px-3 text-xs text-secondary hover:text-[var(--text)] cursor-pointer flex items-center gap-1.5 transition-all active:scale-95"
               title="在文件资源管理器中打开"
               disabled={sourceOffline}
               onclick={openModFolder}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-              </svg>
-              打开目录
+              <IconFolderOpen size={13} />
+              <span>打开目录</span>
             </button>
           </div>
           <button
-            class="radius-pill h-8 px-3 text-xs font-medium text-red-500 hover:bg-red-500/10 cursor-pointer transition-colors"
+            class="glass-liquid-btn-danger h-8 px-3 text-xs font-semibold cursor-pointer transition-all active:scale-95 flex items-center gap-1.5 z-10"
             title={mutationLocked ? `游戏运行期间暂不支持${isExternal ? "断开连接" : "卸载"}` : (isExternal ? "断开外部连接（不删除源文件）" : "彻底删除此 Mod")}
             disabled={mutationLocked}
             onclick={() => (confirming = true)}
           >
-            {isExternal ? "断开连接" : "卸载"}
+            <IconTrash size={13} />
+            <span>{isExternal ? "断开连接" : "卸载"}</span>
           </button>
         </div>
       {/if}
@@ -940,10 +919,7 @@
   {:else}
     <!-- 空状态提示 -->
     <div class="flex flex-col items-center justify-center flex-1 text-secondary gap-3 py-16 select-none opacity-60">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-        <line x1="9" y1="3" x2="9" y2="21"/>
-      </svg>
+      <IconPackage size={44} />
       <p class="text-sm font-medium">未选中 Mod</p>
     </div>
   {/if}
@@ -1051,9 +1027,7 @@
             title="在文件夹中打开此 Mod"
             onclick={openModFolder}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-            </svg>
+            <IconFolderOpen size={14} />
           </button>
 
           <button
@@ -1061,7 +1035,7 @@
             title="关闭 (Esc)"
             onclick={() => (lightboxOpen = false)}
           >
-            ✕
+            <IconClose size={13} />
           </button>
         </div>
       </div>
@@ -1085,9 +1059,7 @@
               prevImage();
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6"/>
-            </svg>
+            <IconChevronRight size={20} class="rotate-180" />
           </button>
 
           <button
@@ -1098,9 +1070,7 @@
               nextImage();
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
+            <IconChevronRight size={20} />
           </button>
         {/if}
 

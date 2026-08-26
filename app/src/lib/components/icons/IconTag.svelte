@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { size = 14, class: className = "" }: { size?: number; class?: string } = $props();
+  let { size = 16, class: className = "", duotone = true }: { size?: number; class?: string; duotone?: boolean } = $props();
 </script>
 
 <svg
@@ -8,11 +8,19 @@
   viewBox="0 0 24 24"
   fill="none"
   stroke="currentColor"
-  stroke-width="1.8"
+  stroke-width="1.6"
   stroke-linecap="round"
   stroke-linejoin="round"
-  class={className}
+  class="shrink-0 {className}"
 >
-  <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/>
-  <circle cx="7" cy="7" r="1" fill="currentColor"/>
+  {#if duotone}
+    <path
+      d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
+      fill="currentColor"
+      fill-opacity="0.18"
+      stroke="none"
+    />
+  {/if}
+  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+  <line x1="7" y1="7" x2="7.01" y2="7" stroke-width="2" />
 </svg>

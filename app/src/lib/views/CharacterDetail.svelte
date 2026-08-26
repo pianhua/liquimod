@@ -27,11 +27,20 @@
   import ReassignCharacterModal from "$lib/components/ReassignCharacterModal.svelte";
   import BatchActionBar from "$lib/components/BatchActionBar.svelte";
   import CustomSelect from "$lib/components/CustomSelect.svelte";
-  import IconGrip from "$lib/components/icons/IconGrip.svelte";
-  import IconClock from "$lib/components/icons/IconClock.svelte";
-  import IconSortAlpha from "$lib/components/icons/IconSortAlpha.svelte";
-  import IconZap from "$lib/components/icons/IconZap.svelte";
-  import IconSortSize from "$lib/components/icons/IconSortSize.svelte";
+  import {
+    IconArrowLeft,
+    IconUpload,
+    IconFolder,
+    IconLink,
+    IconPower,
+    IconPowerOff,
+    IconClock,
+    IconSort,
+    IconZap,
+    IconSortAlpha,
+    IconSortSize,
+    IconGrip,
+  } from "$lib/components/icons";
 
   let {
     character,
@@ -490,27 +499,27 @@
         {
           id: "toggle-fav",
           label: mod.is_favorite ? "取消标为喜爱" : "标为喜爱 (置顶)",
-          icon: mod.is_favorite ? "💔" : "💖",
+          icon: mod.is_favorite ? "unfav" : "fav",
           action: () => toggleFavoriteMod(mod),
         },
         { id: "d0", label: "", divider: true },
         {
           id: "toggle",
           label: mod.enabled ? "禁用此 Mod" : "启用此 Mod",
-          icon: mod.enabled ? "🚫" : "⚡",
+          icon: mod.enabled ? "disable" : "enable",
           shortcut: "Space",
           action: () => toggle(mod, !mod.enabled),
         },
         {
           id: "open",
           label: "在资源管理器中定位",
-          icon: "📂",
+          icon: "open",
           action: () => openModDir(mod),
         },
         {
           id: "reassign",
           label: "重新分配角色…",
-          icon: "🎯",
+          icon: "detail",
           disabled: gameRunning,
           action: () => {
             reassignTargetMod = mod;
@@ -519,13 +528,13 @@
         {
           id: "move",
           label: "移动到分类…",
-          icon: "🏷️",
+          icon: "tag",
           children: categoryItems,
         },
         {
           id: "rename",
           label: "重命名…",
-          icon: "✏️",
+          icon: "rename",
           disabled: gameRunning,
           action: () => {
             const newName = window.prompt("请输入新 Mod 名称：", mod.name);
@@ -538,7 +547,7 @@
         {
           id: "uninstall",
           label: mod.storage_kind === "external" ? "断开外部连接" : "卸载此 Mod",
-          icon: "🗑️",
+          icon: "uninstall",
           danger: true,
           disabled: gameRunning,
           shortcut: "Del",
@@ -840,13 +849,13 @@
   <div class="flex items-center justify-between gap-4 px-8 pt-2 pb-3 shrink-0">
     <div class="flex items-center gap-3.5 min-w-0">
       <button
-        class="glass radius-pill pl-2.5 pr-3.5 h-8 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-transform hover:-translate-x-0.5"
+        class="glass-liquid-btn radius-pill pl-2.5 pr-3.5 h-8 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-transform hover:-translate-x-0.5 text-secondary hover:text-[var(--text)]"
         onclick={onback}
       >
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <path d="M7 1L2.5 5L7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        {categoryName ? `返回${categoryName}` : "返回角色库"}
+        <span class="z-10 flex items-center gap-1.5">
+          <IconArrowLeft size={13} />
+          <span>{categoryName ? `返回${categoryName}` : "返回角色库"}</span>
+        </span>
       </button>
 
       {#if character.image}
@@ -874,63 +883,62 @@
 
     <!-- 顶部动作组：导入 Mod + 批量操作 -->
     <div class="flex items-center gap-2 shrink-0">
-      <!-- 导入 Mod 复合动作胶囊 (支持选择压缩包与文件夹) -->
-      <div class="flex items-center glass radius-pill p-0.5">
+      <!-- 导入 Mod 复合动作胶囊 (精简文案与精致光泽) -->
+      <div class="flex items-center glass-liquid-capsule p-0.5">
         <button
-          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] text-[var(--accent)] active:scale-95"
+          aria-label="导入压缩包"
+          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] active:scale-95 z-10"
           title={gameRunning ? "游戏运行期间暂不支持导入" : "选择本地 Mod 压缩包 (.zip / .7z / .rar) 导入到当前角色"}
           disabled={gameRunning}
           onclick={handleImportArchive}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <span>导入压缩包</span>
+          <IconUpload size={13} class="text-[var(--accent)] shrink-0" />
+          <span>压缩包</span>
         </button>
-        <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-60"></span>
+        <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-50 z-10"></span>
         <button
-          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] text-emerald-500 active:scale-95"
+          aria-label="导入文件夹"
+          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] active:scale-95 z-10"
           title={gameRunning ? "游戏运行期间暂不支持导入" : "选择本地 Mod 文件夹导入到当前角色"}
           disabled={gameRunning}
           onclick={handleImportFolder}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-          </svg>
-          <span>导入文件夹</span>
+          <IconFolder size={13} class="text-emerald-400 shrink-0" />
+          <span>文件夹</span>
         </button>
-        <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-60"></span>
+        <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-50 z-10"></span>
         <button
-          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] text-secondary active:scale-95"
+          aria-label="连接外部"
+          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer rounded-full transition-all text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] active:scale-95 z-10"
           title={gameRunning ? "游戏运行期间暂不支持连接外部目录" : "直接使用外部 Mod 文件夹，不复制源文件"}
           disabled={gameRunning}
           onclick={handleConnectFolder}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          <span>连接外部</span>
+          <IconLink size={13} class="text-amber-400/90 shrink-0" />
+          <span>关联</span>
         </button>
       </div>
 
-      <div class="flex items-center glass radius-pill p-0.5">
+      <!-- 全开 / 全关 极客状态控制组 -->
+      <div class="flex items-center glass-liquid-capsule p-0.5">
         <button
-          class="h-7 px-2.5 text-xs text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-full cursor-pointer transition-colors"
+          aria-label="全部启用"
+          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 text-secondary hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full cursor-pointer transition-all active:scale-95 z-10"
           title="启用当前筛选出的所有 Mod"
           onclick={enableAll}
         >
-          全开
+          <IconPower size={13} class="text-emerald-400" />
+          <span>全开</span>
         </button>
-        <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-60"></span>
+        <span class="w-[1px] h-3 bg-[var(--glass-stroke)] opacity-50 z-10"></span>
         <button
-          class="h-7 px-2.5 text-xs text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] rounded-full cursor-pointer transition-colors"
+          aria-label="全部禁用"
+          class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 text-secondary hover:text-rose-400 hover:bg-rose-500/10 rounded-full cursor-pointer transition-all active:scale-95 z-10"
           title="禁用当前筛选出的所有 Mod"
           onclick={disableAll}
         >
-          全关
+          <IconPowerOff size={13} class="text-rose-400/90" />
+          <span>全关</span>
         </button>
       </div>
     </div>

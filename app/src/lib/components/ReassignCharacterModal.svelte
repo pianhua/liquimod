@@ -8,6 +8,7 @@
     type CharacterSummary,
     type ModDto,
   } from "$lib/api";
+  import { IconClose, IconSearch, IconCheckCircle } from "$lib/components/icons";
 
   let {
     mod,
@@ -108,10 +109,7 @@
         onclick={onClose}
         title="关闭 (Esc)"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
+        <IconClose size={14} />
       </button>
     </div>
 
@@ -129,38 +127,30 @@
           }
         }}
       />
-      <svg
+      <IconSearch
         class="absolute left-3 top-2.5 text-secondary pointer-events-none"
-        width="15"
-        height="15"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <circle cx="11" cy="11" r="8" />
-        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-      </svg>
+        size={15}
+      />
     </div>
 
     <!-- 角色选择列表 -->
-    <div class="flex flex-col gap-1 max-h-60 overflow-y-auto pr-1">
+    <div class="flex-1 overflow-y-auto min-h-0 flex flex-col gap-1 pr-1">
       {#if isNewCharacter()}
         <button
           type="button"
-          class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-left cursor-pointer transition-all border border-dashed border-[var(--accent)] bg-[var(--accent-fill)] text-[var(--accent)] font-medium"
-          onclick={() => {
-            selectedTarget = search.trim();
-          }}
+          class="p-2.5 rounded-xl border flex items-center gap-3 text-left transition-colors cursor-pointer {selectedTarget === search.trim() ? 'border-[var(--accent)] bg-[var(--accent-fill)]' : 'border-dashed border-[var(--glass-stroke)] hover:bg-[var(--item-hover)]'}"
+          onclick={() => (selectedTarget = search.trim())}
         >
-          <div class="w-8 h-8 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-bold text-xs shrink-0">
-            ＋
+          <div class="w-10 h-10 rounded-full bg-[var(--accent-fill)] border border-[var(--accent)] flex items-center justify-center text-lg font-bold text-[var(--accent)] shrink-0">
+            +
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-semibold truncate">新建角色「{search.trim()}」</div>
-            <div class="text-xs opacity-80">创建新目录并移入此 Mod</div>
+            <div class="text-sm font-semibold truncate text-[var(--accent)]">
+              新建角色「{search.trim()}」
+            </div>
+            <div class="text-xs text-secondary">
+              将为此角色创建新的 Library 目录
+            </div>
           </div>
         </button>
       {/if}
@@ -170,28 +160,34 @@
         {@const isSelected = selectedTarget === char.internal_name}
         <button
           type="button"
-          class="flex items-center gap-3 px-3 py-2 rounded-xl text-left cursor-pointer transition-all {isSelected ? 'bg-[var(--accent-fill)] text-[var(--accent)] font-semibold' : 'hover:bg-[var(--item-hover)] text-[var(--text)]'} {isCurrent ? 'opacity-50 cursor-not-allowed' : ''}"
+          class="p-2 rounded-xl flex items-center gap-3 text-left transition-colors cursor-pointer {isSelected ? 'bg-[var(--accent-fill)] ring-1 ring-[var(--accent)]' : 'hover:bg-[var(--item-hover)]'} {isCurrent ? 'opacity-50 cursor-not-allowed' : ''}"
           disabled={isCurrent}
           onclick={() => {
             if (!isCurrent) selectedTarget = char.internal_name;
           }}
         >
-          <img
-            src={char.image ? (getCachedCharacterImage(char.image) || `/images/${char.image}`) : "/images/Others.png"}
-            alt=""
-            class="w-8 h-8 rounded-full object-cover object-top shrink-0 bg-black/10"
-            onerror={(e) => {
-              const img = e.currentTarget as HTMLImageElement;
-              if (img && !img.dataset.fallback) {
-                img.dataset.fallback = "1";
-                img.src = "/images/Others.png";
-              }
-            }}
-          />
+          {#if char.image}
+            <img
+              src={getCachedCharacterImage(char.image) || `/images/${char.image}`}
+              alt={char.display_name}
+              class="w-10 h-10 rounded-full object-cover object-top shrink-0 border border-[var(--glass-stroke)]"
+              onerror={(e) => {
+                const img = e.currentTarget as HTMLImageElement;
+                if (img && !img.dataset.fallback) {
+                  img.dataset.fallback = "1";
+                  img.src = "/images/Others.png";
+                }
+              }}
+            />
+          {:else}
+            <div class="w-10 h-10 rounded-full bg-[var(--surface)] border border-[var(--glass-stroke)] flex items-center justify-center text-sm font-bold text-secondary shrink-0">
+              {char.display_name.slice(0, 1)}
+            </div>
+          {/if}
           <div class="flex-1 min-w-0">
             <div class="text-sm font-medium truncate flex items-center gap-1.5">
               <span>{char.display_name}</span>
-              {#if char.display_name !== char.internal_name}
+              {#if char.internal_name !== char.display_name}
                 <span class="text-xs text-secondary font-normal">({char.internal_name})</span>
               {/if}
             </div>
@@ -200,13 +196,10 @@
           {#if isCurrent}
             <span class="text-xs text-secondary shrink-0">当前归属</span>
           {:else if isSelected}
-            <svg class="text-[var(--accent)] shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
+            <IconCheckCircle class="text-[var(--accent)] shrink-0" size={16} />
           {/if}
         </button>
       {/each}
-
       {#if filteredCharacters.length === 0 && !isNewCharacter()}
         <div class="py-8 text-center text-secondary text-sm">
           未找到匹配角色

@@ -7,6 +7,7 @@
     type CharacterSortOption,
   } from "$lib/api";
   import CharacterCard from "$lib/components/CharacterCard.svelte";
+  import { IconSearch } from "$lib/components/icons";
 
   let {
     characters,
@@ -27,6 +28,8 @@
   } = $props();
 
   let selectedElement = $state<string>("all");
+  let compareMode = $state<"compare" | "all-liquid" | "all-frosted">("compare");
+  let liquidIntensity = $state<"liquid" | "liquid-strong">("liquid");
 
   const elements = [
     { id: "all", label: "全部", color: "var(--text)" },
@@ -54,26 +57,24 @@
 
 <div class="flex flex-col flex-1 min-h-0">
   <!-- 属性筛选胶囊栏 -->
-  <div class="flex items-center gap-1.5 px-8 pb-2.5 shrink-0 overflow-x-auto select-none no-scrollbar">
+  <div class="flex items-center gap-1.5 px-8 pt-2 pb-2 shrink-0 overflow-x-auto select-none no-scrollbar">
     {#each elements as el}
       <button
-        class="glass radius-pill h-7 px-3 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer {selectedElement === el.id ? 'font-semibold shadow-sm' : 'text-secondary hover:text-[var(--text)]'}"
-        style={selectedElement === el.id
-          ? `background: var(--accent-fill); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent)`
-          : ""}
+        class="{selectedElement === el.id ? 'glass-liquid-btn-accent' : 'glass-liquid-btn'} radius-pill h-7 px-3 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
         onclick={() => (selectedElement = el.id)}
       >
-        {#if el.id !== "all"}
-          <span class="w-2 h-2 rounded-full shrink-0" style="background: {el.color}"></span>
-        {/if}
-        {el.label}
+        <span class="z-10 flex items-center gap-1.5">
+          {#if el.id !== "all"}
+            <span class="w-2 h-2 rounded-full shrink-0" style="background: {el.color}"></span>
+          {/if}
+          <span>{el.label}</span>
+        </span>
       </button>
     {/each}
   </div>
 
   <div
-    class="grid grid-cols-[repeat(auto-fill,180px)] [grid-auto-rows:200px] justify-center gap-6 px-8 pt-2 pb-10 overflow-y-auto flex-1 min-h-0 content-start will-change-scroll"
-    style="contain: layout style"
+    class="grid grid-cols-[repeat(auto-fill,180px)] [grid-auto-rows:200px] justify-center gap-6 px-8 pt-5 pb-10 overflow-y-auto flex-1 min-h-0 content-start will-change-scroll"
   >
     {#each filtered as c (c.internal_name)}
       <CharacterCard
@@ -86,8 +87,8 @@
     {/each}
     {#if filtered.length === 0}
       <div class="col-span-full border-2 border-dashed border-[var(--glass-stroke)] radius-card flex flex-col items-center justify-center text-secondary py-16 px-6 text-center my-6">
-        <div class="w-12 h-12 rounded-full grid place-items-center text-xl font-bold mb-2" style="background: var(--glass-tint)">
-          🔍
+        <div class="w-12 h-12 rounded-full grid place-items-center mb-2" style="background: var(--glass-tint)">
+          <IconSearch size={22} class="text-[var(--accent)]" />
         </div>
         <p class="text-sm font-medium text-[var(--text)]">没有匹配的角色</p>
         <p class="text-xs text-secondary mt-1">请尝试切换上方元素属性或清除搜索关键字</p>
