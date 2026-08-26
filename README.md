@@ -1,111 +1,57 @@
 # LiquiMod
 
-> 面向 Windows 的 3Dmigoto Mod 管理器，让 Mod 的导入、整理、部署和切换更简单。
+面向 Windows 的高性能 3Dmigoto / XXMI Mod 管理器。基于 Rust、Tauri 2 与 Svelte 5 构建，专注于解决传统 3Dmigoto 工作流中的内存膨胀、目录污染、繁琐配置与视觉陈旧问题。
 
-[![CI Quality Gate](https://github.com/pianhua/liquimod/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pianhua/liquimod/actions/workflows/ci.yml)
-[![Latest beta](https://img.shields.io/github/v/release/pianhua/liquimod?include_prereleases&label=latest%20beta)](https://github.com/pianhua/liquimod/releases)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/pianhua/liquimod?include_prereleases&label=Release&color=2563eb)](https://github.com/pianhua/liquimod/releases)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/pianhua/liquimod/ci.yml?branch=main&label=CI)](https://github.com/pianhua/liquimod/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0284c7)](https://github.com/pianhua/liquimod/releases)
+[![Rust](https://img.shields.io/badge/Rust-2021%20Edition-dea584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-v2-24c8db?logo=tauri&logoColor=white)](https://tauri.app/)
+[![Svelte](https://img.shields.io/badge/Svelte-v5-ff3e00?logo=svelte&logoColor=white)](https://svelte.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![License](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 
-LiquiMod 是一个使用 Rust、Tauri 2 和 Svelte 5 构建的 Windows 桌面应用，专注于管理《崩坏：星穹铁道》的 3Dmigoto/XXMI Mod。
+---
 
-当前版本：**`v0.1.0-beta.1`**。这是重新整理后的第一个公开 Beta，适合在做好数据备份后进行体验和反馈。
+## 核心优势
 
-## 下载
+- **Rust 原生性能与超低内存驻留**
+  全栈底层由 Rust + SQLite 构建，严格管理内存生命周期与异步任务，从根源杜绝长时间后台运行的内存泄漏与卡顿，毫秒级完成海量 Mod 库的索引与对账。
+- **Junction 目录解耦与零拷贝部署**
+  基于 NTFS / ReFS 目录联接（Junction）实现实体 Mod 的极速即时挂载。Mod 资产不必全部堆积在 3Dmigoto 的 `Mods` 文件夹内；支持将资产存放在独立工作区或直接关联外部已有目录，零磁盘冗余占用，绝不修改、移动或污染原始文件。
+- **内嵌 XXMI 运行态与一键启动更新**
+  内置 XXMI 注入生命周期管理与权限分离助手，集成 3Dmigoto 核心运行态一键同步与在线更新机制。无需手动下载、解压覆盖或反复配置 `d3dx.ini`，开箱即用并支持顶栏无感 F10 热重载。
+- **现代化 visionOS 液态玻璃界面**
+  深度融合次表面散射、微晶折射与自研 Duotone Liquid Lens 矢量图标体系，配备 3D 悬浮立绘与流体动效，提供更具质感的桌面视觉与交互体验。
 
-从 [GitHub Releases](https://github.com/pianhua/liquimod/releases) 下载最新版本：
+---
 
-| 文件 | 说明 |
-| --- | --- |
-| `LiquiMod-Windows-x64-setup.exe` | Windows 安装包，适合常规安装 |
-| `LiquiMod-Windows-x64.zip` | 便携版，解压后即可运行 |
+## 环境要求
 
-每个构建包都附带对应的 SHA-256 校验文件。首次使用建议先备份自己的 Mod 和配置数据。
+- **操作系统**：Windows 10 / 11 x64
+- **系统组件**：Microsoft Edge WebView2 Evergreen Runtime
+- **文件系统**：LiquiMod 数据目录需与 3Dmigoto `Mods` 目录位于同一 NTFS 或 ReFS 驱动器卷（用于支持 Junction 目录联接）
 
-## 功能
+---
 
-- 导入 `.zip`、`.7z`、`.rar` 压缩包或文件夹形式的 Mod
-- 连接外部 Mod 目录，不复制、移动、接管或删除源文件
-- 按角色分类，支持搜索、排序、收藏和自定义顺序
-- 选择 Mod 变体，并提示多个 Mod 同时启用的风险
-- 使用预设快速切换多角色 Mod 组合
-- 管理压缩包密码
-- 一键启动游戏并注入 3Dmigoto/XXMI
-- 通过 F10 手动热重载 Mod
+## 致谢与参考 (Acknowledgements)
 
-## 当前部署限制
+LiquiMod 在核心架构设计与工作流实现中，借鉴了以下社区优秀开源项目的思路与实践：
 
-`v0.1.0-beta.1` 目前只支持以下部署条件：
+- [**XXMI-Launcher**](https://github.com/SpectrumQT/XXMI-Launcher) *(GPL-3.0)* — 在 XXMI 注入生命周期、进程协同与启动器调度架构上提供了重要参考。
+- [**JASM**](https://github.com/Jorixon/JASM) *(GPL-3.0)* — 在 3Dmigoto Mod 目录管理模式与索引对账逻辑上提供了参考思路。
+- [**SSMT4-Alpha**](https://github.com/StarBobis/SSMT4-Alpha) *(GPL-3.0)* — 在 Mod 变体结构解析与游戏适配器设计上提供了参考。
 
-- LiquiMod 数据根目录和 3Dmigoto 的 `Mods` 目录位于同一卷
-- 该卷使用 NTFS 或 ReFS 文件系统
-- 部署方式为 Junction
+---
 
-跨卷、非 NTFS/ReFS 文件系统下的 `CopyFallback` 复制部署目前**暂不支持**。如果看到相关提示，请将 LiquiMod 数据根目录迁移到与 3Dmigoto `Mods` 目录相同的 NTFS/ReFS 卷后重试。
+## 免责声明 (Disclaimer)
 
-此外，崩溃恢复和部署修复路径已经包含在程序中，但本 Beta 尚未完成真实故障注入验证。遇到异常时，请保留日志和现场目录，不要直接删除运行期文件。
+1. **工具定位**：LiquiMod 仅为面向本地文件系统的**纯本地 Mod 资产管理器与目录调度工具**。
+2. **非协助制作**：本项目本身**不包含、不分发、不生成、亦不协助制作**任何违反游戏开发商 / 运营商用户协议、服务条款或版权保护机制的游戏资产与 Mod 内容。
+3. **无官方隶属**：本项目与 HoYoverse、miHoYo、3Dmigoto 官方或 XXMI 团队无任何商业合作或官方隶属关系。使用者在使用第三方 Mod 或相关工具时，应自行承担相应风险并遵守相关法律法规及游戏许可协议。
 
-## 快速开始
+---
 
-1. 安装或解压 LiquiMod。
-2. 在设置中选择游戏、3Dmigoto/XXMI 和数据根目录。
-3. 导入 Mod，或连接已有的外部 Mod 目录。
-4. 按角色整理 Mod，选择需要的变体并启用。
-5. 启动游戏；需要刷新时使用顶部的 F10 热重载按钮。
+## 开源许可证
 
-## 系统要求
-
-- Windows 10/11 x64
-- Microsoft Edge WebView2 Evergreen Runtime
-- 已正确配置的游戏与 3Dmigoto/XXMI 环境
-- LiquiMod 数据根目录与 3Dmigoto `Mods` 目录位于同一 NTFS/ReFS 卷
-
-## 从源码构建
-
-需要 Rust stable、Node.js 22 和 npm：
-
-```powershell
-git clone https://github.com/pianhua/liquimod.git
-cd liquimod
-
-Push-Location app
-npm ci
-npm run check
-npm test
-npm run build
-Pop-Location
-
-cargo build --release -p liquimod-refresh-helper
-cargo build --release --features tauri/custom-protocol --manifest-path app/src-tauri/Cargo.toml
-```
-
-也可以使用打包脚本生成安装包和便携包：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build_package.ps1
-```
-
-## 项目结构
-
-```text
-liquimod/
-├── crates/liquimod-core/           Rust 核心库：数据库、扫描、部署和诊断
-├── crates/liquimod-cli/            CLI 调试工具
-├── crates/liquimod-refresh-helper/ Windows 权限分离助手
-├── app/src-tauri/                  Tauri 后端、生命周期和 IPC
-├── app/src/                        Svelte 前端、页面和组件
-├── assets/                         内置角色数据与默认资源
-├── scripts/                        本地构建与打包脚本
-└── .github/workflows/              CI 与 Release 流水线
-```
-
-## 反馈与贡献
-
-请通过 [Issues](https://github.com/pianhua/liquimod/issues) 报告可复现的问题或提出功能建议。提交日志、截图或配置前，请先删除个人路径、账号信息和不应公开的 Mod 内容。
-
-## 免责声明
-
-LiquiMod 是社区独立工具，与 HoYoverse、miHoYo、3DMigoto 或 XXMI 项目没有隶属关系。请遵守游戏服务条款、Mod 作者许可和当地法律法规，并自行备份重要数据。
-
-## 许可证
-
-[MIT License](LICENSE)
+本项目基于 [MIT License](LICENSE) 协议开源。
