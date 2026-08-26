@@ -598,13 +598,13 @@
       </svg>
       <span>返回</span>
     </button>
-    <h2 class="text-2xl font-bold tracking-tight">偏好设置</h2>
+    <h2 class="text-[28px] leading-8 font-bold tracking-tight">偏好设置</h2>
   </div>
 
   <div class="flex flex-col gap-4 px-8 pb-10 overflow-y-auto flex-1 min-h-0 max-w-3xl w-full mx-auto">
     <!-- 分组 1：外观与偏好 -->
-    <section class="glass radius-panel p-6 flex flex-col gap-4">
-      <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">外观与偏好</h3>
+    <section class="liquid-glass radius-panel p-7 flex flex-col gap-5">
+      <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-secondary">外观与偏好</h3>
 
       <div class="flex items-center justify-between gap-3">
         <div>
@@ -670,9 +670,9 @@
     </section>
 
     <!-- 分组 2：游戏与 XXMI/SRMI 集成 -->
-    <section class="glass radius-panel p-6 flex flex-col gap-4">
+    <section class="liquid-glass radius-panel p-7 flex flex-col gap-5">
       <div class="flex flex-col gap-1">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">游戏与 XXMI/SRMI 集成</h3>
+        <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-secondary">游戏与 XXMI/SRMI 集成</h3>
         <p class="text-xs text-secondary leading-relaxed">游戏路径、便携运行时与分布式 Mod 源统一在 LiquiMod 内管理</p>
       </div>
 
@@ -938,9 +938,9 @@
     </section>
 
     <!-- 分组 3：启动与更新设置 -->
-    <section class="glass radius-panel p-6 flex flex-col gap-4">
+    <section class="liquid-glass radius-panel p-7 flex flex-col gap-5">
       <div>
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">启动与更新设置</h3>
+        <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-secondary">启动与更新设置</h3>
         <p class="text-xs text-secondary mt-0.5">原生 XXMI Hook 启动、DLL 初始化延迟与官方核心更新</p>
       </div>
 
@@ -1001,9 +1001,9 @@
     </section>
 
     <!-- 分组 4：解压密码本 -->
-    <section class="glass radius-panel p-6 flex flex-col gap-4">
+    <section class="liquid-glass radius-panel p-7 flex flex-col gap-5">
       <div>
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">解压密码本</h3>
+        <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-secondary">解压密码本</h3>
         <p class="text-xs text-secondary mt-0.5">安装加密压缩包时将自动轮询密码本，无需每次重复输入</p>
       </div>
 
@@ -1048,9 +1048,9 @@
     </section>
 
     <!-- 分组 5：维护与诊断 -->
-    <section class="glass radius-panel p-6 flex flex-col gap-4">
+    <section class="liquid-glass radius-panel p-7 flex flex-col gap-5">
       <div>
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-secondary">维护与系统诊断</h3>
+        <h3 class="text-[11px] font-semibold uppercase tracking-[0.08em] text-secondary">维护与系统诊断</h3>
         <p class="text-xs text-secondary mt-0.5">检查组件状态、同步磁盘索引或清理缓存</p>
       </div>
 

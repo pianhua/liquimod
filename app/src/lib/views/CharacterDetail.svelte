@@ -867,7 +867,7 @@
       {/if}
 
       <div class="flex items-baseline gap-2 truncate">
-        <h2 class="text-xl font-bold tracking-tight truncate">{character.display_name}</h2>
+        <h2 class="text-[22px] leading-7 font-bold tracking-tight truncate">{character.display_name}</h2>
         <span class="text-xs text-secondary shrink-0">{mods.length} 个 Mod</span>
       </div>
     </div>

@@ -54,7 +54,7 @@
 
 <div class="flex flex-col flex-1 min-h-0">
   <!-- 属性筛选胶囊栏 -->
-  <div class="flex items-center gap-1.5 px-6 pb-2.5 shrink-0 overflow-x-auto select-none no-scrollbar">
+  <div class="flex items-center gap-1.5 px-8 pb-2.5 shrink-0 overflow-x-auto select-none no-scrollbar">
     {#each elements as el}
       <button
         class="glass radius-pill h-7 px-3 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer {selectedElement === el.id ? 'font-semibold shadow-sm' : 'text-secondary hover:text-[var(--text)]'}"
@@ -72,7 +72,7 @@
   </div>
 
   <div
-    class="grid grid-cols-[repeat(auto-fill,180px)] [grid-auto-rows:200px] justify-center gap-5 px-6 pt-1 pb-8 overflow-y-auto flex-1 min-h-0 content-start will-change-scroll"
+    class="grid grid-cols-[repeat(auto-fill,180px)] [grid-auto-rows:200px] justify-center gap-6 px-8 pt-2 pb-10 overflow-y-auto flex-1 min-h-0 content-start will-change-scroll"
     style="contain: layout style"
   >
     {#each filtered as c (c.internal_name)}

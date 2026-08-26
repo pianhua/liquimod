@@ -136,7 +136,7 @@
   aria-hidden={dragPreview || dragPlaceholder}
   data-mod-id={mod.id}
   aria-label={mod.name}
-  class="group glass radius-card px-3.5 py-3 flex items-center gap-2.5 outline-none transition-colors cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  class="group liquid-glass radius-card px-3.5 py-3 flex items-center gap-2.5 outline-none transition-colors cursor-pointer focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
   class:selected-row={selected && !checked && !dragPreview && !dragPlaceholder}
   class:checked-row={checked && !dragPreview && !dragPlaceholder}
   class:dragging-active={dragPreview}

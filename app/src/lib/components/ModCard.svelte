@@ -97,7 +97,7 @@
   role="listitem"
   tabindex="0"
   aria-label={mod.name}
-  class="group glass radius-card overflow-hidden outline-none transition-all duration-200 ease-out hover:scale-[1.02] hover:-translate-y-1 hover:shadow-xl focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  class="group liquid-glass card-lift radius-card overflow-hidden outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
   onkeydown={onCardKeydown}
   oncontextmenu={(e) => {
     if (onmenu) {

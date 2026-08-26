@@ -48,7 +48,7 @@
 </script>
 
 <aside
-  class="shrink-0 flex flex-col min-h-0 py-3 transition-[width,padding] duration-150 ease-out select-none {collapsed ? 'w-16 px-2' : 'w-52 px-3'}"
+  class="shrink-0 flex flex-col min-h-0 h-full py-4 glass-floating radius-window transition-[width,padding] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none {collapsed ? 'w-[72px] px-2' : 'w-56 px-3'}"
   style="contain: layout style; will-change: width"
   aria-label="分类导航"
 >
@@ -80,7 +80,7 @@
   <nav class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 pr-0.5" aria-label="资源导航树">
     <!-- 1. 核心视图 -->
     {#if !collapsed}
-      <div class="px-2.5 pt-1 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-wider">
+      <div class="px-2.5 pt-1 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-[0.08em]">
         核心库
       </div>
     {/if}
@@ -115,7 +115,7 @@
 
     <!-- 2. 资源实体分类 -->
     {#if !collapsed}
-      <div class="px-2.5 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-wider">
+      <div class="px-2.5 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-[0.08em]">
         资源分类
       </div>
     {/if}
@@ -176,7 +176,7 @@
     {#if customTypes.length > 0}
       <div class="my-2 shrink-0 border-t border-[var(--glass-stroke)] opacity-60"></div>
       {#if !collapsed}
-        <div class="px-2.5 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-wider">
+        <div class="px-2.5 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-[0.08em]">
           自定义
         </div>
       {/if}

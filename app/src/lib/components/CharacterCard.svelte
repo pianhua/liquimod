@@ -57,8 +57,8 @@
 <div
   role="button"
   tabindex="0"
-  class="group relative radius-card overflow-hidden cursor-pointer select-none transition-all duration-300 ease-out hover:scale-[1.04] hover:-translate-y-1 active:scale-[0.96] outline-none focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 flex flex-col justify-end p-3"
-  style="box-shadow: 0 4px 20px -2px rgba(0,0,0,0.12), inset 0 0 0 0.5px rgba(255,255,255,0.2); background: var(--glass-tint); content-visibility: auto; contain-intrinsic-size: 180px 200px; contain: layout style paint"
+  class="group relative radius-card overflow-hidden cursor-pointer select-none card-lift outline-none focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 flex flex-col justify-end p-3"
+  style="background: var(--glass-tint); border: 0.5px solid var(--glass-stroke); box-shadow: var(--glass-rim), var(--shadow-soft); content-visibility: auto; contain-intrinsic-size: 180px 200px; contain: layout style paint"
   {onclick}
   oncontextmenu={(e) => {
     if (onmenu) {

@@ -29,16 +29,11 @@
 {#if info}
   <div
     role="tooltip"
-    class="fixed z-[999999] pointer-events-none select-none px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs transition-opacity duration-150 animate-in fade-in zoom-in-95"
+    class="fixed z-[999999] pointer-events-none select-none px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs transition-opacity duration-150 animate-in fade-in zoom-in-95 glass-floating"
     style="
       left: {info.x}px;
       top: {info.y}px;
       transform: {transformStyle};
-      background: var(--glass-floating-bg);
-      backdrop-filter: blur(28px) saturate(1.8);
-      -webkit-backdrop-filter: blur(28px) saturate(1.8);
-      border: 0.5px solid var(--glass-stroke);
-      box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.08);
       color: var(--text);
     "
   >

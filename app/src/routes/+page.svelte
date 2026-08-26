@@ -648,7 +648,7 @@
       {error}
     </div>
   {/if}
-  <div class="flex flex-1 min-h-0">
+  <div class="flex flex-1 min-h-0 gap-4 px-4 pb-4 pt-1">
     <Sidebar
       {view}
       {categories}
@@ -657,7 +657,7 @@
       bind:collapsed={sidebarCollapsed}
       onnavigate={navigate}
     />
-    <div bind:this={contentEl} class="relative flex flex-col flex-1 min-w-0 min-h-0" style="contain: layout style">
+    <div bind:this={contentEl} class="relative flex flex-col flex-1 min-w-0 min-h-0 glass-island radius-window overflow-hidden" style="contain: layout style">
       <!-- 正常工作区 (保活：通过 class:hidden 隐藏，杜绝 DOM 销毁与返回滚动抖动，同时彻底阻止透底重叠) -->
       <div class="flex flex-col flex-1 min-w-0 min-h-0" class:hidden={showSettings}>
         <Toolbar
@@ -681,9 +681,9 @@
           onapplied={refresh}
         />
         {#if isCharGrid}
-          <header class="px-6 pt-1 pb-3 shrink-0">
-            <h1 class="text-2xl font-bold tracking-tight">{view.kind === "home" ? charCatName : view.name}</h1>
-            <p class="text-xs text-secondary mt-0.5">{characters.length} 位 · {charModTotal} 个 Mod</p>
+          <header class="px-8 pt-2 pb-3 shrink-0">
+            <h1 class="text-[28px] leading-8 font-bold tracking-tight">{view.kind === "home" ? charCatName : view.name}</h1>
+            <p class="text-xs text-secondary mt-1">{characters.length} 位 · {charModTotal} 个 Mod</p>
           </header>
           <CharacterGrid
             {characters}

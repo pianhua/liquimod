@@ -431,6 +431,13 @@
     el.focus();
   }
 
+  function handleSpotlightMove(e: MouseEvent) {
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty("--spotlight-x", `${((e.clientX - rect.left) / rect.width) * 100}%`);
+    el.style.setProperty("--spotlight-y", `${((e.clientY - rect.top) / rect.height) * 100}%`);
+  }
+
   async function saveNote() {
     if (!mod) return;
     const v = noteDraft.trim();
@@ -462,16 +469,17 @@
 
 <svelte:window onkeydown={handleLightboxKeydown} />
 
-<div class="glass radius-panel p-6 flex flex-col gap-5 h-full min-h-0 overflow-y-auto">
+<div class="liquid-glass radius-panel p-7 flex flex-col gap-5 h-full min-h-0 overflow-y-auto">
   {#if mod}
     <!-- 1. 大预览图展示区（带双层极光环境光与立体悬浮海报设计） -->
     <div
-      class="group relative w-full h-[260px] min-h-[200px] max-h-[340px] radius-card overflow-hidden flex items-center justify-center p-3 shrink-0 cursor-pointer select-none"
-      style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke); background: var(--glass-tint)"
+      class="group spotlight relative w-full h-[260px] min-h-[200px] max-h-[340px] radius-card overflow-hidden flex items-center justify-center p-3 shrink-0 cursor-pointer select-none"
+      style="box-shadow: inset 0 0 0 0.5px var(--glass-stroke), var(--glass-rim); background: var(--glass-tint)"
       role="button"
       tabindex="0"
       aria-label="查看高清全屏大图"
       onclick={openCoverLightbox}
+      onmousemove={handleSpotlightMove}
       onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openCoverLightbox()}
     >
       {#if mod.thumb}
@@ -580,7 +588,7 @@
           </div>
         {:else}
           <div class="flex items-center gap-2 group/title min-w-0">
-            <h2 class="text-xl font-bold tracking-tight truncate select-text" title={mod.name}>
+            <h2 class="text-[22px] leading-7 font-bold tracking-tight truncate select-text" title={mod.name}>
               {mod.name}
             </h2>
             {#if isExternal}

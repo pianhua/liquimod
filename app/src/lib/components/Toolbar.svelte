@@ -80,9 +80,9 @@
 
 <svelte:window onclick={handleWindowClick} onkeydown={onGlobalKeydown} />
 
-<header class="relative z-30 flex items-center justify-between h-14 px-6 shrink-0 gap-4" aria-label="全局控制台">
+<header class="relative z-30 flex items-center justify-between h-12 px-4 mx-3 mt-3 shrink-0 gap-3 glass-floating radius-panel" aria-label="全局控制台">
   <!-- 左侧：面包屑导航 -->
-  <nav class="flex items-center text-sm text-secondary min-w-0 max-w-[260px] truncate" aria-label="面包屑">
+  <nav class="flex items-center text-sm text-secondary min-w-0 max-w-[200px] truncate" aria-label="面包屑">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-2 shrink-0 opacity-70">
       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
       <polyline points="9 22 9 12 15 12 15 22"/>
@@ -108,7 +108,7 @@
         bind:this={searchInputEl}
         bind:value={query}
         type="search"
-        placeholder="搜索角色或 Mod (Ctrl+K)…"
+        placeholder="搜索 (Ctrl+K)…"
         class="flex-1 min-w-0 bg-transparent outline-none text-xs placeholder:text-[var(--text-secondary)]"
         onkeydown={(e) => {
           if (e.key === "Escape") {
@@ -183,13 +183,13 @@
 
     {#if onimport}
       <button
-        class="glass radius-pill h-8 px-2.5 flex items-center gap-1.5 text-xs font-medium cursor-pointer transition-colors hover:bg-[var(--item-hover)] active:scale-95 shrink-0"
+        class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer transition-colors hover:bg-[var(--item-hover)] active:scale-95 shrink-0"
         aria-label="导入 Mod 包"
         title="选择 Mod 压缩包导入；如果系统拖放无反应，请使用这里"
         onclick={onimport}
       >
         <IconPackage size={13} />
-        <span>导入</span>
+        <span class="sr-only">导入</span>
       </button>
     {/if}
 
@@ -304,7 +304,7 @@
       </button>
       <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
       <button
-        class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
+        class="h-7 w-7 grid place-items-center text-secondary cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
         onclick={onlaunchnativegame}
         disabled={launchBusy}
         title="直接启动游戏主程序，不注入 3DMigoto（原版纯净游戏）"
@@ -313,12 +313,12 @@
           <circle cx="12" cy="12" r="10"/>
           <polygon points="10 8 16 12 10 16 10 8"/>
         </svg>
-        <span>纯净启动</span>
+        <span class="sr-only">纯净启动</span>
       </button>
       {#if onlaunchofficial}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
         <button
-          class="h-7 px-2 text-xs text-secondary flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
+          class="h-7 w-7 grid place-items-center text-secondary cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
           onclick={onlaunchofficial}
           disabled={launchBusy}
           title="打开崩铁官方启动器 / HoYoPlay"
@@ -327,13 +327,13 @@
             <circle cx="12" cy="12" r="10"/>
             <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/>
           </svg>
-          <span>官方启动器</span>
+          <span class="sr-only">官方启动器</span>
         </button>
       {/if}
       {#if onrefreshgame}
         <span class="w-[1px] h-3.5 bg-[var(--glass-stroke)] mx-0.5 opacity-60"></span>
         <button
-          class="h-7 px-2.5 text-xs text-secondary flex items-center gap-1.5 cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
+          class="h-7 w-7 grid place-items-center text-secondary cursor-pointer rounded-full transition-all hover:bg-[var(--item-hover)] hover:text-[var(--text)] active:scale-95"
           onclick={onrefreshgame}
           disabled={launchBusy}
           title="向游戏发送刷新信号 (F10)"
@@ -341,7 +341,7 @@
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
           </svg>
-          <span>热重载</span>
+          <span class="sr-only">热重载</span>
         </button>
       {/if}
     </div>
