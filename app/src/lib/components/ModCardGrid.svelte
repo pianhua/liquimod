@@ -41,10 +41,10 @@
 </script>
 
 <div class="flex flex-col flex-1 min-h-0">
-  <div class="px-6 pt-2 pb-1 shrink-0">
+  <div class="px-8 pt-2 pb-1 shrink-0">
     <EnabledFilterChips bind:value={enabledFilter} />
   </div>
-  <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-5 px-6 pt-2 pb-8 overflow-y-auto flex-1 min-h-0 content-start">
+  <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-6 px-8 pt-2 pb-10 overflow-y-auto flex-1 min-h-0 content-start">
     {#each shown as m (m.id)}
       <ModCard
         mod={m}

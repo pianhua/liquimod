@@ -1,5 +1,13 @@
 <script lang="ts">
   import type { CategoryDto } from "$lib/api";
+  import {
+    IconPower,
+    IconPowerOff,
+    IconTag,
+    IconUser,
+    IconTrash,
+    IconClose,
+  } from "$lib/components/icons";
 
   let {
     selectedCount,
@@ -49,9 +57,7 @@
       title="启用所有选中的 Mod"
       onclick={onEnableAll}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-      </svg>
+      <IconPower size={13} class="text-emerald-500" />
       <span>启用</span>
     </button>
 
@@ -62,10 +68,7 @@
       title="禁用所有选中的 Mod"
       onclick={onDisableAll}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-      </svg>
+      <IconPowerOff size={13} />
       <span>禁用</span>
     </button>
 
@@ -77,10 +80,7 @@
         title="批量移动到分类"
         onclick={() => (showCategoryMenu = !showCategoryMenu)}
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-          <line x1="7" y1="7" x2="7.01" y2="7"/>
-        </svg>
+        <IconTag size={13} />
         <span>分类</span>
       </button>
 
@@ -124,11 +124,7 @@
       disabled={destructiveLocked}
       onclick={onReassignCharacter}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <circle cx="12" cy="12" r="6"/>
-        <circle cx="12" cy="12" r="2"/>
-      </svg>
+      <IconUser size={13} />
       <span>换角色</span>
     </button>
 
@@ -162,10 +158,7 @@
         disabled={destructiveLocked}
         onclick={() => (isConfirmingDelete = true)}
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 6 5 6 21 6"/>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-        </svg>
+        <IconTrash size={13} class="text-red-400" />
         <span>卸载</span>
       </button>
     {/if}
@@ -179,10 +172,7 @@
       title="取消选择 (Esc)"
       onclick={onClearSelection}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18"/>
-        <line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
+      <IconClose size={12} />
     </button>
   </div>
 {/if}

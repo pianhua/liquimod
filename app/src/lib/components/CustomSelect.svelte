@@ -10,7 +10,8 @@
 
 <script lang="ts" generics="T extends string | number | boolean | null">
   import { onMount } from "svelte";
-  import { pushEscHandler } from "$lib/esc";
+  import { pushEscHandler, registerPopover, notifyPopoverOpened } from "$lib/esc";
+  import { IconChevronDown, IconCheckCircle } from "$lib/components/icons";
 
   let {
     value = $bindable(),
@@ -36,8 +37,17 @@
 
   let currentOption = $derived(options.find((o) => o.value === value));
 
+  const closeSelf = () => {
+    open = false;
+  };
+
+  $effect(() => {
+    return registerPopover(closeSelf);
+  });
+
   $effect(() => {
     if (open) {
+      notifyPopoverOpened(closeSelf);
       const idx = options.findIndex((o) => o.value === value);
       focusedIndex = idx >= 0 ? idx : 0;
       hoveredIndex = -1;
@@ -126,49 +136,36 @@
     aria-expanded={open}
     aria-haspopup="listbox"
     aria-controls="custom-select-listbox"
-    class="flex items-center justify-between radius-pill glass border border-[var(--glass-stroke)] text-secondary hover:text-[var(--text)] transition-all cursor-pointer shadow-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/50 {sizeClasses[size]}"
+    class="flex items-center justify-between radius-pill glass-liquid-btn border border-[var(--glass-stroke)] text-[var(--text)] transition-all cursor-pointer shadow-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/50 {sizeClasses[size]}"
     onclick={toggleOpen}
-    style={open ? "border-color: var(--accent); color: var(--text);" : ""}
+    style={open ? "border-color: var(--accent);" : ""}
   >
-    <div class="flex items-center gap-1.5 truncate">
+    <div class="flex items-center gap-1.5 truncate z-10">
       {#if currentOption?.icon}
         {#if typeof currentOption.icon === "string"}
           <span class="text-xs shrink-0">{currentOption.icon}</span>
         {:else}
           {@const IconComp = currentOption.icon}
-          <span class="shrink-0 text-secondary flex items-center"><IconComp size={13} /></span>
+          <span class="shrink-0 text-[var(--accent)] flex items-center"><IconComp size={13} /></span>
         {/if}
       {/if}
-      <span class="truncate font-medium text-[var(--text)]">
-        {currentOption?.label ?? placeholder}
-      </span>
+      <span class="truncate font-medium">{currentOption?.label ?? placeholder}</span>
     </div>
 
     <!-- 下拉指示箭头 -->
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class="shrink-0 text-secondary transition-transform duration-200"
-      style={open ? "transform: rotate(180deg);" : ""}
-    >
-      <polyline points="6 9 12 15 18 9"></polyline>
-    </svg>
+    <IconChevronDown
+      size={12}
+      class="shrink-0 transition-transform duration-200 ml-1.5 text-secondary z-10 {open ? 'rotate-180 text-[var(--accent)]' : ''}"
+    />
   </button>
 
-  <!-- 下拉悬浮菜单面板 (高保真玻璃卡片，绝对杜绝背景透字) -->
+  <!-- 下拉悬浮菜单面板 (高保真黑曜玻璃卡片，绝对杜绝背景透字) -->
   {#if open}
     <div
       id="custom-select-listbox"
-      class="absolute top-full left-0 mt-1.5 min-w-[130px] max-h-60 overflow-y-auto glass-floating radius-card p-1 z-50 flex flex-col gap-0.5 shadow-2xl border border-[var(--glass-floating-stroke)] animate-slide-up"
+      class="absolute top-full left-0 mt-2 min-w-[150px] max-h-64 overflow-y-auto glass-popover p-1.5 z-50 flex flex-col gap-0.5 animate-slide-up"
       role="listbox"
       tabindex="-1"
-      style="box-shadow: var(--glass-floating-shadow);"
       onmouseleave={() => {
         hoveredIndex = -1;
         if (focusSource === "pointer") focusSource = "none";
@@ -182,10 +179,10 @@
           type="button"
           role="option"
           aria-selected={isSelected}
-          class="flex items-center justify-between w-full px-2.5 py-1.5 radius-pill text-xs text-left cursor-pointer transition-colors {isSelected
-            ? 'bg-[var(--accent)]/15 text-[var(--accent)] font-semibold'
+          class="flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs text-left cursor-pointer transition-all {isSelected
+            ? 'bg-[var(--accent-fill)] text-[var(--accent)] font-semibold'
             : isFocused || isHovered
-            ? 'bg-[var(--item-hover)] text-[var(--text)]'
+            ? 'bg-[var(--item-hover)] text-[var(--text)] font-medium'
             : 'text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)]'}"
           onclick={(e) => selectOption(opt, e)}
           onmouseenter={() => {
@@ -207,19 +204,7 @@
           </div>
 
           {#if isSelected}
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="3"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              class="shrink-0 text-[var(--accent)]"
-            >
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
+            <IconCheckCircle size={13} class="shrink-0 text-[var(--accent)]" />
           {/if}
         </button>
       {/each}

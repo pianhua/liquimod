@@ -7,15 +7,20 @@
   height={size}
   viewBox="0 0 24 24"
   fill="none"
-  stroke="currentColor"
-  stroke-width="1.8"
-  stroke-linecap="round"
-  stroke-linejoin="round"
   class={className}
 >
-  <path d="m3 8 4-4 4 4" />
-  <path d="M7 4v16" />
-  <path d="M15 4h5l-5 6h5" />
-  <path d="M15 20v-3.5a2.5 2.5 0 0 1 5 0V20" />
-  <path d="M15 16.5h5" />
+  <path
+    d="M4 18l4-10 4 10m-6.5-3.5h5"
+    stroke="currentColor"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M18 6v12m0 0l-3-3m3 3l3-3"
+    stroke="currentColor"
+    stroke-width="1.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>

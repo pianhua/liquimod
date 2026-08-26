@@ -1,12 +1,11 @@
 <script lang="ts">
+  import { IconSearch } from "$lib/components/icons";
+
   let { value = $bindable("") }: { value: string } = $props();
 </script>
 
 <div class="glass radius-pill flex items-center gap-2 pl-3.5 pr-4 h-9 w-full">
-  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" class="shrink-0 text-secondary">
-    <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.3" />
-    <path d="M8.8 8.8L12 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-  </svg>
+  <IconSearch size={13} class="shrink-0 text-secondary" />
   <input
     bind:value
     type="search"

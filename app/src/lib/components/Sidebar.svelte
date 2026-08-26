@@ -1,6 +1,15 @@
 <script lang="ts">
   import type { CategoryDto } from "$lib/api";
   import type { View } from "$lib/view";
+  import {
+    IconUser,
+    IconFolder,
+    IconPackage,
+    IconSidebar,
+    IconLayers,
+    IconTag,
+    IconSparkles,
+  } from "$lib/components/icons";
 
   let {
     view,
@@ -34,59 +43,40 @@
       .filter((c) => c.kind == null)
       .sort((a, b) => a.ord - b.ord),
   );
-
-  function getCategoryIcon(kind: string | null): string {
-    switch (kind) {
-      case "lightcone": return "🗡️";
-      case "portrait": return "🖼️";
-      case "scene": return "🏞️";
-      case "npc": return "👥";
-      case "other": return "📦";
-      default: return "📁";
-    }
-  }
 </script>
 
 <aside
-  class="shrink-0 flex flex-col min-h-0 py-3 transition-[width,padding] duration-150 ease-out select-none {collapsed ? 'w-16 px-2' : 'w-52 px-3'}"
-  style="contain: layout style; will-change: width"
+  class="shrink-0 flex flex-col min-h-0 h-full py-3.5 border-r border-[var(--glass-stroke)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none {collapsed ? 'w-[58px] px-1.5' : 'w-44 px-2'}"
+  style="background: var(--sidebar-bg); contain: layout style; will-change: width"
   aria-label="分类导航"
 >
   <!-- 顶部 Header：分类导航标题与收起/展开控制按钮 -->
   <div class="shrink-0 flex items-center {collapsed ? 'justify-center' : 'justify-between'} px-1 pb-2">
     {#if !collapsed}
-      <span class="text-xs font-bold tracking-tight text-secondary px-1.5 select-none">
+      <span class="text-xs font-bold tracking-tight text-secondary px-1 select-none">
         资源导航
       </span>
     {/if}
     <button
-      class="w-8 h-8 glass radius-pill flex items-center justify-center text-secondary hover:text-[var(--text)] cursor-pointer transition-transform hover:scale-105"
+      class="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] active:scale-95 transition-all cursor-pointer"
       title={collapsed ? "展开侧边栏" : "收起侧边栏"}
       aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
       onclick={() => (collapsed = !collapsed)}
     >
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-        <line x1="9" y1="3" x2="9" y2="21"/>
-        {#if collapsed}
-          <polyline points="13 10 15 12 13 14"/>
-        {:else}
-          <polyline points="15 10 13 12 15 14"/>
-        {/if}
-      </svg>
+      <IconSidebar size={15} class="opacity-80 hover:opacity-100 transition-opacity" />
     </button>
   </div>
 
-  <nav class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 pr-0.5" aria-label="资源导航树">
+  <nav class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5 pr-0.5" aria-label="资源导航树">
     <!-- 1. 核心视图 -->
     {#if !collapsed}
-      <div class="px-2.5 pt-1 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-wider">
+      <div class="px-2 pt-0.5 pb-0.5 text-[10px] font-semibold text-secondary uppercase tracking-[0.06em]">
         核心库
       </div>
     {/if}
 
     <button
-      class="flex items-center gap-2.5 h-9 radius-card text-sm cursor-pointer transition-all {collapsed ? 'justify-center px-0' : 'justify-between px-3'}"
+      class="w-full flex items-center gap-2 h-8 radius-pill text-xs cursor-pointer transition-all {collapsed ? 'justify-center px-0' : 'justify-between px-2.5'}"
       style={isActive("home")
         ? "background: var(--accent-fill); color: var(--accent); font-weight: 600"
         : ""}
@@ -94,35 +84,32 @@
       title={charCatName}
       onclick={() => onnavigate({ kind: "home" })}
     >
-      <div class="flex items-center gap-2.5 min-w-0">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-          <circle cx="12" cy="7" r="4"/>
-        </svg>
+      <div class="flex items-center gap-2 min-w-0">
+        <IconUser size={15} class="shrink-0" />
         {#if !collapsed}
           <span class="truncate">{charCatName}</span>
         {/if}
       </div>
       {#if !collapsed}
-        <span class="text-xs text-secondary shrink-0">{charCount}</span>
+        <span class="text-[11px] font-mono text-secondary shrink-0">{charCount}</span>
       {/if}
     </button>
 
     <!-- 分割线 -->
     {#if fixedTypes.length > 0}
-      <div class="my-2 shrink-0 border-t border-[var(--glass-stroke)] opacity-60"></div>
+      <div class="my-1.5 shrink-0 border-t border-[var(--glass-stroke)] opacity-50"></div>
     {/if}
 
     <!-- 2. 资源实体分类 -->
     {#if !collapsed}
-      <div class="px-2.5 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-wider">
+      <div class="px-2 pb-0.5 text-[10px] font-semibold text-secondary uppercase tracking-[0.06em]">
         资源分类
       </div>
     {/if}
 
     {#each fixedTypes as c (c.id)}
       <button
-        class="w-full flex items-center gap-2.5 h-9 radius-card text-sm cursor-pointer transition-all {collapsed ? 'justify-center px-0' : 'justify-between px-3'}"
+        class="w-full flex items-center gap-2 h-8 radius-pill text-xs cursor-pointer transition-all {collapsed ? 'justify-center px-0' : 'justify-between px-2.5'}"
         style={isActive(String(c.id))
           ? "background: var(--accent-fill); color: var(--accent); font-weight: 600"
           : ""}
@@ -130,37 +117,18 @@
         title={c.name}
         onclick={() => onnavigate({ kind: "type", id: c.id, name: c.name })}
       >
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-4 h-4 shrink-0 grid place-items-center">
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-3.5 h-3.5 shrink-0 grid place-items-center">
             {#if c.kind === "lightcone"}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="5" y="3" width="14" height="18" rx="2"/>
-                <path d="M12 7v10m-4-5h8"/>
-              </svg>
+              <IconSparkles size={14} />
             {:else if c.kind === "portrait"}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <circle cx="8.5" cy="8.5" r="1.5"/>
-                <polyline points="21 15 16 10 5 21"/>
-              </svg>
+              <IconLayers size={14} />
             {:else if c.kind === "scene"}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="12 2 2 22 22 22"/>
-                <polygon points="12 10 6 22 18 22"/>
-              </svg>
+              <IconTag size={14} />
             {:else if c.kind === "npc"}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
+              <IconUser size={14} />
             {:else}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                <line x1="12" y1="22.08" x2="12" y2="12"/>
-              </svg>
+              <IconPackage size={14} />
             {/if}
           </div>
           {#if !collapsed}
@@ -168,21 +136,21 @@
           {/if}
         </div>
         {#if !collapsed}
-          <span class="text-xs text-secondary shrink-0">{c.mod_count}</span>
+          <span class="text-[11px] font-mono text-secondary shrink-0">{c.mod_count}</span>
         {/if}
       </button>
     {/each}
 
     {#if customTypes.length > 0}
-      <div class="my-2 shrink-0 border-t border-[var(--glass-stroke)] opacity-60"></div>
+      <div class="my-1.5 shrink-0 border-t border-[var(--glass-stroke)] opacity-50"></div>
       {#if !collapsed}
-        <div class="px-2.5 pb-1 text-[11px] font-semibold text-secondary uppercase tracking-wider">
+        <div class="px-2 pb-0.5 text-[10px] font-semibold text-secondary uppercase tracking-[0.06em]">
           自定义
         </div>
       {/if}
       {#each customTypes as c (c.id)}
         <button
-          class="w-full flex items-center gap-2.5 h-9 radius-card text-sm cursor-pointer transition-all {collapsed ? 'justify-center px-0' : 'justify-between px-3'}"
+          class="w-full flex items-center gap-2 h-8 radius-pill text-xs cursor-pointer transition-all {collapsed ? 'justify-center px-0' : 'justify-between px-2.5'}"
           style={isActive(String(c.id))
             ? "background: var(--accent-fill); color: var(--accent); font-weight: 600"
             : ""}
@@ -190,18 +158,16 @@
           title={c.name}
           onclick={() => onnavigate({ kind: "type", id: c.id, name: c.name })}
         >
-          <div class="flex items-center gap-2.5 min-w-0">
-            <div class="w-4 h-4 shrink-0 grid place-items-center">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-              </svg>
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="w-3.5 h-3.5 shrink-0 grid place-items-center">
+              <IconFolder size={14} />
             </div>
             {#if !collapsed}
               <span class="truncate">{c.name}</span>
             {/if}
           </div>
           {#if !collapsed}
-            <span class="text-xs text-secondary shrink-0">{c.mod_count}</span>
+            <span class="text-[11px] font-mono text-secondary shrink-0">{c.mod_count}</span>
           {/if}
         </button>
       {/each}

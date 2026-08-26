@@ -29,6 +29,15 @@
   });
 </script>
 
-{@render children()}
+<div class="fixed inset-0 pointer-events-none overflow-hidden app-ambient-aurora" aria-hidden="true">
+  <div class="aurora-blob aurora-blob-1"></div>
+  <div class="aurora-blob aurora-blob-2"></div>
+  <div class="aurora-blob aurora-blob-3"></div>
+  <div class="aurora-blob aurora-blob-4"></div>
+</div>
+
+<div class="relative z-10 flex flex-col h-full">
+  {@render children()}
+</div>
 <Toast />
 <TooltipRoot />

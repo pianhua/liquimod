@@ -12,10 +12,10 @@
           var isDark = t === "dark" || (t !== "light" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (isDark) {
             document.documentElement.classList.add("dark");
-            document.documentElement.style.background = "#0c0d12";
+            document.documentElement.style.background = "#12141c";
           } else {
             document.documentElement.classList.remove("dark");
-            document.documentElement.style.background = "#f4f6fb";
+            document.documentElement.style.background = "#eef0f6";
           }
         } catch (e) {}
       })();
@@ -24,5 +24,27 @@
   </head>
   <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>
+    <!-- SVG 液态玻璃置换滤镜库（供 CSS filter: url(#...) 引用） -->
+    <svg aria-hidden="true" style="position: absolute; width: 0; height: 0; pointer-events: none; overflow: hidden;">
+      <defs>
+        <!-- 极细腻平滑液态微折射 (Smooth Liquid - 严格对应参考文章参数) -->
+        <filter id="liquid-glass-smooth" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="7" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="10" xChannelSelector="R" yChannelSelector="G" result="displaced" />
+        </filter>
+
+        <!-- 柔和微波折射 (Subtle) -->
+        <filter id="liquid-glass-subtle" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="2" seed="21" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="6" xChannelSelector="R" yChannelSelector="G" result="displaced" />
+        </filter>
+
+        <!-- 明显流体折射 (Fluid) -->
+        <filter id="liquid-glass-fluid" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" seed="42" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="14" xChannelSelector="R" yChannelSelector="G" result="displaced" />
+        </filter>
+      </defs>
+    </svg>
   </body>
 </html>

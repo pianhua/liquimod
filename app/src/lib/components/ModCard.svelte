@@ -2,6 +2,7 @@
   import type { CategoryDto, ModDto } from "$lib/api";
   import Toggle from "./Toggle.svelte";
   import CategoryMenu from "./CategoryMenu.svelte";
+  import { IconFolderOpen, IconPencil, IconTrash } from "$lib/components/icons";
 
   let {
     mod,
@@ -97,7 +98,7 @@
   role="listitem"
   tabindex="0"
   aria-label={mod.name}
-  class="group glass radius-card overflow-hidden outline-none transition-all duration-200 ease-out hover:scale-[1.02] hover:-translate-y-1 hover:shadow-xl focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+  class="group liquid-glass card-lift radius-card overflow-hidden outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
   onkeydown={onCardKeydown}
   oncontextmenu={(e) => {
     if (onmenu) {
@@ -148,9 +149,7 @@
             title="打开目录"
             onclick={onopen}
           >
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-              <path d="M1.5 3.5a1 1 0 0 1 1-1h2.6l1 1.2h5.4a1 1 0 0 1 1 1v5.8a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1v-6Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-            </svg>
+            <IconFolderOpen size={13} />
           </button>
           <button
             class="glass radius-pill w-8 h-8 grid place-items-center cursor-pointer"
@@ -158,9 +157,7 @@
             title="重命名"
             onclick={startRename}
           >
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-              <path d="M8.6 2.2 10.8 4.4 4.7 10.5l-2.9.7.7-2.9 6.1-6.1Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-            </svg>
+            <IconPencil size={13} />
           </button>
           <CategoryMenu
             {categories}
@@ -174,9 +171,7 @@
             title="卸载"
             onclick={() => (confirming = true)}
           >
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-              <path d="M2 3.5h9M5 3.5V2.3a.8.8 0 0 1 .8-.8h1.4a.8.8 0 0 1 .8.8v1.2M3.2 3.5l.5 7a1 1 0 0 0 1 .9h3.6a1 1 0 0 0 1-.9l.5-7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
+            <IconTrash size={13} />
           </button>
         </div>
       {/if}
