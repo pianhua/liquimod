@@ -2862,7 +2862,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "liquimod-app"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -2888,7 +2888,7 @@ dependencies = [
 
 [[package]]
 name = "liquimod-cli"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "clap",
  "liquimod-core",
@@ -2897,7 +2897,7 @@ dependencies = [
 
 [[package]]
 name = "liquimod-core"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -2929,7 +2929,7 @@ dependencies = [
 
 [[package]]
 name = "liquimod-refresh-helper"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "liquimod-core",
  "sysinfo",
