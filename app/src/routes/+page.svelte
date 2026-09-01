@@ -643,7 +643,7 @@
 </script>
 
 <div class="window-frame" class:window-frame-maximized={windowMaximized}>
-  <div class="window-shell radius-window h-full min-h-0 overflow-hidden">
+  <div class="window-shell h-full min-h-0 overflow-hidden">
     <div class="app-ambient-aurora" aria-hidden="true">
       <div class="aurora-blob aurora-blob-1"></div>
       <div class="aurora-blob aurora-blob-2"></div>

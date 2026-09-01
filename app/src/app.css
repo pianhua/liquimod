@@ -28,6 +28,13 @@
     radial-gradient(ellipse 60% 50% at 50% 115%, rgba(103, 232, 249, 0.25), transparent 70%),
     radial-gradient(ellipse 55% 45% at 95% 5%, rgba(251, 146, 60, 0.18), transparent 70%),
     linear-gradient(155deg, #e8edf7 0%, #f3effa 45%, #e7eff8 100%);
+  /* 主窗体悬浮投影（CSS 绘制，替代系统 NC 阴影）：
+     三层叠加 = 四面环境光遮蔽 + 向下主投影 + 近场接触影，营造悬浮立体感。
+     最大延伸 10+20=30px，必须小于 .window-frame 的 padding（32px），否则阴影被窗口边缘硬切。 */
+  --window-shadow:
+    0 0 14px rgba(15, 23, 42, 0.05),
+    0 10px 20px rgba(15, 23, 42, 0.11),
+    0 2px 6px rgba(15, 23, 42, 0.07);
   --text: #0f172a;
   --text-secondary: #64748b;
   --accent: #2563eb;
@@ -131,6 +138,10 @@
       radial-gradient(ellipse 80% 50% at 15% 0%, rgba(59, 130, 246, 0.16), transparent 60%),
       radial-gradient(ellipse 70% 50% at 90% 100%, rgba(147, 51, 234, 0.14), transparent 60%),
       linear-gradient(180deg, #0e111a 0%, #090a10 100%);
+    --window-shadow:
+      0 0 14px rgba(0, 0, 0, 0.3),
+      0 10px 20px rgba(0, 0, 0, 0.5),
+      0 2px 6px rgba(0, 0, 0, 0.35);
     --text: #f3f4f6;
     --text-secondary: #9ca3af;
     --accent: #3b82f6;
@@ -227,6 +238,10 @@
     radial-gradient(ellipse 80% 50% at 15% 0%, rgba(59, 130, 246, 0.16), transparent 60%),
     radial-gradient(ellipse 70% 50% at 90% 100%, rgba(147, 51, 234, 0.14), transparent 60%),
     linear-gradient(180deg, #0e111a 0%, #090a10 100%);
+  --window-shadow:
+    0 0 14px rgba(0, 0, 0, 0.3),
+    0 10px 20px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.35);
   --text: #f3f4f6;
   --text-secondary: #9ca3af;
   --accent: #3b82f6;
@@ -330,29 +345,34 @@ body {
   overflow: hidden;
 }
 
-/* 标题栏与工作区共用整窗的一块连续玻璃盖板，不再保留外层留白。 */
+/* 整窗透明，玻璃板悬浮其中：阴影由 CSS 绘制，不使用系统 NC 阴影环（会在四边露出框线）。 */
 .window-frame {
   box-sizing: border-box;
   height: 100vh;
   overflow: hidden;
-  border-radius: 12px;
-  /* 作为玻璃板的折射底色，也填满透明窗口圆角内的像素，避免露出黑底。 */
-  background: var(--surface-gradient), var(--surface);
+  /* 为 CSS 投影留出的透明外延，直接透出桌面。须大于 --window-shadow 的最大延伸（30px）。 */
+  padding: 32px;
 }
 
 .window-frame-maximized {
-  border-radius: 0;
+  padding: 0;
 }
 
 .window-frame-maximized .window-shell {
   border-radius: 0;
+  box-shadow: none;
 }
 
-/* 圆角只由主玻璃板定义；流光与内容都在同一裁切边界内。 */
+/* 圆角与投影只由主玻璃板定义；流光与内容都在同一裁切边界内。 */
 .window-shell {
   position: relative;
   isolation: isolate;
-  border-radius: inherit;
+  /* 圆角由 CSS 全权控制（系统 DWM 裁切已通过 DONOTROUND 关闭），
+     glass 经 border-radius: inherit 跟随，改这里一处即可整体调节。 */
+  border-radius: 16px;
+  /* 玻璃板的折射底色。 */
+  background: var(--surface-gradient), var(--surface);
+  box-shadow: var(--window-shadow);
 }
 
 .window-glass.glass-island {
@@ -745,8 +765,7 @@ button.card-lift,
   opacity: 1;
 }
 
-/* 与 Windows 11 无边框窗口圆角一致，避免系统窗体与网页玻璃出现双层边界。 */
-.radius-window { border-radius: 12px; }
+/* 圆角由 .window-frame 单点定义，shell/glass 经 inherit 跟随。 */
 .radius-panel { border-radius: 20px; }
 .radius-card { border-radius: 18px; }
 .radius-pill { border-radius: 9999px; }

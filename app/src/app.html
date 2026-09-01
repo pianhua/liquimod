@@ -12,10 +12,8 @@
           var isDark = t === "dark" || (t !== "light" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (isDark) {
             document.documentElement.classList.add("dark");
-            document.documentElement.style.background = "#12141c";
           } else {
             document.documentElement.classList.remove("dark");
-            document.documentElement.style.background = "#eef0f6";
           }
         } catch (e) {}
       })();

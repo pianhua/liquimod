@@ -340,6 +340,48 @@ pub fn run() {
             let app_handle = app.handle().clone();
             start_watcher(&app_handle, app.state::<AppState>().inner());
             start_game_watchdog(&app_handle, app.state::<AppState>().inner());
+            // Windows 11 默认把顶层窗口裁成 8px 圆角；关闭系统裁切（DONOTROUND），
+            // 改由网页端 CSS 全权控制圆角，并关掉沿直角窗口矩形的 1px DWM 描边，
+            // 避免大圆角玻璃外露出方形细框。Win10 不支持这些属性，静默降级即可。
+            #[cfg(target_os = "windows")]
+            {
+                use windows::Win32::Foundation::HWND;
+                use windows::Win32::Graphics::Dwm::{
+                    DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+                    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+                };
+                match app.get_webview_window("main") {
+                    Some(window) => match window.hwnd() {
+                        Ok(hwnd) => {
+                            let hwnd = HWND(hwnd.0 as _);
+                            // SAFETY: hwnd 来自 tauri 校验过的主窗口，属性值按正确大小传入；
+                            // 失败（如 Win10 不支持该属性）只记录日志，不影响启动。
+                            unsafe {
+                                let corner = DWMWCP_DONOTROUND;
+                                if let Err(error) = DwmSetWindowAttribute(
+                                    hwnd,
+                                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                                    &corner as *const _ as *const core::ffi::c_void,
+                                    std::mem::size_of_val(&corner) as u32,
+                                ) {
+                                    tracing::warn!("设置窗口圆角偏好失败：{error}");
+                                }
+                                let border = DWMWA_COLOR_NONE;
+                                if let Err(error) = DwmSetWindowAttribute(
+                                    hwnd,
+                                    DWMWA_BORDER_COLOR,
+                                    &border as *const _ as *const core::ffi::c_void,
+                                    std::mem::size_of_val(&border) as u32,
+                                ) {
+                                    tracing::warn!("关闭窗口描边失败：{error}");
+                                }
+                            }
+                        }
+                        Err(error) => tracing::warn!("获取主窗口句柄失败：{error}"),
+                    },
+                    None => tracing::warn!("未找到主窗口，跳过 DWM 圆角设置"),
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
