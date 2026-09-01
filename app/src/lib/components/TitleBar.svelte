@@ -52,12 +52,18 @@
       onmaximizedchange(maximized);
     }
   }
+
 </script>
 
 <div
-  class="window-titlebar grid grid-cols-[84px_minmax(0,1fr)_84px] items-center h-11 px-3 shrink-0 select-none"
+  class="window-titlebar relative grid grid-cols-[84px_minmax(0,1fr)_84px] items-center h-11 px-3 shrink-0 select-none"
+  data-tauri-drag-region="deep"
 >
-  <div class="window-controls flex items-center" aria-label="窗口控制">
+  <div
+    class="window-controls relative z-10 flex items-center"
+    aria-label="窗口控制"
+    data-tauri-drag-region="false"
+  >
     <button
       type="button"
       aria-label="关闭"
@@ -92,11 +98,11 @@
       </svg>
     </button>
   </div>
-  <div class="window-title min-w-0 justify-self-center flex items-center gap-2" data-tauri-drag-region>
+  <div class="window-title relative z-10 min-w-0 justify-self-center flex items-center gap-2">
     <span class="w-2 h-2 rounded-full" style="background: var(--accent)"></span>
-    <span class="truncate text-[13px] font-semibold tracking-wide" data-tauri-drag-region>LiquiMod</span>
+    <span class="truncate text-[13px] font-semibold tracking-wide">LiquiMod</span>
   </div>
-  <div class="flex-1 h-full" data-tauri-drag-region></div>
+  <div class="relative z-10 flex-1 h-full"></div>
 </div>
 
 <style>
