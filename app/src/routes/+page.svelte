@@ -41,6 +41,7 @@
   let gameRunning = $state(false);
   let launchBusy = $state(false);
   let launchStage = $state("");
+  let windowMaximized = $state(false);
 
   let charCatName = $derived(config?.character_category_name ?? "角色");
   let homeCharModTotal = $derived(homeCharacters.reduce((n, c) => n + c.total, 0));
@@ -641,23 +642,24 @@
   });
 </script>
 
-<div class="flex flex-col h-screen">
-  <TitleBar />
-  {#if error}
-    <div class="glass radius-panel mx-6 mt-1 px-4 py-2.5 text-sm shrink-0" style="color: var(--danger)">
-      {error}
-    </div>
-  {/if}
-  <div class="flex flex-1 min-h-0 mx-4 mb-4 mt-1 glass-island radius-window overflow-hidden" style="contain: layout style">
-    <Sidebar
-      {view}
-      {categories}
-      {charCatName}
-      charCount={homeCharModTotal}
-      bind:collapsed={sidebarCollapsed}
-      onnavigate={navigate}
-    />
-    <div bind:this={contentEl} class="relative flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden" style="contain: layout style">
+<div class="window-frame" class:window-frame-maximized={windowMaximized}>
+  <div class="window-shell glass-island radius-window flex flex-col h-full min-h-0 overflow-hidden">
+    <TitleBar onmaximizedchange={(maximized) => (windowMaximized = maximized)} />
+    {#if error}
+      <div class="glass radius-panel mx-4 mt-1 px-4 py-2.5 text-sm shrink-0" style="color: var(--danger)">
+        {error}
+      </div>
+    {/if}
+    <div class="flex flex-1 min-h-0" style="contain: layout style">
+      <Sidebar
+        {view}
+        {categories}
+        {charCatName}
+        charCount={homeCharModTotal}
+        bind:collapsed={sidebarCollapsed}
+        onnavigate={navigate}
+      />
+      <div bind:this={contentEl} class="relative flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden" style="contain: layout style">
       <!-- 正常工作区 (保活：通过 class:hidden 隐藏，杜绝 DOM 销毁与返回滚动抖动，同时彻底阻止透底重叠) -->
       <div class="flex flex-col flex-1 min-w-0 min-h-0" class:hidden={showSettings}>
         <Toolbar
@@ -727,6 +729,7 @@
           <Settings {config} onback={closeSettings} onchanged={refresh} />
         </div>
       {/if}
+      </div>
     </div>
   </div>
   {#if dragHover}

@@ -330,6 +330,21 @@ body {
   overflow: hidden;
 }
 
+/* 外层只保留环境背景，标题栏与工作区共用这一块连续的玻璃盖板。 */
+.window-frame {
+  box-sizing: border-box;
+  height: 100vh;
+  padding: 12px;
+}
+
+.window-frame-maximized {
+  padding: 0;
+}
+
+.window-frame-maximized .window-shell {
+  border-radius: 0;
+}
+
 code,
 kbd,
 pre,
