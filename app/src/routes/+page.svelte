@@ -643,7 +643,14 @@
 </script>
 
 <div class="window-frame" class:window-frame-maximized={windowMaximized}>
-  <div class="window-shell glass-island radius-window flex flex-col h-full min-h-0 overflow-hidden">
+  <div class="window-shell radius-window h-full min-h-0 overflow-hidden">
+    <div class="app-ambient-aurora" aria-hidden="true">
+      <div class="aurora-blob aurora-blob-1"></div>
+      <div class="aurora-blob aurora-blob-2"></div>
+      <div class="aurora-blob aurora-blob-3"></div>
+      <div class="aurora-blob aurora-blob-4"></div>
+    </div>
+    <div class="window-glass glass-island flex flex-col h-full min-h-0 overflow-hidden">
     <TitleBar onmaximizedchange={(maximized) => (windowMaximized = maximized)} />
     {#if error}
       <div class="glass radius-panel mx-4 mt-1 px-4 py-2.5 text-sm shrink-0" style="color: var(--danger)">
@@ -731,6 +738,7 @@
       {/if}
       </div>
     </div>
+  </div>
   </div>
   {#if dragHover}
     <div class="fixed inset-3 z-40 pointer-events-none radius-panel"

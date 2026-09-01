@@ -304,7 +304,7 @@ html,
 body {
   height: 100%;
   margin: 0;
-  background: var(--surface);
+  background: transparent;
   color: var(--text);
   font-family:
     -apple-system,
@@ -330,19 +330,38 @@ body {
   overflow: hidden;
 }
 
-/* 外层只保留环境背景，标题栏与工作区共用这一块连续的玻璃盖板。 */
+/* 标题栏与工作区共用整窗的一块连续玻璃盖板，不再保留外层留白。 */
 .window-frame {
   box-sizing: border-box;
   height: 100vh;
-  padding: 12px;
+  overflow: hidden;
+  border-radius: 12px;
+  /* 作为玻璃板的折射底色，也填满透明窗口圆角内的像素，避免露出黑底。 */
+  background: var(--surface-gradient), var(--surface);
 }
 
 .window-frame-maximized {
-  padding: 0;
+  border-radius: 0;
 }
 
 .window-frame-maximized .window-shell {
   border-radius: 0;
+}
+
+/* 圆角只由主玻璃板定义；流光与内容都在同一裁切边界内。 */
+.window-shell {
+  position: relative;
+  isolation: isolate;
+  border-radius: inherit;
+}
+
+.window-glass.glass-island {
+  position: relative;
+  z-index: 1;
+  border-radius: inherit;
+  /* 主窗体不是内容卡片：去掉卡片的深色描边和外投影，避免透明圆角的抗锯齿把它们显成黑边。 */
+  border: 0;
+  box-shadow: inset 0 1px 0 0 var(--glass-highlight);
 }
 
 code,
@@ -364,11 +383,13 @@ pre,
 
 /* ── 星轨流光环境背景层（置于最底层，为全界面的液态玻璃提供通透折射源） ── */
 .app-ambient-aurora {
-  position: fixed;
+  position: absolute;
+  /* 扩展流光范围，再由同一块玻璃板裁切，避免边缘被模糊滤镜削弱。 */
   inset: -15%;
   pointer-events: none;
   z-index: 0;
   overflow: hidden;
+  border-radius: 0;
   filter: blur(60px);
   opacity: 0.95;
 }
@@ -439,7 +460,7 @@ pre,
 }
 
 body {
-  background: var(--surface-gradient), var(--surface);
+  background: transparent;
   position: relative;
 }
 
@@ -724,7 +745,8 @@ button.card-lift,
   opacity: 1;
 }
 
-.radius-window { border-radius: 26px; }
+/* 与 Windows 11 无边框窗口圆角一致，避免系统窗体与网页玻璃出现双层边界。 */
+.radius-window { border-radius: 12px; }
 .radius-panel { border-radius: 20px; }
 .radius-card { border-radius: 18px; }
 .radius-pill { border-radius: 9999px; }

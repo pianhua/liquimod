@@ -15,5 +15,7 @@ describe("TitleBar", () => {
     expect(screen.getByRole("button", { name: "最小化" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "最大化" })).toBeTruthy();
     expect(screen.getByText("LiquiMod").closest(".window-title")).toBeTruthy();
+    expect(container.querySelector(".window-titlebar")).toHaveAttribute("data-tauri-drag-region", "deep");
+    expect(container.querySelector(".window-controls")).toHaveAttribute("data-tauri-drag-region", "false");
   });
 });
