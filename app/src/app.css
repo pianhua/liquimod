@@ -348,6 +348,7 @@ body {
 /* 整窗透明，玻璃板悬浮其中：阴影由 CSS 绘制，不使用系统 NC 阴影环（会在四边露出框线）。 */
 .window-frame {
   box-sizing: border-box;
+  position: relative;
   height: 100vh;
   overflow: hidden;
   /* 为 CSS 投影留出的透明外延，直接透出桌面。须大于 --window-shadow 的最大延伸（30px）。 */
@@ -361,6 +362,81 @@ body {
 .window-frame-maximized .window-shell {
   border-radius: 0;
   box-shadow: none;
+}
+
+/* 透明缩放命中带：以壳体边缘（32px）为中心，把拖拽转发给系统原生缩放（WindowResizeHandles.svelte）。 */
+.resize-handle {
+  position: absolute;
+  z-index: 30;
+}
+
+.resize-n,
+.resize-s {
+  left: 58px;
+  right: 58px;
+  height: 18px;
+  cursor: ns-resize;
+}
+
+.resize-n {
+  top: 23px;
+}
+
+.resize-s {
+  bottom: 23px;
+}
+
+.resize-w,
+.resize-e {
+  top: 58px;
+  bottom: 58px;
+  width: 18px;
+  cursor: ew-resize;
+}
+
+.resize-w {
+  left: 23px;
+}
+
+.resize-e {
+  right: 23px;
+}
+
+.resize-nw,
+.resize-ne,
+.resize-sw,
+.resize-se {
+  width: 35px;
+  height: 35px;
+}
+
+.resize-nw {
+  top: 23px;
+  left: 23px;
+  cursor: nwse-resize;
+}
+
+.resize-se {
+  bottom: 23px;
+  right: 23px;
+  cursor: nwse-resize;
+}
+
+.resize-ne {
+  top: 23px;
+  right: 23px;
+  cursor: nesw-resize;
+}
+
+.resize-sw {
+  bottom: 23px;
+  left: 23px;
+  cursor: nesw-resize;
+}
+
+/* 最大化时无透明外延，命中带必须隐藏，避免遮挡贴边内容。 */
+.window-frame-maximized .resize-handle {
+  display: none;
 }
 
 /* 圆角与投影只由主玻璃板定义；流光与内容都在同一裁切边界内。 */

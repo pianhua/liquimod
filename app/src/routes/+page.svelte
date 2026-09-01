@@ -18,6 +18,7 @@
   import { enqueueInstalls, installJobs } from "$lib/install.svelte";
   import InstallOverlay from "$lib/components/InstallOverlay.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
+  import WindowResizeHandles from "$lib/components/WindowResizeHandles.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import Toolbar from "$lib/components/Toolbar.svelte";
   import CharacterGrid from "$lib/views/CharacterGrid.svelte";
@@ -740,6 +741,7 @@
     </div>
   </div>
   </div>
+  <WindowResizeHandles />
   {#if dragHover}
     <div class="fixed inset-3 z-40 pointer-events-none radius-panel"
       style="border: 2px dashed var(--accent, #409CFF); background: rgba(64,156,255,0.06)"></div>
