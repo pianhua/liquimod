@@ -44,6 +44,7 @@
     onmove,
     onvariantchange,
     onmodchange,
+    onclose,
   }: {
     mod: ModDto | null;
     categories: CategoryDto[];
@@ -57,6 +58,7 @@
     onmove: (categoryId: number | null) => void;
     onvariantchange?: (variant: string | null) => Promise<void>;
     onmodchange?: (patch: Partial<ModDto>) => void;
+    onclose?: () => void;
   } = $props();
 
   let renaming = $state(false);
@@ -489,6 +491,20 @@
 
 <div class="liquid-glass radius-panel p-7 flex flex-col gap-5 h-full min-h-0 overflow-y-auto">
   {#if mod}
+    {#if onclose}
+      <div class="flex items-center justify-between shrink-0 -mt-1 -mb-1">
+        <span class="text-xs font-semibold text-secondary tracking-wider">MOD 详情</span>
+        <button
+          type="button"
+          class="w-6 h-6 rounded-full flex items-center justify-center text-secondary hover:text-[var(--text)] hover:bg-[var(--item-hover)] cursor-pointer transition-all active:scale-95"
+          title="收起详情面板"
+          aria-label="收起详情面板"
+          onclick={onclose}
+        >
+          <IconClose size={13} />
+        </button>
+      </div>
+    {/if}
     <!-- 1. 大预览图展示区（带双层极光环境光与立体悬浮海报设计） -->
     <div
       class="group spotlight relative w-full h-[260px] min-h-[200px] max-h-[340px] radius-card overflow-hidden flex items-center justify-center p-3 shrink-0 cursor-pointer select-none"
@@ -610,7 +626,7 @@
             <button
               class="glass radius-pill w-8 h-8 grid place-items-center opacity-0 group-hover/title:opacity-100 transition-opacity text-secondary hover:text-[var(--text)] cursor-pointer shrink-0"
               title={mutationLocked ? "游戏运行期间暂不支持重命名" : "重命名"}
-              aria-label="重命名"
+              aria-label={`重命名 ${mod.name}`}
               disabled={mutationLocked}
               onclick={startRename}
             >
@@ -907,6 +923,7 @@
           <button
             class="glass-liquid-btn-danger h-8 px-3 text-xs font-semibold cursor-pointer transition-all active:scale-95 flex items-center gap-1.5 z-10"
             title={mutationLocked ? `游戏运行期间暂不支持${isExternal ? "断开连接" : "卸载"}` : (isExternal ? "断开外部连接（不删除源文件）" : "彻底删除此 Mod")}
+            aria-label={`卸载 ${mod.name}`}
             disabled={mutationLocked}
             onclick={() => (confirming = true)}
           >
