@@ -28,13 +28,6 @@
     radial-gradient(ellipse 60% 50% at 50% 115%, rgba(103, 232, 249, 0.25), transparent 70%),
     radial-gradient(ellipse 55% 45% at 95% 5%, rgba(251, 146, 60, 0.18), transparent 70%),
     linear-gradient(155deg, #e8edf7 0%, #f3effa 45%, #e7eff8 100%);
-  /* 主窗体悬浮投影（CSS 绘制，替代系统 NC 阴影）：
-     三层叠加 = 四面环境光遮蔽 + 向下主投影 + 近场接触影，营造悬浮立体感。
-     最大延伸 10+20=30px，必须小于 .window-frame 的 padding（32px），否则阴影被窗口边缘硬切。 */
-  --window-shadow:
-    0 0 14px rgba(15, 23, 42, 0.05),
-    0 10px 20px rgba(15, 23, 42, 0.11),
-    0 2px 6px rgba(15, 23, 42, 0.07);
   --text: #0f172a;
   --text-secondary: #64748b;
   --accent: #2563eb;
@@ -138,10 +131,6 @@
       radial-gradient(ellipse 80% 50% at 15% 0%, rgba(59, 130, 246, 0.16), transparent 60%),
       radial-gradient(ellipse 70% 50% at 90% 100%, rgba(147, 51, 234, 0.14), transparent 60%),
       linear-gradient(180deg, #0e111a 0%, #090a10 100%);
-    --window-shadow:
-      0 0 14px rgba(0, 0, 0, 0.3),
-      0 10px 20px rgba(0, 0, 0, 0.5),
-      0 2px 6px rgba(0, 0, 0, 0.35);
     --text: #f3f4f6;
     --text-secondary: #9ca3af;
     --accent: #3b82f6;
@@ -238,10 +227,6 @@
     radial-gradient(ellipse 80% 50% at 15% 0%, rgba(59, 130, 246, 0.16), transparent 60%),
     radial-gradient(ellipse 70% 50% at 90% 100%, rgba(147, 51, 234, 0.14), transparent 60%),
     linear-gradient(180deg, #0e111a 0%, #090a10 100%);
-  --window-shadow:
-    0 0 14px rgba(0, 0, 0, 0.3),
-    0 10px 20px rgba(0, 0, 0, 0.5),
-    0 2px 6px rgba(0, 0, 0, 0.35);
   --text: #f3f4f6;
   --text-secondary: #9ca3af;
   --accent: #3b82f6;
@@ -345,119 +330,37 @@ body {
   overflow: hidden;
 }
 
-/* 整窗透明，玻璃板悬浮其中：阴影由 CSS 绘制，不使用系统 NC 阴影环（会在四边露出框线）。 */
-.window-frame {
+/* ── 主窗口玻璃外壳：直接贴合操作系统物理视口，零幽灵边缘，无阻挡正常桌面交互 ── */
+.window-shell {
   box-sizing: border-box;
   position: relative;
+  width: 100vw;
   height: 100vh;
   overflow: hidden;
-  /* 为 CSS 投影留出的透明外延，直接透出桌面。须大于 --window-shadow 的最大延伸（30px）。 */
-  padding: 32px;
-}
-
-.window-frame-maximized {
-  padding: 0;
-}
-
-.window-frame-maximized .window-shell {
-  border-radius: 0;
-  box-shadow: none;
-}
-
-/* 透明缩放命中带：以壳体边缘（32px）为中心，把拖拽转发给系统原生缩放（WindowResizeHandles.svelte）。 */
-.resize-handle {
-  position: absolute;
-  z-index: 30;
-}
-
-.resize-n,
-.resize-s {
-  left: 58px;
-  right: 58px;
-  height: 18px;
-  cursor: ns-resize;
-}
-
-.resize-n {
-  top: 23px;
-}
-
-.resize-s {
-  bottom: 23px;
-}
-
-.resize-w,
-.resize-e {
-  top: 58px;
-  bottom: 58px;
-  width: 18px;
-  cursor: ew-resize;
-}
-
-.resize-w {
-  left: 23px;
-}
-
-.resize-e {
-  right: 23px;
-}
-
-.resize-nw,
-.resize-ne,
-.resize-sw,
-.resize-se {
-  width: 35px;
-  height: 35px;
-}
-
-.resize-nw {
-  top: 23px;
-  left: 23px;
-  cursor: nwse-resize;
-}
-
-.resize-se {
-  bottom: 23px;
-  right: 23px;
-  cursor: nwse-resize;
-}
-
-.resize-ne {
-  top: 23px;
-  right: 23px;
-  cursor: nesw-resize;
-}
-
-.resize-sw {
-  bottom: 23px;
-  left: 23px;
-  cursor: nesw-resize;
-}
-
-/* 最大化时无透明外延，命中带必须隐藏，避免遮挡贴边内容。 */
-.window-frame-maximized .resize-handle {
-  display: none;
-}
-
-/* 圆角与投影只由主玻璃板定义；流光与内容都在同一裁切边界内。 */
-.window-shell {
-  position: relative;
   isolation: isolate;
-  /* 圆角由 CSS 全权控制（系统 DWM 裁切已通过 DONOTROUND 关闭），
-     glass 经 border-radius: inherit 跟随，改这里一处即可整体调节。 */
+  /* iOS / macOS 风格大圆角（系统级 DWM 裁切已在启动时设为 DONOTROUND，由 CSS 统领） */
   border-radius: 16px;
-  /* 玻璃板的折射底色。 */
+  /* 1px 精细晶体微光倒角描边，塑造物理玻璃厚度轮廓 */
+  border: 1px solid var(--glass-stroke);
+  /* 玻璃板的折射底色 */
   background: var(--surface-gradient), var(--surface);
-  box-shadow: var(--window-shadow);
+  /* 顶部 1px 晶体聚光折射线，模拟物理玻璃边缘顶光 */
+  box-shadow: inset 0 1px 0 0 var(--glass-highlight);
+}
+
+/* 窗口最大化时铺满屏幕，圆角与外框平滑归零 */
+.window-shell-maximized {
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
 }
 
 .window-glass.glass-island {
   position: relative;
   z-index: 1;
   border-radius: inherit;
-  /* 主窗体不是内容卡片：去掉卡片的深色描边和外投影，避免透明圆角的抗锯齿把它们显成黑边。 */
   border: 0;
-  box-shadow: inset 0 1px 0 0 var(--glass-highlight);
+  box-shadow: none;
 }
 
 code,
