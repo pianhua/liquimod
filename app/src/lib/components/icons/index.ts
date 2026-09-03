@@ -48,3 +48,5 @@ export { default as IconWrench } from "./IconWrench.svelte";
 export { default as IconStar } from "./IconStar.svelte";
 export { default as IconSortAlpha } from "./IconSortAlpha.svelte";
 export { default as IconSortSize } from "./IconSortSize.svelte";
+export { default as IconGrid } from "./IconGrid.svelte";
+export { default as IconList } from "./IconList.svelte";

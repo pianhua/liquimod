@@ -18,6 +18,7 @@
     type ModSort,
   } from "$lib/view";
   import ModRow from "$lib/components/ModRow.svelte";
+  import ModGalleryCard from "$lib/components/ModGalleryCard.svelte";
   import ModDetailPane from "$lib/components/ModDetailPane.svelte";
   import EnabledFilterChips from "$lib/components/EnabledFilterChips.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -40,6 +41,9 @@
     IconSortAlpha,
     IconSortSize,
     IconGrip,
+    IconGrid,
+    IconList,
+    IconSidebar,
   } from "$lib/components/icons";
 
   let {
@@ -97,6 +101,25 @@
     return 440;
   }
 
+  function getInitialViewMode(): "gallery" | "list" {
+    if (typeof window === "undefined") return "gallery";
+    try {
+      const saved = localStorage.getItem("liquimod_character_detail_view_mode");
+      if (saved === "gallery" || saved === "list") return saved;
+    } catch {}
+    return "gallery";
+  }
+
+  let viewMode = $state<"gallery" | "list">(getInitialViewMode());
+  let detailPaneOpen = $state(false);
+
+  function setViewMode(mode: "gallery" | "list") {
+    viewMode = mode;
+    try {
+      localStorage.setItem("liquimod_character_detail_view_mode", mode);
+    } catch {}
+  }
+
   let mods = $state<ModDto[]>([]);
   let allCharacters = $state<CharacterSummary[]>([]);
   let reassignTargetMod = $state<ModDto | null>(null);
@@ -118,8 +141,15 @@
   async function refreshMods() {
     try {
       mods = await api.listMods(character.internal_name, categoryId);
-      if (mods.length > 0 && (!selectedModId || !mods.some((m) => m.id === selectedModId))) {
-        selectedModId = mods[0].id;
+      if (mods.length > 0) {
+        // 优先定位并展开当前启用的 Mod（若无启用项则选中第一个并打开详情）
+        const firstEnabled = mods.find((m) => m.enabled);
+        if (firstEnabled) {
+          selectedModId = firstEnabled.id;
+        } else if (!selectedModId || !mods.some((m) => m.id === selectedModId)) {
+          selectedModId = mods[0].id;
+        }
+        detailPaneOpen = true;
       }
     } catch (e) {
       error = String(e);
@@ -128,6 +158,7 @@
 
   function handleRowSelect(e: MouseEvent, mod: ModDto) {
     selectedModId = mod.id;
+    detailPaneOpen = true;
     if (e.ctrlKey || e.metaKey) {
       const next = new Set(checkedModIds);
       if (next.has(mod.id)) {
@@ -706,6 +737,15 @@
     }
   });
 
+  $effect(() => {
+    if (detailPaneOpen && viewMode === "gallery" && checkedModIds.size === 0 && !contextMenu) {
+      return pushEscHandler(() => {
+        detailPaneOpen = false;
+        return true;
+      });
+    }
+  });
+
   onMount(() => {
     function handleKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
@@ -977,6 +1017,28 @@
       <div class="flex items-center justify-between shrink-0 mb-3 gap-2">
         <EnabledFilterChips bind:value={enabledFilter} />
         <div class="flex items-center gap-2">
+          <!-- 视图模式切换胶囊：网格 ▦ / 列表 ☰ -->
+          <div class="flex items-center glass-liquid-capsule p-0.5">
+            <button
+              type="button"
+              aria-label="卡片网格视图"
+              class="w-7 h-7 flex items-center justify-center rounded-full cursor-pointer transition-all {viewMode === 'gallery' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-secondary hover:text-[var(--text)]'}"
+              title="卡片网格视图"
+              onclick={() => setViewMode("gallery")}
+            >
+              <IconGrid size={13} />
+            </button>
+            <button
+              type="button"
+              aria-label="列表视图"
+              class="w-7 h-7 flex items-center justify-center rounded-full cursor-pointer transition-all {viewMode === 'list' ? 'bg-[var(--accent)] text-white shadow-sm' : 'text-secondary hover:text-[var(--text)]'}"
+              title="列表视图"
+              onclick={() => setViewMode("list")}
+            >
+              <IconList size={13} />
+            </button>
+          </div>
+
           <CustomSelect
             bind:value={sort}
             options={[
@@ -988,56 +1050,116 @@
             ]}
             size="xs"
           />
+
+          <!-- 详情栏展开/收起切换按钮 -->
+          <button
+            type="button"
+            class="h-7 px-2.5 text-xs font-medium flex items-center gap-1.5 radius-pill transition-all cursor-pointer {detailPaneOpen ? 'accent-fill accent-text' : 'glass-liquid-btn text-secondary hover:text-[var(--text)]'}"
+            title={detailPaneOpen ? "收起右侧详情栏" : "展开右侧详情栏"}
+            onclick={() => (detailPaneOpen = !detailPaneOpen)}
+          >
+            <IconSidebar size={13} />
+            <span>{detailPaneOpen ? "收起详情" : "展开详情"}</span>
+          </button>
+
           <span class="text-xs text-secondary shrink-0">{shown.length}/{mods.length}</span>
         </div>
       </div>
 
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
-      <div
-        bind:this={listContainerEl}
-        role="region"
-        aria-label="Mod 列表"
-        class="flex flex-col gap-2.5 overflow-y-auto flex-1 min-h-0 pr-1.5 p-1 -m-1 outline-none pb-12 select-none {draggingModId !== null ? 'cursor-grabbing' : ''}"
-        tabindex="0"
-        onkeydown={onListKeydown}
-      >
-        {#each displayedMods as mod (mod.id)}
-          <ModRow
-            {mod}
-            {categories}
-            selected={selectedMod?.id === mod.id}
-            checked={checkedModIds.has(mod.id)}
-            isMultiSelectMode={checkedModIds.size > 0}
-            dragPlaceholder={draggingModId === mod.id}
-            mutationLocked={gameRunning}
-            onstartdrag={handleStartPointerDrag}
-            ontoggle={(next) => toggle(mod, next)}
-            ontogglefavorite={() => toggleFavoriteMod(mod)}
-            onrename={(name) => renameMod(mod, name)}
-            onuninstall={() => uninstallMod(mod)}
-            onopen={() => openModDir(mod)}
-            onmove={(cid) => moveCategory(mod, cid)}
-            onselect={(e) => handleRowSelect(e, mod)}
-            oncheck={(checked) => handleRowCheck(mod, checked)}
-            onmenu={handleModContextMenu}
-          />
-        {/each}
-        {#if shown.length === 0}
-          <div class="flex-1 border-2 border-dashed border-[var(--glass-stroke)] radius-card grid place-items-center text-secondary py-16 px-6 text-center">
-            <div class="flex flex-col items-center gap-2">
-              <div class="w-12 h-12 rounded-full grid place-items-center text-xl font-bold" style="background: var(--glass-tint)">
+      {#if viewMode === "gallery"}
+        <!-- 卡片网格视图：自适应海报卡片流 -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
+        <div
+          role="region"
+          aria-label="Mod 卡片网格"
+          class="grid grid-cols-[repeat(auto-fill,180px)] [grid-auto-rows:210px] gap-4.5 overflow-y-auto flex-1 min-h-0 pr-1.5 p-1 -m-1 outline-none pb-16 select-none content-start will-change-scroll"
+          tabindex="0"
+          onkeydown={onListKeydown}
+        >
+          {#each shown as mod (mod.id)}
+            <ModGalleryCard
+              {mod}
+              {categories}
+              selected={selectedMod?.id === mod.id}
+              checked={checkedModIds.has(mod.id)}
+              isMultiSelectMode={checkedModIds.size > 0}
+              mutationLocked={gameRunning}
+              ontoggle={(next) => toggle(mod, next)}
+              ontogglefavorite={() => toggleFavoriteMod(mod)}
+              onselect={(e) => {
+                handleRowSelect(e, mod);
+                detailPaneOpen = true;
+              }}
+              oncheck={(checked) => handleRowCheck(mod, checked)}
+              onmenu={handleModContextMenu}
+            />
+          {/each}
+          {#if shown.length === 0}
+            <div class="col-span-full border-2 border-dashed border-[var(--glass-stroke)] radius-card flex flex-col items-center justify-center text-secondary py-16 px-6 text-center my-6">
+              <div class="w-12 h-12 rounded-full grid place-items-center mb-2" style="background: var(--glass-tint)">
                 📦
               </div>
               <p class="text-sm font-medium text-[var(--text)]">
                 {mods.length === 0 ? "暂无 Mod" : "无匹配项"}
               </p>
-              <p class="text-xs text-secondary">
+              <p class="text-xs text-secondary mt-1">
                 {mods.length === 0 ? "直接将压缩包（.zip / .7z / .rar）或文件夹拖入窗口即可自动安装" : "请尝试切换上面的筛选状态"}
               </p>
             </div>
-          </div>
-        {/if}
-      </div>
+          {/if}
+        </div>
+      {:else}
+        <!-- 列表视图（支持自定义拖拽排序） -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
+        <div
+          bind:this={listContainerEl}
+          role="region"
+          aria-label="Mod 列表"
+          class="flex flex-col gap-2.5 overflow-y-auto flex-1 min-h-0 pr-1.5 p-1 -m-1 outline-none pb-12 select-none {draggingModId !== null ? 'cursor-grabbing' : ''}"
+          tabindex="0"
+          onkeydown={onListKeydown}
+        >
+          {#each displayedMods as mod (mod.id)}
+            <ModRow
+              {mod}
+              {categories}
+              selected={selectedMod?.id === mod.id}
+              checked={checkedModIds.has(mod.id)}
+              isMultiSelectMode={checkedModIds.size > 0}
+              dragPlaceholder={draggingModId === mod.id}
+              mutationLocked={gameRunning}
+              onstartdrag={handleStartPointerDrag}
+              ontoggle={(next) => toggle(mod, next)}
+              ontogglefavorite={() => toggleFavoriteMod(mod)}
+              onrename={(name) => renameMod(mod, name)}
+              onuninstall={() => uninstallMod(mod)}
+              onopen={() => openModDir(mod)}
+              onmove={(cid) => moveCategory(mod, cid)}
+              onselect={(e) => {
+                handleRowSelect(e, mod);
+                detailPaneOpen = true;
+              }}
+              oncheck={(checked) => handleRowCheck(mod, checked)}
+              onmenu={handleModContextMenu}
+            />
+          {/each}
+          {#if shown.length === 0}
+            <div class="flex-1 border-2 border-dashed border-[var(--glass-stroke)] radius-card grid place-items-center text-secondary py-16 px-6 text-center">
+              <div class="flex flex-col items-center gap-2">
+                <div class="w-12 h-12 rounded-full grid place-items-center text-xl font-bold" style="background: var(--glass-tint)">
+                  📦
+                </div>
+                <p class="text-sm font-medium text-[var(--text)]">
+                  {mods.length === 0 ? "暂无 Mod" : "无匹配项"}
+                </p>
+                <p class="text-xs text-secondary">
+                  {mods.length === 0 ? "直接将压缩包（.zip / .7z / .rar）或文件夹拖入窗口即可自动安装" : "请尝试切换上面的筛选状态"}
+                </p>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
 
       {#if draggedMod && dragPreviewRect}
         <div
@@ -1076,38 +1198,41 @@
       />
     </div>
 
-    <!-- 自由拖拽分栏手柄 (Splitter) -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      class="w-3 -mx-1.5 shrink-0 flex items-center justify-center cursor-col-resize group z-10 select-none"
-      onmousedown={startDrag}
-      title="拖拽调节详情面板宽度"
-    >
-      <div class="w-[3px] h-12 rounded-full bg-[var(--splitter-bg)] group-hover:bg-[var(--accent)] group-hover:h-20 transition-all"></div>
-    </div>
+    {#if detailPaneOpen && selectedMod}
+      <!-- 自由拖拽分栏手柄 (Splitter) -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        class="w-3 -mx-1.5 shrink-0 flex items-center justify-center cursor-col-resize group z-10 select-none"
+        onmousedown={startDrag}
+        title="拖拽调节详情面板宽度"
+      >
+        <div class="w-[3px] h-12 rounded-full bg-[var(--splitter-bg)] group-hover:bg-[var(--accent)] group-hover:h-20 transition-all"></div>
+      </div>
 
-    <!-- 右侧大图与属性检查器面板 (丝滑右侧滑入与弹性展开) -->
-    <div
-      class="shrink-0 h-full flex flex-col min-h-0 pl-3 animate-in fade-in slide-in-from-right-4 duration-300 ease-out {isDragging ? '' : 'transition-[width] duration-150'}"
-      style={`width: ${detailWidth}px`}
-    >
-      <ModDetailPane
-        mod={selectedMod}
-        {categories}
-        {character}
-        variantLocked={gameRunning}
-        mutationLocked={gameRunning}
-        ontoggle={(next) => selectedMod && toggle(selectedMod, next)}
-        onrename={(name) => selectedMod ? renameMod(selectedMod, name) : Promise.resolve(false)}
-        onuninstall={() => selectedMod ? uninstallMod(selectedMod) : Promise.resolve()}
-        onopen={() => (selectedMod ? openModDir(selectedMod) : Promise.resolve())}
-        onmove={(cid) => selectedMod && moveCategory(selectedMod, cid)}
-        onvariantchange={(variant) => selectedMod ? changeVariant(selectedMod, variant) : Promise.resolve()}
-        onmodchange={updateSelectedMod}
-      />
-    </div>
+      <!-- 右侧大图与属性检查器面板 (丝滑右侧滑入与弹性展开) -->
+      <div
+        class="shrink-0 h-full flex flex-col min-h-0 pl-3 animate-in fade-in slide-in-from-right-4 duration-300 ease-out {isDragging ? '' : 'transition-[width] duration-150'}"
+        style={`width: ${detailWidth}px`}
+      >
+        <ModDetailPane
+          mod={selectedMod}
+          {categories}
+          {character}
+          variantLocked={gameRunning}
+          mutationLocked={gameRunning}
+          ontoggle={(next) => selectedMod && toggle(selectedMod, next)}
+          onrename={(name) => selectedMod ? renameMod(selectedMod, name) : Promise.resolve(false)}
+          onuninstall={() => selectedMod ? uninstallMod(selectedMod) : Promise.resolve()}
+          onopen={() => (selectedMod ? openModDir(selectedMod) : Promise.resolve())}
+          onmove={(cid) => selectedMod && moveCategory(selectedMod, cid)}
+          onvariantchange={(variant) => selectedMod ? changeVariant(selectedMod, variant) : Promise.resolve()}
+          onmodchange={updateSelectedMod}
+          onclose={() => (detailPaneOpen = false)}
+        />
+      </div>
+    {/if}
   </div>
 
   {#if contextMenu}

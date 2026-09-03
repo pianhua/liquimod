@@ -141,4 +141,44 @@ describe("CharacterDetail", () => {
     expect(screen.getByRole("button", { name: "重命名 Runtime Mod" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "卸载 Runtime Mod" }).hasAttribute("disabled")).toBe(true);
   });
+
+  it("支持在卡片网格与列表视图之间切换", async () => {
+    mockedInvoke.mockResolvedValue([
+      { id: 101, name: "Gallery Mod", enabled: true, installed_at: 1 },
+    ]);
+    render(CharacterDetail, {
+      character,
+      categories: [],
+      modsDirConfigured: true,
+      onback: () => {},
+      onconfigured: () => {},
+    });
+    await waitFor(() => expect(screen.getByRole("region", { name: "Mod 卡片网格" })).toBeDefined());
+    const listBtn = screen.getByRole("button", { name: "列表视图" });
+    await fireEvent.click(listBtn);
+    expect(screen.getByRole("region", { name: "Mod 列表" })).toBeDefined();
+    const gridBtn = screen.getByRole("button", { name: "卡片网格视图" });
+    await fireEvent.click(gridBtn);
+    expect(screen.getByRole("region", { name: "Mod 卡片网格" })).toBeDefined();
+  });
+
+  it("支持折叠和展开右侧详情栏", async () => {
+    mockedInvoke.mockResolvedValue([
+      { id: 102, name: "Collapsible Mod", enabled: true, installed_at: 1 },
+    ]);
+    render(CharacterDetail, {
+      character,
+      categories: [],
+      modsDirConfigured: true,
+      onback: () => {},
+      onconfigured: () => {},
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "收起详情" })).toBeDefined());
+    expect(screen.getByRole("separator", { name: "拖拽调节详情面板宽度" })).toBeDefined();
+    await fireEvent.click(screen.getByRole("button", { name: "收起详情" }));
+    expect(screen.queryByRole("separator", { name: "拖拽调节详情面板宽度" })).toBeNull();
+    expect(screen.getByRole("button", { name: "展开详情" })).toBeDefined();
+    await fireEvent.click(screen.getByRole("button", { name: "展开详情" }));
+    expect(screen.getByRole("separator", { name: "拖拽调节详情面板宽度" })).toBeDefined();
+  });
 });
