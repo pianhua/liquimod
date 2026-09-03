@@ -18,7 +18,6 @@
   import { enqueueInstalls, installJobs } from "$lib/install.svelte";
   import InstallOverlay from "$lib/components/InstallOverlay.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
-  import WindowResizeHandles from "$lib/components/WindowResizeHandles.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import Toolbar from "$lib/components/Toolbar.svelte";
   import CharacterGrid from "$lib/views/CharacterGrid.svelte";
@@ -643,15 +642,14 @@
   });
 </script>
 
-<div class="window-frame" class:window-frame-maximized={windowMaximized}>
-  <div class="window-shell h-full min-h-0 overflow-hidden">
-    <div class="app-ambient-aurora" aria-hidden="true">
-      <div class="aurora-blob aurora-blob-1"></div>
-      <div class="aurora-blob aurora-blob-2"></div>
-      <div class="aurora-blob aurora-blob-3"></div>
-      <div class="aurora-blob aurora-blob-4"></div>
-    </div>
-    <div class="window-glass glass-island flex flex-col h-full min-h-0 overflow-hidden">
+<div class="window-shell flex flex-col h-screen overflow-hidden" class:window-shell-maximized={windowMaximized}>
+  <div class="app-ambient-aurora" aria-hidden="true">
+    <div class="aurora-blob aurora-blob-1"></div>
+    <div class="aurora-blob aurora-blob-2"></div>
+    <div class="aurora-blob aurora-blob-3"></div>
+    <div class="aurora-blob aurora-blob-4"></div>
+  </div>
+  <div class="window-glass glass-island flex flex-col h-full min-h-0 overflow-hidden">
     <TitleBar onmaximizedchange={(maximized) => (windowMaximized = maximized)} />
     {#if error}
       <div class="glass radius-panel mx-4 mt-1 px-4 py-2.5 text-sm shrink-0" style="color: var(--danger)">
@@ -740,8 +738,6 @@
       </div>
     </div>
   </div>
-  </div>
-  <WindowResizeHandles />
   {#if dragHover}
     <div class="fixed inset-3 z-40 pointer-events-none radius-panel"
       style="border: 2px dashed var(--accent, #409CFF); background: rgba(64,156,255,0.06)"></div>
