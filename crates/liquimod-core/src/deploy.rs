@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::filesystem::{choose_strategy, DeployStrategy};
 use crate::library::Library;
-use crate::models::ModEntry;
+use crate::models::{ModEntry, ModStorageKind};
 use crate::variants;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -95,9 +95,9 @@ impl<'a> Deployer<'a> {
         let source = self.source_dir_with_runtime_reuse(&entry, reuse_existing_runtime)?;
         let link = self.mods_dir.join(Self::link_name(&entry));
         let op = self.library.db.op_begin("enable", &id.to_string())?;
-        self.deploy_path(&source, &link)?;
+        self.deploy_path(&entry, &source, &link)?;
         if let Err(e) = self.library.db.set_enabled(id, true) {
-            let _ = Self::remove_deployed_path(&link, self.strategy());
+            let _ = self.remove_deployed_path(&entry, &link, self.strategy());
             if !(reuse_existing_runtime && runtime_existed) {
                 let _ = self.cleanup_runtime(id);
             }
@@ -115,7 +115,7 @@ impl<'a> Deployer<'a> {
         let source = self.source_dir(&entry)?;
         let link = self.mods_dir.join(Self::link_name(&entry));
         let op = self.library.db.op_begin("refresh", &id.to_string())?;
-        self.deploy_path(&source, &link)?;
+        self.deploy_path(&entry, &source, &link)?;
         self.library.db.op_finish(op)
     }
 
@@ -135,12 +135,12 @@ impl<'a> Deployer<'a> {
             if matches!(self.strategy(), DeployStrategy::CopyFallback)
                 && link.join(COPY_MARKER).is_file()
             {
-                Self::remove_deployed_path(&link, DeployStrategy::CopyFallback)?;
+                self.remove_deployed_path(&entry, &link, DeployStrategy::CopyFallback)?;
             }
             return Ok(());
         }
         let op = self.library.db.op_begin("disable", &id.to_string())?;
-        Self::remove_deployed_path(&link, self.strategy())?;
+        self.remove_deployed_path(&entry, &link, self.strategy())?;
         self.library.db.set_enabled(id, false)?;
         if cleanup_runtime {
             self.cleanup_runtime(id)?;
@@ -148,10 +148,10 @@ impl<'a> Deployer<'a> {
         self.library.db.op_finish(op)
     }
 
-    fn deploy_path(&self, source: &Path, link: &Path) -> Result<()> {
+    fn deploy_path(&self, entry: &ModEntry, source: &Path, link: &Path) -> Result<()> {
         match self.strategy() {
             DeployStrategy::Junction => {
-                Self::prepare_link(link)?;
+                self.prepare_link(entry, link)?;
                 junction::create(source, link)
                     .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
             }
@@ -175,43 +175,151 @@ impl<'a> Deployer<'a> {
         Ok(())
     }
 
-    fn remove_deployed_path(link: &Path, strategy: DeployStrategy) -> Result<()> {
+    fn remove_deployed_path(
+        &self,
+        entry: &ModEntry,
+        link: &Path,
+        strategy: DeployStrategy,
+    ) -> Result<()> {
         match strategy {
-            DeployStrategy::Junction if junction::exists(link).unwrap_or(false) => {
-                junction::delete(link)
-                    .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
-                if link.exists() {
-                    std::fs::remove_dir(link)?;
+            DeployStrategy::Junction => {
+                if Self::deployment_link_target(link)?.is_some() {
+                    self.ensure_expected_junction_target(entry, link)?;
+                    Self::delete_junction(link)?;
+                } else if link.exists() {
+                    if legacy_copy_path(link) {
+                        std::fs::remove_dir_all(link)?;
+                    } else {
+                        return Err(unexpected_deployment_path_error(link));
+                    }
                 }
             }
-            DeployStrategy::Junction if link.is_dir() && link.join(COPY_MARKER).is_file() => {
+            DeployStrategy::CopyFallback if legacy_copy_path(link) => {
                 std::fs::remove_dir_all(link)?;
             }
-            DeployStrategy::CopyFallback if link.join(COPY_MARKER).is_file() => {
-                std::fs::remove_dir_all(link)?;
+            DeployStrategy::CopyFallback if link.exists() => {
+                return Err(unexpected_deployment_path_error(link));
             }
             _ => {}
         }
         Ok(())
     }
 
-    /// 创建 Junction 前清理链接路径；非空用户目录永不覆盖。
-    fn prepare_link(link: &Path) -> Result<()> {
-        if junction::exists(link).unwrap_or(false) {
-            junction::delete(link)
-                .map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
-            if link.exists() {
-                std::fs::remove_dir(link)?;
+    /// 创建 Junction 前只移除确认属于当前 Mod 的部署链接，绝不覆盖普通目录或未知链接。
+    fn prepare_link(&self, entry: &ModEntry, link: &Path) -> Result<()> {
+        if Self::deployment_link_target(link)?.is_some() {
+            self.ensure_expected_junction_target(entry, link)?;
+            Self::delete_junction(link)?;
+        } else if link.exists() {
+            return Err(unexpected_deployment_path_error(link));
+        }
+        Ok(())
+    }
+
+    fn ensure_expected_junction_target(&self, entry: &ModEntry, link: &Path) -> Result<()> {
+        let target = Self::deployment_link_target(link)?.ok_or_else(|| {
+            crate::error::LiquiModError::Junction(format!(
+                "unable to inspect deployment link at {}",
+                link.display()
+            ))
+        })?;
+        for expected in self.deployment_targets(entry)? {
+            if paths_equivalent(&target, &expected)? {
+                return Ok(());
             }
-        } else if link.is_dir() {
-            if std::fs::read_dir(link)?.next().is_none() {
-                std::fs::remove_dir(link)?;
-            } else {
-                return Err(crate::error::LiquiModError::Junction(format!(
-                    "path occupied by non-empty directory: {}",
-                    link.display()
-                )));
+        }
+        Err(crate::error::LiquiModError::Junction(format!(
+            "refusing to remove unexpected Junction at {}: target {} is not managed for Mod #{} ({}/{})",
+            link.display(),
+            target.display(),
+            entry.id,
+            entry.character,
+            entry.name
+        )))
+    }
+
+    fn deployment_targets(&self, entry: &ModEntry) -> Result<Vec<PathBuf>> {
+        let source = match entry.storage_kind {
+            ModStorageKind::Managed => {
+                let source = self.library.layout.root.join(&entry.rel_path);
+                if !path_is_within(&source, &self.library.layout.mods_root())? {
+                    return Err(crate::error::LiquiModError::Junction(format!(
+                        "managed Mod path escapes the LiquiMod library: {}",
+                        source.display()
+                    )));
+                }
+                source
             }
+            ModStorageKind::External => {
+                let source = entry
+                    .source_path
+                    .as_deref()
+                    .map(PathBuf::from)
+                    .ok_or_else(|| {
+                        crate::error::LiquiModError::Junction(format!(
+                            "external Mod #{} has no saved source path",
+                            entry.id
+                        ))
+                    })?;
+                if !source.is_absolute() {
+                    return Err(crate::error::LiquiModError::Junction(format!(
+                        "external Mod #{} has a non-absolute source path: {}",
+                        entry.id,
+                        source.display()
+                    )));
+                }
+                source
+            }
+        };
+        Ok(vec![source, self.library.layout.runtime_mod_dir(entry.id)])
+    }
+
+    fn junction_exists(link: &Path) -> Result<bool> {
+        match junction::exists(link) {
+            Ok(exists) => Ok(exists),
+            // junction::exists asks Windows for reparse metadata. Normal files and directories
+            // report ERROR_NOT_A_REPARSE_POINT rather than `Ok(false)`.
+            Err(error) if error.raw_os_error() == Some(4390) => Ok(false),
+            Err(error) => Err(crate::error::LiquiModError::Junction(format!(
+                "unable to inspect Junction {}: {error}",
+                link.display()
+            ))),
+        }
+    }
+
+    /// Return a Junction target even when the target itself has disappeared.
+    ///
+    /// `junction::exists` treats a dangling Junction as absent, while Windows still exposes its
+    /// reparse metadata through `symlink_metadata` and `read_link`. We only delete it after the
+    /// returned target is proven to belong to the current Mod (or a managed orphan root).
+    fn deployment_link_target(link: &Path) -> Result<Option<PathBuf>> {
+        if Self::junction_exists(link)? {
+            return junction::get_target(link)
+                .map(Some)
+                .map_err(|error| crate::error::LiquiModError::Junction(error.to_string()));
+        }
+
+        let metadata = match std::fs::symlink_metadata(link) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        if !metadata.file_type().is_symlink() {
+            return Ok(None);
+        }
+
+        let target = std::fs::read_link(link)?;
+        Ok(Some(if target.is_absolute() {
+            target
+        } else {
+            link.parent().unwrap_or_else(|| Path::new(".")).join(target)
+        }))
+    }
+
+    fn delete_junction(link: &Path) -> Result<()> {
+        junction::delete(link).map_err(|e| crate::error::LiquiModError::Junction(e.to_string()))?;
+        if link.exists() {
+            std::fs::remove_dir(link)?;
         }
         Ok(())
     }
@@ -225,15 +333,9 @@ impl<'a> Deployer<'a> {
             let link = self.mods_dir.join(Self::link_name(e));
             if e.enabled {
                 enabled_links.insert(Self::link_name(e));
-                if self.source_dir(e).is_err() {
-                    self.library.db.set_enabled(e.id, false)?;
-                    Self::remove_deployed_path(&link, strategy)?;
-                    self.cleanup_runtime(e.id)?;
-                    continue;
-                }
                 self.refresh(e.id)?;
             } else {
-                Self::remove_deployed_path(&link, strategy)?;
+                self.remove_deployed_path(e, &link, strategy)?;
                 self.cleanup_runtime(e.id)?;
             }
         }
@@ -251,11 +353,11 @@ impl<'a> Deployer<'a> {
                     continue;
                 }
                 let path = item.path();
-                if junction::exists(&path).unwrap_or(false) {
-                    if let Ok(target) = junction::get_target(&path) {
-                        if target.starts_with(&self.library.layout.root) {
-                            Self::remove_deployed_path(&path, DeployStrategy::Junction)?;
-                        }
+                if let Some(target) = Self::deployment_link_target(&path)? {
+                    if path_is_within(&target, &self.library.layout.mods_root())?
+                        || path_is_within(&target, &self.library.layout.runtime_root())?
+                    {
+                        Self::delete_junction(&path)?;
                     }
                 }
             }
@@ -353,6 +455,69 @@ impl<'a> Deployer<'a> {
     }
 }
 
+fn legacy_copy_path(path: &Path) -> bool {
+    path.is_dir() && path.join(COPY_MARKER).is_file()
+}
+
+fn unexpected_deployment_path_error(path: &Path) -> crate::error::LiquiModError {
+    crate::error::LiquiModError::Junction(format!(
+        "refusing to remove unexpected deployment path: {}",
+        path.display()
+    ))
+}
+
+fn normalized_path(path: &Path) -> Result<PathBuf> {
+    match path.canonicalize() {
+        Ok(path) => Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(std::path::absolute(path)?)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn paths_equivalent(left: &Path, right: &Path) -> Result<bool> {
+    let left = normalized_path(left)?;
+    let right = normalized_path(right)?;
+    #[cfg(windows)]
+    {
+        Ok(left
+            .as_os_str()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy()))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(left == right)
+    }
+}
+
+fn path_is_within(path: &Path, root: &Path) -> Result<bool> {
+    let path = normalized_path(path)?;
+    let root = normalized_path(root)?;
+    let mut path_components = path.components();
+    for root_component in root.components() {
+        let Some(path_component) = path_components.next() else {
+            return Ok(false);
+        };
+        if !path_components_equivalent(path_component.as_os_str(), root_component.as_os_str()) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+#[cfg(windows)]
+fn path_components_equivalent(left: &std::ffi::OsStr, right: &std::ffi::OsStr) -> bool {
+    left.to_string_lossy()
+        .eq_ignore_ascii_case(&right.to_string_lossy())
+}
+
+#[cfg(not(windows))]
+fn path_components_equivalent(left: &std::ffi::OsStr, right: &std::ffi::OsStr) -> bool {
+    left == right
+}
+
 fn deployed_path_present(path: &Path) -> bool {
     junction::exists(path).unwrap_or(false) || path.exists() || path.join(COPY_MARKER).is_file()
 }
@@ -369,6 +534,16 @@ mod tests {
         let mods_dir = tmp.path().join("GameMods");
         fs::create_dir_all(&mods_dir).unwrap();
         (tmp, lib, mods_dir)
+    }
+
+    #[test]
+    fn path_is_within_rejects_a_nonexistent_path_that_lexically_escapes_the_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let managed_root = temp.path().join("Library").join("mods");
+        fs::create_dir_all(&managed_root).unwrap();
+        let escaped_path = managed_root.join("..").join("outside");
+
+        assert!(!path_is_within(&escaped_path, &managed_root).unwrap());
     }
 
     #[test]
@@ -490,5 +665,302 @@ mod tests {
         assert!(runtime.join("runtime-sentinel.txt").is_file());
         deployer.enable_reusing_runtime(entry.id).unwrap();
         assert!(runtime.join("runtime-sentinel.txt").is_file());
+    }
+
+    #[test]
+    fn enable_refuses_to_replace_an_empty_unmanaged_directory() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Occupied")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        fs::create_dir_all(&link).unwrap();
+
+        let err = Deployer::new(&lib, &mods_dir)
+            .enable(entry.id)
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("unexpected deployment path"),
+            "unexpected error: {err}"
+        );
+        assert!(link.is_dir());
+        assert!(!lib.db.get_mod(entry.id).unwrap().enabled);
+        assert_eq!(lib.db.pending_ops().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn disable_rejects_an_unexpected_junction_without_deleting_it() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Unexpected")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let unexpected_root = tempfile::tempdir().unwrap();
+        let unexpected_target = unexpected_root.path().join("not-liquimod");
+        fs::create_dir_all(&unexpected_target).unwrap();
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        junction::create(&unexpected_target, &link).unwrap();
+        lib.db.set_enabled(entry.id, true).unwrap();
+
+        let err = Deployer::new(&lib, &mods_dir)
+            .disable(entry.id)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("unexpected Junction"));
+        assert!(junction::exists(&link).unwrap());
+        assert_eq!(junction::get_target(&link).unwrap(), unexpected_target);
+        assert!(lib.db.get_mod(entry.id).unwrap().enabled);
+        assert_eq!(lib.db.pending_ops().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn refresh_rejects_an_unexpected_junction_without_replacing_it() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "UnexpectedRefresh")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let unexpected_root = tempfile::tempdir().unwrap();
+        let unexpected_target = unexpected_root.path().join("not-liquimod");
+        fs::create_dir_all(&unexpected_target).unwrap();
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        junction::create(&unexpected_target, &link).unwrap();
+        lib.db.set_enabled(entry.id, true).unwrap();
+
+        let err = Deployer::new(&lib, &mods_dir)
+            .refresh(entry.id)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("unexpected Junction"));
+        assert!(junction::exists(&link).unwrap());
+        assert_eq!(junction::get_target(&link).unwrap(), unexpected_target);
+        assert!(lib.db.get_mod(entry.id).unwrap().enabled);
+        assert_eq!(lib.db.pending_ops().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recover_rebuilds_a_missing_enabled_deployment_and_finishes_pending_operation() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Recovery")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        lib.db.set_enabled(entry.id, true).unwrap();
+        lib.db.op_begin("refresh", &entry.id.to_string()).unwrap();
+        let link = mods_dir.join(Deployer::link_name(&entry));
+
+        Deployer::new(&lib, &mods_dir).recover().unwrap();
+
+        assert!(junction::exists(&link).unwrap());
+        assert!(lib.db.get_mod(entry.id).unwrap().enabled);
+        assert!(lib.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn recover_leaves_pending_operation_when_an_unexpected_junction_needs_manual_resolution() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "RecoveryBlocked")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let unexpected_root = tempfile::tempdir().unwrap();
+        let unexpected_target = unexpected_root.path().join("not-liquimod");
+        fs::create_dir_all(&unexpected_target).unwrap();
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        junction::create(&unexpected_target, &link).unwrap();
+        lib.db.set_enabled(entry.id, true).unwrap();
+        lib.db.op_begin("refresh", &entry.id.to_string()).unwrap();
+
+        let err = Deployer::new(&lib, &mods_dir)
+            .recover()
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("unexpected Junction"));
+        assert!(junction::exists(&link).unwrap());
+        assert_eq!(junction::get_target(&link).unwrap(), unexpected_target);
+        assert!(lib.db.get_mod(entry.id).unwrap().enabled);
+        assert_eq!(lib.db.pending_ops().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn recover_removes_the_expected_disabled_deployment_and_finishes_pending_operation() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "RecoveryDisable")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let deployer = Deployer::new(&lib, &mods_dir);
+        deployer.enable(entry.id).unwrap();
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        lib.db.set_enabled(entry.id, false).unwrap();
+        lib.db.op_begin("disable", &entry.id.to_string()).unwrap();
+
+        deployer.recover().unwrap();
+
+        assert!(!link.exists());
+        assert!(!lib.db.get_mod(entry.id).unwrap().enabled);
+        assert!(lib.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn recover_preserves_enabled_external_mod_when_its_source_is_unavailable() {
+        let (_t, lib, mods_dir) = setup();
+        let source_parent = tempfile::tempdir().unwrap();
+        let source = source_parent.path().join("OfflineRecovery");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("mod.ini"), "external").unwrap();
+        let entry = lib
+            .add_external_folder(&source, "Firefly", "OfflineRecovery")
+            .unwrap();
+        lib.db.set_enabled(entry.id, true).unwrap();
+        let op = lib.db.op_begin("refresh", &entry.id.to_string()).unwrap();
+        fs::remove_dir_all(&source).unwrap();
+
+        let err = Deployer::new(&lib, &mods_dir)
+            .recover()
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("external source unavailable"));
+        assert!(lib.db.get_mod(entry.id).unwrap().enabled);
+        assert_eq!(
+            lib.db.pending_ops().unwrap(),
+            vec![(op, "refresh".to_string(), entry.id.to_string())]
+        );
+        assert!(!mods_dir.join(Deployer::link_name(&entry)).exists());
+    }
+
+    #[test]
+    fn manual_resolution_allows_recovery_to_finish_a_blocked_refresh() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "RecoveryResolved")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let unexpected_root = tempfile::tempdir().unwrap();
+        let unexpected_target = unexpected_root.path().join("not-liquimod");
+        fs::create_dir_all(&unexpected_target).unwrap();
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        junction::create(&unexpected_target, &link).unwrap();
+        lib.db.set_enabled(entry.id, true).unwrap();
+        lib.db.op_begin("refresh", &entry.id.to_string()).unwrap();
+        let deployer = Deployer::new(&lib, &mods_dir);
+
+        assert!(deployer.recover().is_err());
+        junction::delete(&link).unwrap();
+        fs::remove_dir(&link).unwrap();
+
+        deployer.recover().unwrap();
+
+        assert!(junction::exists(&link).unwrap());
+        assert_eq!(
+            junction::get_target(&link).unwrap(),
+            lib.layout.mod_dir("Firefly", "RecoveryResolved")
+        );
+        assert!(lib.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn external_mod_enable_and_disable_never_modify_its_source_directory() {
+        let (_t, lib, mods_dir) = setup();
+        let source_parent = tempfile::tempdir().unwrap();
+        let source = source_parent.path().join("ExternalSource");
+        fs::create_dir_all(&source).unwrap();
+        let sentinel = source.join("sentinel.ini");
+        fs::write(&sentinel, "keep this source unchanged").unwrap();
+        let entry = lib
+            .add_external_folder(&source, "Firefly", "ExternalSource")
+            .unwrap();
+        let deployer = Deployer::new(&lib, &mods_dir);
+        let link = mods_dir.join(Deployer::link_name(&entry));
+
+        deployer.enable(entry.id).unwrap();
+        assert_eq!(
+            fs::read_to_string(&sentinel).unwrap(),
+            "keep this source unchanged"
+        );
+        assert!(paths_equivalent(&junction::get_target(&link).unwrap(), &source).unwrap());
+        deployer.disable(entry.id).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&sentinel).unwrap(),
+            "keep this source unchanged"
+        );
+        assert!(source.is_dir());
+        assert!(!link.exists());
+        assert!(!lib.layout.mod_dir("Firefly", "ExternalSource").exists());
+    }
+
+    #[test]
+    fn reconcile_only_removes_orphaned_junctions_to_managed_deployment_roots() {
+        let (_t, lib, mods_dir) = setup();
+        let retained_target = lib.layout.root.join("tmp").join("unrelated");
+        let removable_target = lib.layout.mods_root().join("Removed");
+        fs::create_dir_all(&retained_target).unwrap();
+        fs::create_dir_all(&removable_target).unwrap();
+        let retained_link = mods_dir.join("unrelated-library-link");
+        let removable_link = mods_dir.join("old-liquimod-link");
+        junction::create(&retained_target, &retained_link).unwrap();
+        junction::create(&removable_target, &removable_link).unwrap();
+
+        Deployer::new(&lib, &mods_dir).reconcile().unwrap();
+
+        assert!(junction::exists(&retained_link).unwrap());
+        assert_eq!(
+            junction::get_target(&retained_link).unwrap(),
+            retained_target
+        );
+        assert!(!removable_link.exists());
+    }
+
+    #[test]
+    fn disable_removes_a_dangling_junction_only_when_its_missing_target_is_expected() {
+        let (_t, lib, mods_dir) = setup();
+        let source_parent = tempfile::tempdir().unwrap();
+        let source = source_parent.path().join("DanglingExternal");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("mod.ini"), "external").unwrap();
+        let entry = lib
+            .add_external_folder(&source, "Firefly", "DanglingExternal")
+            .unwrap();
+        let deployer = Deployer::new(&lib, &mods_dir);
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        deployer.enable(entry.id).unwrap();
+        fs::remove_dir_all(&source).unwrap();
+
+        assert!(!link.exists());
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!junction::exists(&link).unwrap());
+
+        deployer.disable(entry.id).unwrap();
+
+        assert!(matches!(
+            fs::symlink_metadata(&link),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound
+        ));
+        assert!(!lib.db.get_mod(entry.id).unwrap().enabled);
+        assert!(lib.db.pending_ops().unwrap().is_empty());
+    }
+
+    #[test]
+    fn disable_preserves_a_dangling_junction_when_its_target_is_not_the_current_mod() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "UnexpectedDangling")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        let unexpected_root = tempfile::tempdir().unwrap();
+        let unexpected_target = unexpected_root.path().join("not-liquimod");
+        fs::create_dir_all(&unexpected_target).unwrap();
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        junction::create(&unexpected_target, &link).unwrap();
+        fs::remove_dir_all(&unexpected_target).unwrap();
+        lib.db.set_enabled(entry.id, true).unwrap();
+
+        let err = Deployer::new(&lib, &mods_dir)
+            .disable(entry.id)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("unexpected Junction"));
+        assert!(matches!(
+            fs::symlink_metadata(&link),
+            Ok(metadata) if metadata.file_type().is_symlink()
+        ));
+        assert!(lib.db.get_mod(entry.id).unwrap().enabled);
+        assert_eq!(lib.db.pending_ops().unwrap().len(), 1);
     }
 }
