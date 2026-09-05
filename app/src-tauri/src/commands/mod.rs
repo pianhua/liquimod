@@ -902,6 +902,63 @@ mod tests {
     use liquimod_core::games::hsr::Hsr;
     use std::fs;
 
+    fn app_state_for_game_guard() -> (tempfile::TempDir, AppState) {
+        let temp = tempfile::tempdir().unwrap();
+        let library = Library::init(temp.path()).unwrap();
+        let config = Config {
+            library_root: temp.path().to_path_buf(),
+            previous_library_root: None,
+            mods_dir: Some(temp.path().join("Mods")),
+            mod_sources: Vec::new(),
+            auto_enable: false,
+            warn_multiple_mods: true,
+            theme: "auto".into(),
+            character_category_name: "角色".into(),
+            game_exe: None,
+            loader_exe: None,
+            favorite_characters: Vec::new(),
+            work_mode: "play".into(),
+            injection_delay_ms: 0,
+            github_token: String::new(),
+            github_mirror: String::new(),
+            migoto_version: None,
+        };
+        let state = AppState {
+            config: std::sync::Arc::new(std::sync::Mutex::new(config)),
+            config_path: temp.path().join("config.json"),
+            library: std::sync::Arc::new(std::sync::Mutex::new(library)),
+            watcher: std::sync::Mutex::new(None),
+            refresh: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            game_watchdog: std::sync::Mutex::new(None),
+            game_running: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            launch_in_progress: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            deferred_runtime_cleanup: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashSet::new(),
+            )),
+        };
+        (temp, state)
+    }
+
+    #[test]
+    fn ensure_game_stopped_allows_operations_when_game_is_not_running() {
+        let (_temp, state) = app_state_for_game_guard();
+
+        assert!(ensure_game_stopped(&state, "修复 Mod 部署").is_ok());
+    }
+
+    #[test]
+    fn ensure_game_stopped_rejects_operations_with_the_operation_name_when_game_is_running() {
+        let (_temp, state) = app_state_for_game_guard();
+        state
+            .game_running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let error = ensure_game_stopped(&state, "安装 Mod").unwrap_err();
+
+        assert!(error.contains("游戏正在运行中"));
+        assert!(error.contains("安装 Mod"));
+    }
+
     #[test]
     fn library_changed_payload_shape() {
         let v = serde_json::json!({ "added": 2usize, "removed": 1usize });
