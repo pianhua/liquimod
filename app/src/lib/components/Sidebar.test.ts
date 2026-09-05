@@ -20,6 +20,8 @@ type SidebarProps = {
   charCount: number;
   collapsed?: boolean;
   onnavigate: (v: View) => void;
+  onshowdiagnostics?: () => void;
+  diagnosticsopen?: boolean;
 };
 
 function props(over: Partial<SidebarProps> = {}) {
@@ -71,5 +73,15 @@ describe("Sidebar", () => {
     render(Sidebar, { props: props({ view: { kind: "type", id: 1, name: "光锥" } }) });
     const btn = screen.getByText("光锥").closest("button")!;
     expect(btn.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("点击诊断中心入口并反映当前激活状态", async () => {
+    const onshowdiagnostics = vi.fn();
+    render(Sidebar, { props: props({ onshowdiagnostics, diagnosticsopen: true }) });
+    const button = screen.getByRole("button", { name: "Mod 状态与诊断中心" });
+
+    expect(button.getAttribute("aria-current")).toBe("page");
+    await fireEvent.click(button);
+    expect(onshowdiagnostics).toHaveBeenCalledTimes(1);
   });
 });

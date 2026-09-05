@@ -443,6 +443,7 @@ pub fn run() {
             commands::rescan_library,
             commands::clean_cache,
             commands::get_diagnostic_status,
+            commands::get_diagnostics_center,
             commands::repair_deployment,
             commands::open_webview2_download,
             commands::get_local_asset_version,

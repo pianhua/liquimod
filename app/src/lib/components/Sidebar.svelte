@@ -9,6 +9,7 @@
     IconLayers,
     IconTag,
     IconSparkles,
+    IconShieldCheck,
   } from "$lib/components/icons";
 
   let {
@@ -18,6 +19,8 @@
     charCount,
     collapsed = $bindable(false),
     onnavigate,
+    onshowdiagnostics = () => {},
+    diagnosticsopen = false,
   }: {
     view: View;
     categories: CategoryDto[];
@@ -25,6 +28,8 @@
     charCount: number;
     collapsed?: boolean;
     onnavigate: (v: View) => void;
+    onshowdiagnostics?: () => void;
+    diagnosticsopen?: boolean;
   } = $props();
 
   function isActive(key: string): boolean {
@@ -174,8 +179,19 @@
     {/if}
   </nav>
 
-  <!-- 底部预留区域（为后续 IP 形象与品牌视觉资产展示预留位置） -->
-  <div class="shrink-0 mt-auto">
-    <!-- IP / Visual Asset Placeholder -->
+  <div class="shrink-0 mt-auto pt-2 border-t border-[var(--glass-stroke)]">
+    <button
+      class="w-full flex items-center gap-2 h-8 radius-pill text-xs cursor-pointer transition-all {collapsed ? 'justify-center px-0' : 'px-2.5'}"
+      style={diagnosticsopen ? "background: var(--accent-fill); color: var(--accent); font-weight: 600" : ""}
+      aria-current={diagnosticsopen ? "page" : undefined}
+      aria-label="Mod 状态与诊断中心"
+      title="Mod 状态与诊断中心"
+      onclick={onshowdiagnostics}
+    >
+      <IconShieldCheck size={15} class="shrink-0" />
+      {#if !collapsed}
+        <span class="truncate">诊断中心</span>
+      {/if}
+    </button>
   </div>
 </aside>
