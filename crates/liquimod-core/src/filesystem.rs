@@ -67,8 +67,19 @@ pub fn filesystem_name(path: &Path) -> Option<String> {
 pub fn same_volume_filesystem(a: &Path, b: &Path) -> Option<String> {
     let left = filesystem_name(a)?;
     let right = filesystem_name(b)?;
-    if left.eq_ignore_ascii_case(&right) {
+    let left_volume = volume_root(a)?;
+    let right_volume = volume_root(b)?;
+    if left.eq_ignore_ascii_case(&right)
+        && paths_equal_case_insensitive(&left_volume, &right_volume)
+    {
         Some(left)
+    } else if left.eq_ignore_ascii_case(&right) {
+        Some(format!(
+            "{}（不同卷：{} -> {}）",
+            left,
+            left_volume.display(),
+            right_volume.display()
+        ))
     } else {
         Some(format!("{} -> {}", left, right))
     }
@@ -79,13 +90,18 @@ pub fn choose_strategy(library_root: &Path, mods_dir: &Path) -> DeployStrategy {
     {
         let library_fs = filesystem_name(library_root);
         let mods_fs = filesystem_name(mods_dir);
+        let same_volume = volume_root(library_root)
+            .zip(volume_root(mods_dir))
+            .map(|(a, b)| paths_equal_case_insensitive(&a, &b))
+            .unwrap_or(false);
         let junction_safe = matches!(library_fs.as_deref(), Some("NTFS") | Some("ReFS"))
             && matches!(mods_fs.as_deref(), Some("NTFS") | Some("ReFS"))
             && library_fs
                 .as_deref()
                 .zip(mods_fs.as_deref())
                 .map(|(a, b)| a.eq_ignore_ascii_case(b))
-                .unwrap_or(false);
+                .unwrap_or(false)
+            && same_volume;
         if junction_safe {
             DeployStrategy::Junction
         } else {
@@ -97,6 +113,12 @@ pub fn choose_strategy(library_root: &Path, mods_dir: &Path) -> DeployStrategy {
         let _ = (library_root, mods_dir);
         DeployStrategy::Junction
     }
+}
+
+fn paths_equal_case_insensitive(left: &Path, right: &Path) -> bool {
+    left.as_os_str()
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
 }
 
 pub fn volume_root(path: &Path) -> Option<PathBuf> {

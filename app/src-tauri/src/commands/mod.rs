@@ -947,6 +947,36 @@ mod tests {
     }
 
     #[test]
+    fn ensure_game_stopped_rejects_all_file_mutation_operation_labels_when_game_is_running() {
+        let (_temp, state) = app_state_for_game_guard();
+        state
+            .game_running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let operations = [
+            "安装 Mod",
+            "连接外部 Mod",
+            "卸载 Mod",
+            "重命名 Mod",
+            "移动 Mod",
+            "切换 Mod 变体",
+            "应用预设",
+            "添加外部 Mod 源",
+            "移除外部 Mod 源",
+            "迁移数据仓库",
+            "清理旧仓库",
+            "更新 XXMI 核心",
+            "更新 SRMI 核心",
+            "修复 Mod 部署",
+        ];
+
+        for operation in operations {
+            let error = ensure_game_stopped(&state, operation).unwrap_err();
+            assert!(error.contains("游戏正在运行中"));
+            assert!(error.contains(operation));
+        }
+    }
+
+    #[test]
     fn ensure_game_stopped_rejects_operations_with_the_operation_name_when_game_is_running() {
         let (_temp, state) = app_state_for_game_guard();
         state
