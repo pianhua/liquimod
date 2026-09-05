@@ -53,7 +53,7 @@ pub async fn clean_cache(state: tauri::State<'_, AppState>) -> Result<usize, Str
     .map_err(|e| format!("清理缓存任务失败：{e}"))?
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DiagnosticStatusDto {
     pub helper_ready: bool,
     pub game_configured: bool,
@@ -65,56 +65,273 @@ pub struct DiagnosticStatusDto {
     pub defender_command: Option<String>,
 }
 
-#[tauri::command]
-pub fn get_diagnostic_status(state: tauri::State<AppState>) -> Result<DiagnosticStatusDto, String> {
-    let (library_root, mods_dir, game_exe) = {
-        let config = lock_mutex(&state.config, "config")?;
-        (
-            config.library_root.clone(),
-            config.mods_dir.clone(),
-            config.game_exe.clone(),
-        )
-    };
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeploymentOverviewDto {
+    pub configured: bool,
+    pub strategy: Option<String>,
+    pub filesystem: Option<String>,
+    pub total_mods: usize,
+    pub enabled_mods: usize,
+    pub healthy_mods: usize,
+    pub attention_mods: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ModDiagnosticDto {
+    pub id: i64,
+    pub character: String,
+    pub name: String,
+    pub enabled: bool,
+    pub storage_kind: String,
+    pub source_available: bool,
+    pub deployment_state: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DiagnosticsCenterDto {
+    pub environment: DiagnosticStatusDto,
+    pub deployment: DeploymentOverviewDto,
+    pub mods: Vec<ModDiagnosticDto>,
+    pub hash_conflicts: Vec<ConflictReportDto>,
+    pub variable_conflicts: Vec<VariableConflictDto>,
+}
+
+fn collect_diagnostic_status(
+    config: &crate::config::Config,
+    library: &Library,
+) -> DiagnosticStatusDto {
     let helper_ready = refresh_helper_path().is_some();
+    let mods_dir = config
+        .mods_dir
+        .as_deref()
+        .filter(|path| !path.as_os_str().is_empty());
     let checks = liquimod_core::diagnostics::collect_checks(
-        &library_root,
-        mods_dir.as_deref(),
-        game_exe.as_deref(),
+        &config.library_root,
+        mods_dir,
+        config.game_exe.as_deref(),
         None,
         helper_ready,
     );
-    let filesystem = mods_dir
-        .as_deref()
-        .and_then(|mods| liquimod_core::filesystem::same_volume_filesystem(&library_root, mods));
-    let deploy_strategy = if let Some(mods) = mods_dir.as_deref() {
-        let lib = lock_mutex(&state.library, "library")?;
-        Some(
-            liquimod_core::deploy::Deployer::new(&lib, mods)
-                .strategy_label()
-                .to_owned(),
-        )
-    } else {
-        None
-    };
-    let mut exclusion_paths = vec![library_root.as_path()];
-    if let Some(mods) = mods_dir.as_deref() {
+    let filesystem = mods_dir.and_then(|mods| {
+        liquimod_core::filesystem::same_volume_filesystem(&config.library_root, mods)
+    });
+    let deploy_strategy = mods_dir.map(|mods| {
+        liquimod_core::deploy::Deployer::new(library, mods)
+            .strategy_label()
+            .to_owned()
+    });
+    let mut exclusion_paths = vec![config.library_root.as_path()];
+    if let Some(mods) = mods_dir {
         exclusion_paths.push(mods);
         if let Some(parent) = mods.parent() {
             exclusion_paths.push(parent);
         }
     }
 
-    Ok(DiagnosticStatusDto {
+    DiagnosticStatusDto {
         helper_ready,
-        game_configured: game_exe.is_some_and(|p| !p.as_os_str().is_empty()),
+        game_configured: config
+            .game_exe
+            .as_ref()
+            .is_some_and(|path| !path.as_os_str().is_empty()),
         // 保留 DTO 字段供旧前端兼容；当前原生 Hook 流程不再配置 Loader.exe。
         loader_configured: false,
-        mods_dir_configured: mods_dir.as_ref().is_some_and(|p| !p.as_os_str().is_empty()),
+        mods_dir_configured: mods_dir.is_some_and(|path| !path.as_os_str().is_empty()),
         checks,
         filesystem,
         deploy_strategy,
         defender_command: liquimod_core::diagnostics::defender_exclusion_command(&exclusion_paths),
+    }
+}
+
+fn conflict_report_dtos(conflicts: Vec<liquimod_core::d3d::ModConflict>) -> Vec<ConflictReportDto> {
+    conflicts
+        .into_iter()
+        .map(|conflict| ConflictReportDto {
+            hash: conflict.hash,
+            section: conflict.section,
+            conflicting_mods: conflict
+                .conflicting_mods
+                .into_iter()
+                .map(|mod_info| ConflictModInfoDto {
+                    id: mod_info.id,
+                    character: mod_info.character,
+                    name: mod_info.name,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+fn variable_conflict_dtos(
+    conflicts: Vec<liquimod_core::d3d::VariableConflict>,
+) -> Vec<VariableConflictDto> {
+    conflicts
+        .into_iter()
+        .map(|conflict| VariableConflictDto {
+            variable: conflict.variable,
+            conflicting_mods: conflict
+                .conflicting_mods
+                .into_iter()
+                .map(|mod_info| ConflictModInfoDto {
+                    id: mod_info.id,
+                    character: mod_info.character,
+                    name: mod_info.name,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+fn deployment_state_label(kind: liquimod_core::deploy::DeploymentStatusKind) -> &'static str {
+    match kind {
+        liquimod_core::deploy::DeploymentStatusKind::Disabled => "disabled",
+        liquimod_core::deploy::DeploymentStatusKind::Deployed => "deployed",
+        liquimod_core::deploy::DeploymentStatusKind::Missing => "missing",
+        liquimod_core::deploy::DeploymentStatusKind::Mismatched => "mismatched",
+        liquimod_core::deploy::DeploymentStatusKind::Unexpected => "unexpected",
+        liquimod_core::deploy::DeploymentStatusKind::SourceUnavailable => "source_unavailable",
+        liquimod_core::deploy::DeploymentStatusKind::Unsupported => "unsupported",
+    }
+}
+
+fn deployment_state_detail(state: &str) -> &'static str {
+    match state {
+        "disabled" => "Mod 已禁用，未检查到活动部署",
+        "deployed" => "数据库状态与磁盘 Junction 部署一致",
+        "missing" => "数据库标记为启用，但 Mods 目录中没有正确的 Junction",
+        "mismatched" => "数据库标记为启用，但 Junction 指向了错误目标",
+        "unexpected" => "数据库标记为禁用，但 Mods 目录仍存在部署入口",
+        "source_unavailable" => "源目录不可用，无法验证或恢复部署",
+        "unsupported" => "当前路径不满足同卷 NTFS/ReFS Junction，部署不可用",
+        "not_configured" => "尚未配置 3Dmigoto Mods 目录",
+        _ => "状态未知，请刷新诊断",
+    }
+}
+
+fn mod_diagnostic_detail(state: &str, source_available: bool) -> String {
+    let detail = deployment_state_detail(state);
+    if !source_available && state != "source_unavailable" {
+        format!("{detail}；源目录不可用，依赖源文件的操作不可执行")
+    } else {
+        detail.to_owned()
+    }
+}
+
+fn collect_mod_diagnostics(
+    config: &crate::config::Config,
+    library: &Library,
+    environment: &DiagnosticStatusDto,
+) -> Result<(DeploymentOverviewDto, Vec<ModDiagnosticDto>), String> {
+    let entries = library.list().map_err(|error| error.to_string())?;
+    let mods_dir = config
+        .mods_dir
+        .as_deref()
+        .filter(|path| !path.as_os_str().is_empty());
+    let configured = mods_dir.is_some();
+    let mut rows = Vec::with_capacity(entries.len());
+
+    if let Some(mods_dir) = mods_dir {
+        let deployer = liquimod_core::deploy::Deployer::new(library, mods_dir);
+        let statuses = deployer
+            .inspect_status()
+            .map_err(|error| format!("读取 Mod 部署状态失败：{error}"))?;
+        for status in statuses {
+            let source_available = library.entry_source_dir(&status.entry).is_ok();
+            let state = deployment_state_label(status.kind).to_owned();
+            rows.push(ModDiagnosticDto {
+                id: status.entry.id,
+                character: status.entry.character,
+                name: status.entry.name,
+                enabled: status.entry.enabled,
+                storage_kind: status.entry.storage_kind.as_str().to_owned(),
+                source_available,
+                detail: mod_diagnostic_detail(&state, source_available),
+                deployment_state: state,
+            });
+        }
+    } else {
+        for entry in entries {
+            let source_available = library.entry_source_dir(&entry).is_ok();
+            rows.push(ModDiagnosticDto {
+                id: entry.id,
+                character: entry.character,
+                name: entry.name,
+                enabled: entry.enabled,
+                storage_kind: entry.storage_kind.as_str().to_owned(),
+                source_available,
+                deployment_state: "not_configured".to_owned(),
+                detail: mod_diagnostic_detail("not_configured", source_available),
+            });
+        }
+    }
+
+    let enabled_mods = rows.iter().filter(|row| row.enabled).count();
+    let healthy_mods = rows
+        .iter()
+        .filter(|row| {
+            row.source_available && matches!(row.deployment_state.as_str(), "disabled" | "deployed")
+        })
+        .count();
+    let attention_mods = rows.len().saturating_sub(healthy_mods);
+
+    Ok((
+        DeploymentOverviewDto {
+            configured,
+            strategy: environment.deploy_strategy.clone(),
+            filesystem: environment.filesystem.clone(),
+            total_mods: rows.len(),
+            enabled_mods,
+            healthy_mods,
+            attention_mods,
+        },
+        rows,
+    ))
+}
+
+#[tauri::command]
+pub async fn get_diagnostic_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<DiagnosticStatusDto, String> {
+    let config = lock_mutex(&state.config, "config")?.clone();
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = lock_mutex(&library, "library")?;
+        Ok(collect_diagnostic_status(&config, &lib))
     })
+    .await
+    .map_err(|error| format!("诊断任务失败：{error}"))?
+}
+
+/// Read one coherent snapshot for the diagnostics workbench. All filesystem and INI inspection
+/// runs off the Tauri/UI thread, and this command never repairs or mutates deployment state.
+#[tauri::command]
+pub async fn get_diagnostics_center(
+    state: tauri::State<'_, AppState>,
+) -> Result<DiagnosticsCenterDto, String> {
+    let config = lock_mutex(&state.config, "config")?.clone();
+    let library = std::sync::Arc::clone(&state.library);
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = lock_mutex(&library, "library")?;
+        let environment = collect_diagnostic_status(&config, &lib);
+        let (deployment, mods) = collect_mod_diagnostics(&config, &lib, &environment)?;
+        let hash_conflicts = liquimod_core::d3d::detect_conflicts(&lib)
+            .map(conflict_report_dtos)
+            .map_err(|error| format!("读取 Hash 冲突失败：{error}"))?;
+        let variable_conflicts = liquimod_core::d3d::detect_variable_conflicts(&lib)
+            .map(variable_conflict_dtos)
+            .map_err(|error| format!("读取变量冲突失败：{error}"))?;
+        Ok(DiagnosticsCenterDto {
+            environment,
+            deployment,
+            mods,
+            hash_conflicts,
+            variable_conflicts,
+        })
+    })
+    .await
+    .map_err(|error| format!("诊断中心任务失败：{error}"))?
 }
 
 #[tauri::command]

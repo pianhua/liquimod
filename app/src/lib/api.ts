@@ -625,6 +625,47 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
           deploy_strategy: "NTFS 极速软链接模式",
           defender_command: "Add-MpPreference -ExclusionPath 'C:/mock/Library'",
         } as T;
+      case "get_diagnostics_center":
+        return {
+          environment: {
+            helper_ready: true,
+            game_configured: true,
+            loader_configured: true,
+            mods_dir_configured: true,
+            checks: [
+              { id: "library", label: "LiquiMod 仓库", state: "pass", detail: "目录可用", remediation: null },
+              { id: "mods_dir", label: "3Dmigoto Mods 目录", state: "pass", detail: "目录可用", remediation: null },
+              { id: "webview2", label: "WebView2 运行时", state: "pass", detail: "已检测到", remediation: null },
+              { id: "vc_runtime", label: "Microsoft Visual C++ 运行库", state: "pass", detail: "已检测到", remediation: null },
+              { id: "d3d11", label: "3Dmigoto d3d11.dll", state: "pass", detail: "已检测到", remediation: null },
+              { id: "refresh_helper", label: "F10 热刷新助手", state: "pass", detail: "已就绪", remediation: null },
+            ],
+            filesystem: "NTFS",
+            deploy_strategy: "NTFS 极速软链接模式",
+            defender_command: "Add-MpPreference -ExclusionPath 'C:/mock/Library'",
+          },
+          deployment: {
+            configured: true,
+            strategy: "NTFS 极速软链接模式",
+            filesystem: "NTFS",
+            total_mods: mockMods.length,
+            enabled_mods: mockMods.filter((m) => m.enabled).length,
+            healthy_mods: mockMods.length,
+            attention_mods: 0,
+          },
+          mods: mockMods.map((m) => ({
+            id: m.id,
+            character: "Firefly",
+            name: m.name,
+            enabled: m.enabled,
+            storage_kind: m.storage_kind ?? "managed",
+            source_available: m.source_available ?? true,
+            deployment_state: m.enabled ? "deployed" : "disabled",
+            detail: m.enabled ? "数据库状态与磁盘 Junction 部署一致" : "Mod 已禁用，未检查到活动部署",
+          })),
+          hash_conflicts: [],
+          variable_conflicts: [],
+        } as T;
       case "repair_deployment":
         return undefined as T;
       case "open_webview2_download":
@@ -760,6 +801,7 @@ export const api = {
   rescanLibrary: () => call<RescanResultDto>("rescan_library"),
   cleanCache: () => call<number>("clean_cache"),
   getDiagnosticStatus: () => call<DiagnosticStatusDto>("get_diagnostic_status"),
+  getDiagnosticsCenter: () => call<DiagnosticsCenterDto>("get_diagnostics_center"),
   repairDeployment: () => call<void>("repair_deployment"),
   openWebView2Download: () => call<void>("open_webview2_download"),
   getLocalAssetVersion: () => call<string | null>("get_local_asset_version"),
@@ -853,6 +895,45 @@ export interface DiagnosticCheckDto {
   state: "pass" | "warn" | "fail" | "unknown";
   detail: string;
   remediation: string | null;
+}
+
+export type ModDeploymentState =
+  | "disabled"
+  | "deployed"
+  | "missing"
+  | "mismatched"
+  | "unexpected"
+  | "source_unavailable"
+  | "unsupported"
+  | "not_configured";
+
+export interface DeploymentOverviewDto {
+  configured: boolean;
+  strategy: string | null;
+  filesystem: string | null;
+  total_mods: number;
+  enabled_mods: number;
+  healthy_mods: number;
+  attention_mods: number;
+}
+
+export interface ModDiagnosticDto {
+  id: number;
+  character: string;
+  name: string;
+  enabled: boolean;
+  storage_kind: "managed" | "external";
+  source_available: boolean;
+  deployment_state: ModDeploymentState;
+  detail: string;
+}
+
+export interface DiagnosticsCenterDto {
+  environment: DiagnosticStatusDto;
+  deployment: DeploymentOverviewDto;
+  mods: ModDiagnosticDto[];
+  hash_conflicts: ConflictReportDto[];
+  variable_conflicts: VariableConflictDto[];
 }
 
 /// 立绘 URL（SvelteKit files.assets 指向 assets/hsr）。

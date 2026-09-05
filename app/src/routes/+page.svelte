@@ -23,6 +23,7 @@
   import CharacterGrid from "$lib/views/CharacterGrid.svelte";
   import CharacterDetail from "$lib/views/CharacterDetail.svelte";
   import Settings from "$lib/views/Settings.svelte";
+  import DiagnosticsCenter from "$lib/views/DiagnosticsCenter.svelte";
   import ModCardGrid from "$lib/components/ModCardGrid.svelte";
 
   let config = $state<ConfigDto | null>(null);
@@ -36,6 +37,7 @@
   let charSort = $state<CharacterSortOption>("default");
   let enabledFilter = $state<EnabledFilter>("all");
   let showSettings = $state(false);
+  let showDiagnostics = $state(false);
   let error = $state("");
   let dragHover = $state(false);
   let gameRunning = $state(false);
@@ -148,8 +150,9 @@
   });
 
   async function navigate(v: View) {
-    if (!showSettings) saveScroll();
+    if (!showSettings && !showDiagnostics) saveScroll();
     showSettings = false;
+    showDiagnostics = false;
     // 保存当前视图搜索词
     viewSearchMemory.set(viewKey(view), query);
     view = v;
@@ -179,12 +182,25 @@
 
   function openSettings() {
     // 仅在非设置页时采样滚动（设置打开时内容区可能已隐藏，scrollTop 已被浏览器归零）
-    if (!showSettings) saveScroll();
+    if (!showSettings && !showDiagnostics) saveScroll();
+    showDiagnostics = false;
     showSettings = true;
   }
 
   async function closeSettings() {
     showSettings = false;
+    await refresh();
+    await restoreScroll();
+  }
+
+  function openDiagnostics() {
+    if (!showSettings && !showDiagnostics) saveScroll();
+    showSettings = false;
+    showDiagnostics = true;
+  }
+
+  async function closeDiagnostics() {
+    showDiagnostics = false;
     await refresh();
     await restoreScroll();
   }
@@ -664,10 +680,12 @@
         charCount={homeCharModTotal}
         bind:collapsed={sidebarCollapsed}
         onnavigate={navigate}
+        onshowdiagnostics={openDiagnostics}
+        diagnosticsopen={showDiagnostics}
       />
       <div bind:this={contentEl} class="relative flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden" style="contain: layout style">
       <!-- 正常工作区 (保活：通过 class:hidden 隐藏，杜绝 DOM 销毁与返回滚动抖动，同时彻底阻止透底重叠) -->
-      <div class="flex flex-col flex-1 min-w-0 min-h-0" class:hidden={showSettings}>
+      <div class="flex flex-col flex-1 min-w-0 min-h-0" class:hidden={showSettings || showDiagnostics}>
         <Toolbar
           {crumbs}
           bind:query
@@ -734,6 +752,8 @@
         <div class="flex flex-col flex-1 min-w-0 min-h-0 view-transition">
           <Settings {config} onback={closeSettings} onchanged={refresh} />
         </div>
+      {:else if showDiagnostics}
+        <DiagnosticsCenter onback={closeDiagnostics} onchanged={refresh} />
       {/if}
       </div>
     </div>

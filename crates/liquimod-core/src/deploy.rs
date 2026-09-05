@@ -13,6 +13,27 @@ pub struct Deployer<'a> {
     pub mods_dir: PathBuf,
 }
 
+/// Read-only result of comparing the database enabled state with the physical deployment.
+///
+/// This intentionally does not repair, materialize, or delete anything. It is used by
+/// diagnostics surfaces that must be safe to refresh while the user is investigating an issue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeploymentStatusKind {
+    Disabled,
+    Deployed,
+    Missing,
+    Mismatched,
+    Unexpected,
+    SourceUnavailable,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeploymentStatus {
+    pub entry: ModEntry,
+    pub kind: DeploymentStatusKind,
+}
+
 impl<'a> Deployer<'a> {
     pub fn new(library: &'a Library, mods_dir: &Path) -> Self {
         Self {
@@ -242,30 +263,81 @@ impl<'a> Deployer<'a> {
         Ok(())
     }
 
-    pub fn status(&self) -> Result<Vec<(ModEntry, bool)>> {
+    /// Return a read-only, per-Mod deployment inspection.
+    ///
+    /// Unlike `reconcile`, this method never changes the database or filesystem. In particular,
+    /// variant runtime directories are treated as the expected target but are not materialized
+    /// during inspection.
+    pub fn inspect_status(&self) -> Result<Vec<DeploymentStatus>> {
         let strategy = self.strategy();
         let mut out = Vec::new();
-        for e in self.library.db.list_mods()? {
-            let link = self.mods_dir.join(Self::link_name(&e));
-            let ok = if e.enabled {
-                match strategy {
-                    DeployStrategy::Junction => {
-                        let source = self.source_dir(&e)?;
-                        junction::exists(&link).unwrap_or(false)
-                            && junction::get_target(&link)
-                                .map(|t| t == source)
-                                .unwrap_or(false)
-                    }
-                    DeployStrategy::CopyFallback => {
-                        link.is_dir() && link.join(COPY_MARKER).is_file()
+        for entry in self.library.db.list_mods()? {
+            let link = self.mods_dir.join(Self::link_name(&entry));
+            let kind = match strategy {
+                DeployStrategy::CopyFallback if entry.enabled => DeploymentStatusKind::Unsupported,
+                DeployStrategy::CopyFallback => {
+                    if deployed_path_present(&link) {
+                        DeploymentStatusKind::Unexpected
+                    } else {
+                        DeploymentStatusKind::Disabled
                     }
                 }
-            } else {
-                !junction::exists(&link).unwrap_or(false) && !link.join(COPY_MARKER).is_file()
+                DeployStrategy::Junction if !entry.enabled => {
+                    if deployed_path_present(&link) {
+                        DeploymentStatusKind::Unexpected
+                    } else {
+                        DeploymentStatusKind::Disabled
+                    }
+                }
+                DeployStrategy::Junction => match self.expected_source_for_status(&entry) {
+                    None => DeploymentStatusKind::SourceUnavailable,
+                    Some(source) if !source.is_dir() => DeploymentStatusKind::Missing,
+                    Some(_source) if !junction::exists(&link).unwrap_or(false) => {
+                        if deployed_path_present(&link) {
+                            DeploymentStatusKind::Mismatched
+                        } else {
+                            DeploymentStatusKind::Missing
+                        }
+                    }
+                    Some(source)
+                        if junction::get_target(&link)
+                            .map(|target| target == source)
+                            .unwrap_or(false) =>
+                    {
+                        DeploymentStatusKind::Deployed
+                    }
+                    Some(_) => DeploymentStatusKind::Mismatched,
+                },
             };
-            out.push((e, ok));
+            out.push(DeploymentStatus { entry, kind });
         }
         Ok(out)
+    }
+
+    /// Backwards-compatible boolean view of the deployment inspection.
+    pub fn status(&self) -> Result<Vec<(ModEntry, bool)>> {
+        Ok(self
+            .inspect_status()?
+            .into_iter()
+            .map(|status| {
+                let healthy = matches!(
+                    status.kind,
+                    DeploymentStatusKind::Disabled | DeploymentStatusKind::Deployed
+                );
+                (status.entry, healthy)
+            })
+            .collect())
+    }
+
+    fn expected_source_for_status(&self, entry: &ModEntry) -> Option<PathBuf> {
+        let source = self.library.entry_source_dir(entry).ok()?;
+        if variants::detect_variants(&source).is_empty() {
+            Some(source)
+        } else {
+            // Do not materialize here. The runtime directory is the path that `enable` and
+            // `refresh` would deploy once the selected variant has been materialized.
+            Some(self.library.layout.runtime_mod_dir(entry.id))
+        }
     }
 
     pub fn recover(&self) -> Result<()> {
@@ -281,6 +353,10 @@ impl<'a> Deployer<'a> {
     }
 }
 
+fn deployed_path_present(path: &Path) -> bool {
+    junction::exists(path).unwrap_or(false) || path.exists() || path.join(COPY_MARKER).is_file()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,6 +369,70 @@ mod tests {
         let mods_dir = tmp.path().join("GameMods");
         fs::create_dir_all(&mods_dir).unwrap();
         (tmp, lib, mods_dir)
+    }
+
+    #[test]
+    fn inspect_reports_disabled_without_mutating_state() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Disabled")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+
+        let statuses = Deployer::new(&lib, &mods_dir).inspect_status().unwrap();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].entry.id, entry.id);
+        assert_eq!(statuses[0].kind, DeploymentStatusKind::Disabled);
+    }
+
+    #[test]
+    fn inspect_reports_missing_enabled_deployment_without_materializing_variant() {
+        let (_t, lib, mods_dir) = setup();
+        let root = lib.layout.mod_dir("Firefly", "Variant");
+        fs::create_dir_all(root.join("Option A")).unwrap();
+        fs::write(root.join("mod.ini"), "base").unwrap();
+        fs::write(root.join("Option A").join("mod.ini"), "variant").unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        lib.db.set_enabled(entry.id, true).unwrap();
+
+        let runtime = lib.layout.runtime_mod_dir(entry.id);
+        assert!(!runtime.exists());
+        let statuses = Deployer::new(&lib, &mods_dir).inspect_status().unwrap();
+        assert_eq!(statuses[0].kind, DeploymentStatusKind::Missing);
+        assert!(!runtime.exists());
+    }
+
+    #[test]
+    fn inspect_reports_occupied_enabled_path_as_mismatched_without_removing_it() {
+        let (_t, lib, mods_dir) = setup();
+        fs::create_dir_all(lib.layout.mod_dir("Firefly", "Occupied")).unwrap();
+        let entry = lib.scan().unwrap()[0].clone();
+        lib.db.set_enabled(entry.id, true).unwrap();
+
+        let link = mods_dir.join(Deployer::link_name(&entry));
+        fs::create_dir_all(&link).unwrap();
+        let statuses = Deployer::new(&lib, &mods_dir).inspect_status().unwrap();
+
+        assert_eq!(statuses[0].kind, DeploymentStatusKind::Mismatched);
+        assert!(link.is_dir());
+    }
+
+    #[test]
+    fn inspect_reports_offline_external_source_without_touching_source() {
+        let (_t, lib, mods_dir) = setup();
+        let source_parent = tempfile::tempdir().unwrap();
+        let source = source_parent.path().join("OfflineExternal");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("mod.ini"), "external").unwrap();
+        let entry = lib
+            .add_external_folder(&source, "Firefly", "OfflineExternal")
+            .unwrap();
+        lib.db.set_enabled(entry.id, true).unwrap();
+        fs::remove_dir_all(&source).unwrap();
+
+        let statuses = Deployer::new(&lib, &mods_dir).inspect_status().unwrap();
+
+        assert_eq!(statuses[0].kind, DeploymentStatusKind::SourceUnavailable);
+        assert!(!source.exists());
+        assert!(!lib.layout.mod_dir("Firefly", "OfflineExternal").exists());
     }
 
     #[test]
