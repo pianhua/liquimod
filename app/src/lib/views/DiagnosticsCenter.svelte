@@ -14,6 +14,8 @@
     IconArrowLeft,
     IconCheckCircle,
     IconChevronDown,
+    IconClock,
+    IconFolderOpen,
     IconInfo,
     IconLink,
     IconPackage,
@@ -37,6 +39,8 @@
   let loading = $state(true);
   let refreshing = $state(false);
   let repairBusy = $state(false);
+  let repairConfirming = $state(false);
+  let pathBusy = $state<string | null>(null);
   let error = $state("");
   let query = $state("");
   let filter = $state<ModFilter>("all");
@@ -49,6 +53,13 @@
     attention: "需处理",
     enabled: "已启用",
     external: "外部源",
+  };
+
+  const pendingOperationLabels: Record<string, string> = {
+    install: "安装",
+    enable: "启用",
+    disable: "禁用",
+    refresh: "刷新",
   };
 
   const stateLabels: Record<ModDeploymentState, string> = {
@@ -106,6 +117,9 @@
     });
   });
 
+  let attentionModCount = $derived((report?.mods ?? []).filter(needsAttention).length);
+  let pendingOperationCount = $derived(report?.pending_operations.length ?? 0);
+  let hasRepairWork = $derived(attentionModCount > 0 || pendingOperationCount > 0);
   let conflictCount = $derived((report?.hash_conflicts.length ?? 0) + (report?.variable_conflicts.length ?? 0));
   let environmentFailures = $derived(
     (report?.environment.checks ?? []).filter((check) => check.state === "fail").length,
@@ -116,6 +130,7 @@
 
   async function refresh(showSpinner = true) {
     const seq = ++requestSeq;
+    repairConfirming = false;
     if (showSpinner) refreshing = true;
     error = "";
     try {
@@ -132,12 +147,28 @@
     }
   }
 
+  function requestRepair() {
+    if (!report || repairBusy || !report.deployment.configured) return;
+    if (!hasRepairWork) {
+      toast("当前没有需要修复的部署");
+      return;
+    }
+    repairConfirming = true;
+  }
+
   async function repairDeployment() {
     if (repairBusy) return;
+    repairConfirming = false;
     repairBusy = true;
     try {
-      await api.repairDeployment();
-      toast("部署对账完成");
+      const result = await api.repairDeployment();
+      if (result.remaining_attention === 0 && result.pending_operations === 0) {
+        toast(`部署对账完成：已处理 ${result.repaired_mods} 个 Mod`);
+      } else {
+        toast(
+          `已检查 ${result.attempted_mods} 个 Mod，修复 ${result.repaired_mods} 个；仍有 ${result.remaining_attention} 个需处理`,
+        );
+      }
       await refresh(false);
       onchanged();
     } catch (e) {
@@ -145,6 +176,35 @@
     } finally {
       repairBusy = false;
     }
+  }
+
+  async function openSourceFolder(mod: ModDiagnosticDto) {
+    if (!mod.source_available || pathBusy) return;
+    pathBusy = `source:${mod.id}`;
+    try {
+      await api.openModFolder(mod.id);
+    } catch (e) {
+      toast(`无法打开源目录：${e}`);
+    } finally {
+      pathBusy = null;
+    }
+  }
+
+  async function openDeploymentRoot() {
+    const path = report?.deployment.deployment_root;
+    if (!path || pathBusy) return;
+    pathBusy = "deployment";
+    try {
+      await api.openPathInExplorer(path);
+    } catch (e) {
+      toast(`无法打开 Mods 目录：${e}`);
+    } finally {
+      pathBusy = null;
+    }
+  }
+
+  function pendingOperationLabel(operation: string): string {
+    return pendingOperationLabels[operation] ?? operation;
   }
 
   function toggleHash(hash: string) {
@@ -266,11 +326,22 @@
                 <h2 class="text-sm font-semibold">部署环境</h2>
                 <p class="mt-1 text-xs text-secondary">当前诊断只读取状态，不会重建物理部署。</p>
               </div>
+              {#if report.deployment.deployment_root}
+                <button
+                  class="glass h-8 px-3 flex items-center gap-1.5 text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  onclick={openDeploymentRoot}
+                  disabled={pathBusy !== null}
+                  title="打开 3Dmigoto Mods 目录"
+                >
+                  <IconFolderOpen size={14} />
+                  <span>{pathBusy === "deployment" ? "打开中…" : "打开 Mods 目录"}</span>
+                </button>
+              {/if}
               <button
                 class="glass-liquid-btn h-8 px-3 flex items-center gap-1.5 text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                onclick={repairDeployment}
-                disabled={!report.deployment.configured || repairBusy}
-                title={!report.deployment.configured ? "请先配置 3Dmigoto Mods 目录" : "按数据库 enabled 状态重新对账"}
+                onclick={requestRepair}
+                disabled={!report.deployment.configured || repairBusy || !hasRepairWork}
+                title={!report.deployment.configured ? "请先配置 3Dmigoto Mods 目录" : !hasRepairWork ? "当前没有需要修复的部署" : "按数据库 enabled 状态重新对账；未知路径不会被删除"}
               >
                 <IconWrench size={14} />
                 <span>{repairBusy ? "修复中…" : "修复部署"}</span>
@@ -285,7 +356,42 @@
                 <div class="text-[11px] text-secondary">文件系统</div>
                 <div class="mt-1 text-xs font-medium">{report.deployment.filesystem ?? "未检测"}</div>
               </div>
+              {#if report.deployment.deployment_root}
+                <div class="sm:col-span-2 rounded-xl border border-[var(--glass-stroke)] bg-[var(--card-bg)] px-3 py-2.5">
+                  <div class="text-[11px] text-secondary">Mods 目录</div>
+                  <code class="mt-1 block text-[11px] font-mono truncate" title={report.deployment.deployment_root}>{report.deployment.deployment_root}</code>
+                </div>
+              {/if}
             </div>
+            {#if repairConfirming}
+              <div class="mt-4 rounded-xl border border-amber-300/25 bg-amber-400/10 px-3.5 py-3" role="group" aria-label="修复部署确认">
+                <div class="flex items-start gap-2.5">
+                  <IconAlertTriangle size={15} class="mt-0.5 shrink-0 text-amber-300" />
+                  <div class="min-w-0 flex-1">
+                    <div class="text-xs font-semibold text-amber-100">确认执行部署对账？</div>
+                    <p class="mt-1 text-[11px] leading-5 text-amber-100/75">
+                      将检查 {attentionModCount} 个需要处理的 Mod{pendingOperationCount ? `，并尝试完成 ${pendingOperationCount} 个未完成事务` : ""}。操作以数据库 enabled 状态为准；未知目录、未知 Junction 和外部源文件不会被删除或接管。
+                    </p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                      <button
+                        class="h-7 px-2.5 rounded-full bg-amber-300 text-zinc-900 text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                        onclick={repairDeployment}
+                        disabled={repairBusy}
+                      >
+                        {repairBusy ? "修复中…" : "确认修复"}
+                      </button>
+                      <button
+                        class="h-7 px-2.5 rounded-full border border-amber-200/25 text-amber-100 text-[11px] cursor-pointer hover:bg-amber-200/10"
+                        onclick={() => (repairConfirming = false)}
+                        disabled={repairBusy}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {/if}
             <div class="mt-4 space-y-1.5">
               {#each report.environment.checks as check (check.id)}
                 {@const CheckIcon = checkIcon(check.state)}
@@ -327,6 +433,45 @@
           </div>
         </section>
 
+        {#if report.pending_operations.length > 0}
+          <section class="glass radius-panel overflow-hidden" aria-label="待恢复操作">
+            <div class="px-5 pt-5 pb-3 flex items-start justify-between gap-3">
+              <div class="flex items-start gap-2.5">
+                <IconClock size={16} class="mt-0.5 text-amber-300" />
+                <div>
+                  <h2 class="text-sm font-semibold">待恢复操作 <span class="ml-1 text-amber-300">{report.pending_operations.length}</span></h2>
+                  <p class="mt-1 text-xs text-secondary">这些事务尚未完成。重新检查或修复部署会按当前数据库状态尝试恢复；失败记录会保留。</p>
+                </div>
+              </div>
+              <button
+                class="glass h-8 px-3 flex items-center gap-1.5 text-xs cursor-pointer disabled:opacity-50"
+                onclick={() => refresh()}
+                disabled={refreshing}
+              >
+                <IconRefresh size={13} class={refreshing ? "animate-spin" : ""} />
+                <span>重新检查</span>
+              </button>
+            </div>
+            <div class="border-t border-[var(--glass-stroke)]">
+              {#each report.pending_operations as operation (operation.id)}
+                <div class="px-5 py-3 border-b last:border-b-0 border-[var(--glass-stroke)]">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-medium">{pendingOperationLabel(operation.operation)}</span>
+                    {#if operation.target}
+                      <span class="text-[11px] text-secondary truncate">{operation.target}</span>
+                    {/if}
+                    <span class="ml-auto text-[10px] text-secondary">#{operation.id}</span>
+                  </div>
+                  <p class="mt-1 text-[11px] text-secondary leading-5">{operation.detail}</p>
+                  {#if operation.payload && operation.payload !== operation.target}
+                    <code class="mt-1 block text-[10px] text-secondary font-mono truncate" title={operation.payload}>{operation.payload}</code>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </section>
+        {/if}
+
         <section class="glass radius-panel overflow-hidden">
           <div class="px-5 pt-5 pb-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div>
@@ -363,22 +508,68 @@
             <div class="border-t border-[var(--glass-stroke)]">
               {#each filteredMods as mod (mod.id)}
                 {@const ModStatusIcon = mod.source_available ? statusIcon(mod.deployment_state) : IconAlertTriangle}
-                <div class="flex items-center gap-3 px-5 py-3 border-b last:border-b-0 border-[var(--glass-stroke)] hover:bg-[var(--item-hover)] transition-colors">
-                  <div class="w-8 h-8 shrink-0 rounded-lg grid place-items-center bg-[var(--accent-fill)] text-[var(--accent)]">
-                    <ModStatusIcon size={16} />
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <span class="text-xs font-medium truncate">{mod.name}</span>
-                      <span class="text-[10px] text-secondary shrink-0">{mod.character}</span>
+                <div class="px-5 py-3 border-b last:border-b-0 border-[var(--glass-stroke)] hover:bg-[var(--item-hover)] transition-colors">
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 shrink-0 rounded-lg grid place-items-center bg-[var(--accent-fill)] text-[var(--accent)]">
+                      <ModStatusIcon size={16} />
                     </div>
-                    <p class="mt-0.5 text-[11px] text-secondary truncate">{mod.detail}</p>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-xs font-medium truncate">{mod.name}</span>
+                        <span class="text-[10px] text-secondary shrink-0">{mod.character}</span>
+                      </div>
+                      <p class="mt-0.5 text-[11px] text-secondary truncate">{mod.detail}</p>
+                    </div>
+                    <span class="{mod.deployment_state === 'source_unavailable' ? 'inline-flex' : 'hidden sm:inline-flex'} text-[10px] px-2 py-1 rounded-full border {statusClass(mod.deployment_state)} shrink-0">{stateLabels[mod.deployment_state]}</span>
+                    {#if !mod.source_available && mod.deployment_state !== "source_unavailable"}
+                      <span class="inline-flex text-[10px] px-2 py-1 rounded-full border text-amber-300 bg-amber-400/10 border-amber-300/20 shrink-0" title="源目录不可用，依赖源文件的操作不可执行">源离线</span>
+                    {/if}
+                    <span class="hidden md:inline-flex text-[10px] px-2 py-1 rounded-full border text-secondary border-[var(--glass-stroke)] bg-white/[0.03] shrink-0">{mod.storage_kind === "external" ? "外部" : "托管"}</span>
                   </div>
-                  <span class="{mod.deployment_state === 'source_unavailable' ? 'inline-flex' : 'hidden sm:inline-flex'} text-[10px] px-2 py-1 rounded-full border {statusClass(mod.deployment_state)} shrink-0">{stateLabels[mod.deployment_state]}</span>
-                  {#if !mod.source_available && mod.deployment_state !== "source_unavailable"}
-                    <span class="inline-flex text-[10px] px-2 py-1 rounded-full border text-amber-300 bg-amber-400/10 border-amber-300/20 shrink-0" title="源目录不可用，依赖源文件的操作不可执行">源离线</span>
+                  {#if needsAttention(mod)}
+                    <div class="ml-11 mt-2 rounded-xl border border-[var(--glass-stroke)] bg-[var(--card-bg)] px-3 py-2.5 space-y-2">
+                      <div>
+                        <div class="text-[10px] font-semibold uppercase tracking-wide text-secondary">处理建议</div>
+                        <p class="mt-0.5 text-[11px] leading-5 text-secondary">{mod.remediation}</p>
+                      </div>
+                      {#if mod.source_path}
+                        <div class="text-[11px] min-w-0">
+                          <span class="text-secondary">源路径：</span>
+                          <code class="font-mono text-[10px] text-[var(--text)] break-all">{mod.source_path}</code>
+                        </div>
+                      {/if}
+                      {#if mod.deployment_path}
+                        <div class="text-[11px] min-w-0">
+                          <span class="text-secondary">部署入口：</span>
+                          <code class="font-mono text-[10px] text-[var(--text)] break-all">{mod.deployment_path}</code>
+                        </div>
+                      {/if}
+                      <div class="flex flex-wrap items-center gap-2">
+                        {#if mod.source_available}
+                          <button
+                            class="glass h-7 px-2.5 flex items-center gap-1.5 rounded-full text-[11px] cursor-pointer disabled:opacity-50"
+                            onclick={() => openSourceFolder(mod)}
+                            disabled={pathBusy !== null}
+                            aria-label={`打开 ${mod.name} 源目录`}
+                          >
+                            <IconFolderOpen size={13} />
+                            <span>{pathBusy === `source:${mod.id}` ? "打开中…" : "打开源目录"}</span>
+                          </button>
+                        {/if}
+                        {#if report.deployment.deployment_root && ["mismatched", "unexpected", "unsupported"].includes(mod.deployment_state)}
+                          <button
+                            class="glass h-7 px-2.5 flex items-center gap-1.5 rounded-full text-[11px] cursor-pointer disabled:opacity-50"
+                            onclick={openDeploymentRoot}
+                            disabled={pathBusy !== null}
+                            aria-label={`打开 Mods 目录（处理 ${mod.name}）`}
+                          >
+                            <IconFolderOpen size={13} />
+                            <span>{pathBusy === "deployment" ? "打开中…" : "打开 Mods 目录"}</span>
+                          </button>
+                        {/if}
+                      </div>
+                    </div>
                   {/if}
-                  <span class="hidden md:inline-flex text-[10px] px-2 py-1 rounded-full border text-secondary border-[var(--glass-stroke)] bg-white/[0.03] shrink-0">{mod.storage_kind === "external" ? "外部" : "托管"}</span>
                 </div>
               {/each}
             </div>
