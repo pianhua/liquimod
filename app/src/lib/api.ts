@@ -648,10 +648,12 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
             configured: true,
             strategy: "NTFS 极速软链接模式",
             filesystem: "NTFS",
+            deployment_root: "C:/mock/Game/Mods",
             total_mods: mockMods.length,
             enabled_mods: mockMods.filter((m) => m.enabled).length,
             healthy_mods: mockMods.length,
             attention_mods: 0,
+            pending_operations: 0,
           },
           mods: mockMods.map((m) => ({
             id: m.id,
@@ -660,14 +662,23 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
             enabled: m.enabled,
             storage_kind: m.storage_kind ?? "managed",
             source_available: m.source_available ?? true,
+            source_path: `C:/mock/Library/mods/Firefly/${m.name}`,
+            deployment_path: `C:/mock/Game/Mods/Firefly__${m.name}__${m.id}`,
             deployment_state: m.enabled ? "deployed" : "disabled",
             detail: m.enabled ? "数据库状态与磁盘 Junction 部署一致" : "Mod 已禁用，未检查到活动部署",
+            remediation: m.enabled ? "无需处理；数据库状态与实际 Junction 一致。" : "无需处理；需要使用时从资源库启用此 Mod。",
           })),
+          pending_operations: [],
           hash_conflicts: [],
           variable_conflicts: [],
         } as T;
       case "repair_deployment":
-        return undefined as T;
+        return {
+          attempted_mods: 0,
+          repaired_mods: 0,
+          remaining_attention: 0,
+          pending_operations: 0,
+        } as T;
       case "open_webview2_download":
         return undefined as T;
       case "auto_detect_game_exe":
@@ -802,7 +813,7 @@ export const api = {
   cleanCache: () => call<number>("clean_cache"),
   getDiagnosticStatus: () => call<DiagnosticStatusDto>("get_diagnostic_status"),
   getDiagnosticsCenter: () => call<DiagnosticsCenterDto>("get_diagnostics_center"),
-  repairDeployment: () => call<void>("repair_deployment"),
+  repairDeployment: () => call<RepairDeploymentResultDto>("repair_deployment"),
   openWebView2Download: () => call<void>("open_webview2_download"),
   getLocalAssetVersion: () => call<string | null>("get_local_asset_version"),
   checkGameAssetsUpdate: (game = "Honkai") => call<AssetUpdateCheckResultDto>("check_game_assets_update", { game }),
@@ -911,10 +922,12 @@ export interface DeploymentOverviewDto {
   configured: boolean;
   strategy: string | null;
   filesystem: string | null;
+  deployment_root: string | null;
   total_mods: number;
   enabled_mods: number;
   healthy_mods: number;
   attention_mods: number;
+  pending_operations: number;
 }
 
 export interface ModDiagnosticDto {
@@ -924,7 +937,19 @@ export interface ModDiagnosticDto {
   enabled: boolean;
   storage_kind: "managed" | "external";
   source_available: boolean;
+  source_path: string | null;
+  deployment_path: string | null;
   deployment_state: ModDeploymentState;
+  detail: string;
+  remediation: string;
+}
+
+export interface PendingOperationDto {
+  id: number;
+  operation: string;
+  payload: string;
+  mod_id: number | null;
+  target: string | null;
   detail: string;
 }
 
@@ -932,8 +957,16 @@ export interface DiagnosticsCenterDto {
   environment: DiagnosticStatusDto;
   deployment: DeploymentOverviewDto;
   mods: ModDiagnosticDto[];
+  pending_operations: PendingOperationDto[];
   hash_conflicts: ConflictReportDto[];
   variable_conflicts: VariableConflictDto[];
+}
+
+export interface RepairDeploymentResultDto {
+  attempted_mods: number;
+  repaired_mods: number;
+  remaining_attention: number;
+  pending_operations: number;
 }
 
 /// 立绘 URL（SvelteKit files.assets 指向 assets/hsr）。
