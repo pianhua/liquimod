@@ -21,6 +21,7 @@
     IconSortAlpha,
     IconSortSize,
     IconInfo,
+    IconShieldCheck,
   } from "$lib/components/icons";
 
   import { pushEscHandler, registerPopover, notifyPopoverOpened } from "$lib/esc";
@@ -33,6 +34,7 @@
     isCharGrid = false,
     showSort,
     showSettings = false,
+    showDiagnostics = false,
     gameRunning = false,
     launchBusy = false,
     workMode = "play",
@@ -43,6 +45,7 @@
     onrefreshgame = undefined,
     onimport = undefined,
     ontogglesettings,
+    onshowdiagnostics = () => {},
     onapplied,
   }: {
     crumbs: string[];
@@ -52,6 +55,7 @@
     isCharGrid?: boolean;
     showSort: boolean;
     showSettings?: boolean;
+    showDiagnostics?: boolean;
     gameRunning?: boolean;
     launchBusy?: boolean;
     workMode?: "play" | "dev";
@@ -62,6 +66,7 @@
     onrefreshgame?: () => void;
     onimport?: () => void;
     ontogglesettings: () => void;
+    onshowdiagnostics?: () => void;
     onapplied: () => void;
   } = $props();
 
@@ -356,17 +361,31 @@
       {/if}
     </div>
 
-    <!-- 全局偏好设置按钮 -->
-    <button
-      class="glass-liquid-btn w-8 h-8 grid place-items-center cursor-pointer transition-transform hover:rotate-45 text-[var(--text)]"
-      style={showSettings ? "background: var(--accent-fill); color: var(--accent)" : ""}
-      aria-label="设置"
-      title="偏好设置"
-      onclick={ontogglesettings}
-    >
-      <span class="z-10 grid place-items-center">
-        <IconSettings size={15} />
-      </span>
-    </button>
+    <div class="flex items-center gap-1 shrink-0" aria-label="系统工具">
+      <!-- 低频维护入口与设置保持在同一系统工具区，避免占用资源导航底部位置。 -->
+      <button
+        class="glass-liquid-btn w-8 h-8 grid place-items-center cursor-pointer text-[var(--text)]"
+        style={showDiagnostics ? "background: var(--accent-fill); color: var(--accent)" : ""}
+        aria-label="Mod 状态与诊断中心"
+        title="Mod 状态与诊断中心"
+        onclick={onshowdiagnostics}
+      >
+        <span class="z-10 grid place-items-center">
+          <IconShieldCheck size={15} />
+        </span>
+      </button>
+      <span class="w-px h-4 bg-[var(--glass-stroke)] opacity-60" aria-hidden="true"></span>
+      <button
+        class="glass-liquid-btn w-8 h-8 grid place-items-center cursor-pointer transition-transform hover:rotate-45 text-[var(--text)]"
+        style={showSettings ? "background: var(--accent-fill); color: var(--accent)" : ""}
+        aria-label="设置"
+        title="偏好设置"
+        onclick={ontogglesettings}
+      >
+        <span class="z-10 grid place-items-center">
+          <IconSettings size={15} />
+        </span>
+      </button>
+    </div>
   </div>
 </header>
