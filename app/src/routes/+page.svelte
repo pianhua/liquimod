@@ -680,8 +680,6 @@
         charCount={homeCharModTotal}
         bind:collapsed={sidebarCollapsed}
         onnavigate={navigate}
-        onshowdiagnostics={openDiagnostics}
-        diagnosticsopen={showDiagnostics}
       />
       <div bind:this={contentEl} class="relative flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden" style="contain: layout style">
       <!-- 正常工作区 (保活：通过 class:hidden 隐藏，杜绝 DOM 销毁与返回滚动抖动，同时彻底阻止透底重叠) -->
@@ -694,6 +692,7 @@
           {isCharGrid}
           {showSort}
           {showSettings}
+          showDiagnostics={showDiagnostics}
           {gameRunning}
           {launchBusy}
           workMode={config?.work_mode ?? "play"}
@@ -704,6 +703,7 @@
           onrefreshgame={refreshGame}
           onimport={importModPackage}
           ontogglesettings={() => (showSettings ? closeSettings() : openSettings())}
+          onshowdiagnostics={openDiagnostics}
           onapplied={refresh}
         />
         {#if isCharGrid}

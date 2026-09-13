@@ -42,6 +42,15 @@ describe("Toolbar", () => {
     expect(p.onrefreshgame).toHaveBeenCalled();
   });
 
+  it("在顶部系统工具区渲染并打开诊断中心", async () => {
+    const onshowdiagnostics = vi.fn();
+    render(Toolbar, { props: props({ onshowdiagnostics }) });
+    const button = screen.getByRole("button", { name: "Mod 状态与诊断中心" });
+
+    await fireEvent.click(button);
+    expect(onshowdiagnostics).toHaveBeenCalledTimes(1);
+  });
+
   it("showSort=false 时不渲染排序", () => {
     render(Toolbar, { props: props({ showSort: false }) });
     expect(screen.queryByLabelText("排序方式")).toBeNull();
